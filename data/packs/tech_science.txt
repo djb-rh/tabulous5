@@ -1,0 +1,122 @@
+# name: Tech & Science
+# color: #457B9D
+# icon: chip
+Password | easy
+Wifi signal | easy
+Low battery | easy
+Screen time | easy
+Airplane mode | easy
+Dead battery | easy
+Charging cable | easy
+Loading screen | easy
+Spinning wheel | easy
+Blue screen
+Restart your computer | easy
+Have you tried turning it off and on again | hard
+Software update
+Terms and conditions
+Accept all cookies
+Two factor authentication
+Forgot my password
+Password reset
+Captcha
+Are you a robot
+Autocorrect
+Typo | easy
+Reply all
+Spam folder | easy
+Unsubscribe
+Read receipt
+Left on read
+Group chat
+Notification
+Do not disturb
+Screenshot | easy
+Screen share
+Mute button | easy
+You're on mute | easy
+Video call | easy
+Bad connection
+Frozen screen | easy
+Buffering
+Streaming
+Download | easy
+Upload | easy
+Cloud storage
+Backup
+Hard drive | easy
+Solid state
+Motherboard
+Processor
+Graphics card
+Cooling fan | easy
+Overheating | easy
+Power supply
+Surge protector
+Extension cord | easy
+Adapter
+Dongle
+Bluetooth pairing
+Headphone jack
+USB port
+Charging port
+Wireless charging
+Power bank
+Smart watch | easy
+Fitness tracker
+Step counter | easy
+Smart speaker | easy
+Voice assistant
+Smart home
+Robot vacuum | easy
+Self driving car
+Electric vehicle
+Solar panel | easy
+Wind turbine | easy
+Nuclear reactor
+Periodic table
+Chemical reaction
+Test tube | easy
+Beaker | easy
+Bunsen burner
+Safety goggles | easy
+Lab coat | easy
+Microscope | easy
+Telescope | easy
+Petri dish
+Hypothesis
+Control group
+Double blind study | hard
+Peer review | hard
+Scientific method
+Gravity | easy
+Friction
+Momentum
+Centrifugal force | hard
+Speed of light
+Sound barrier
+Absolute zero
+Big Bang
+Black hole | easy
+Solar eclipse | easy
+Lunar eclipse
+Meteor shower | easy
+Space station | easy
+Rocket launch | easy
+Countdown | easy
+Liftoff | easy
+Zero gravity
+Space walk
+Satellite | easy
+Mission control
+Launch pad
+Heat shield
+Splashdown
+Moon landing | easy
+One small step | hard
+Artificial intelligence
+Machine learning
+Algorithm
+Source code
+Debugging
+Infinite loop

@@ -1,0 +1,120 @@
+# name: Everyday
+# color: #4C9F70
+# icon: house
+Alarm clock | easy
+Shopping cart | easy
+Rubber band | easy
+Front door | easy
+Coffee mug | easy
+Doorbell | easy
+Laundry basket | easy
+Paper clip | easy
+Kitchen sink | easy
+Light switch | easy
+Sunglasses | easy
+Shoelace | easy
+Umbrella | easy
+Toothbrush | easy
+Bicycle | easy
+Mailbox | easy
+Pillow fight | easy
+Ice cube tray | easy
+Junk drawer
+Grocery list | easy
+Spare change
+Bubble wrap | easy
+Sticky note | easy
+Vending machine | easy
+Revolving door
+Escalator | easy
+Parking meter
+Traffic jam | easy
+Speed bump
+Waiting room | easy
+Elevator music
+Fire drill
+Lost and found
+Garage sale | easy
+Snooze button | easy
+Loose change
+Double knot
+Wet paint | easy
+Do not disturb
+Out of order
+Spring cleaning | easy
+Small talk
+Rush hour | easy
+Coffee break
+Happy hour
+Road trip | easy
+Piggy bank | easy
+Rocking chair | easy
+Ceiling fan | easy
+Welcome mat | easy
+Bunk bed | easy
+Clothes hanger | easy
+Measuring tape | easy
+Dust bunny
+Squeaky floorboard
+Remote control | easy
+Shopping spree
+Window shopping
+Cold shoulder
+Wild goose chase | hard
+Elbow grease | hard
+Bucket list
+Backseat driver
+Couch potato
+Night owl | easy
+Early bird
+Chore chart
+Nap time | easy
+Birthday candle | easy
+Wrapping paper | easy
+Thank you note
+Spare key | easy
+Doggy bag
+Leftovers | easy
+Recycling bin | easy
+Fire extinguisher
+Smoke detector
+Duct tape | easy
+Extension cord | easy
+Bubble bath | easy
+Hot water bottle
+Reading glasses | easy
+Crossword puzzle
+Jigsaw puzzle | easy
+Bookmark | easy
+Shoebox | easy
+Piggyback ride
+Hand-me-down
+Garden hose | easy
+Lawn mower | easy
+Clothes line | easy
+Screen door | easy
+Porch swing
+Wind chime
+Flower pot | easy
+Watering can | easy
+Bird feeder | easy
+Doormat | easy
+House key | easy
+Junk mail | easy
+Take-out menu
+Fortune cookie | easy
+Grocery bag | easy
+Shopping list
+Price tag | easy
+Barcode
+Self checkout
+Loyalty card
+Receipt | easy
+Coupon
+Warranty
+Instruction manual | hard
+Assembly required | hard
+Some assembly required | hard
+Batteries not included | hard
+Return policy
+Free shipping

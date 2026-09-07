@@ -1,0 +1,118 @@
+# name: People & Places
+# color: #06A77D
+# icon: globe
+Times Square
+Grand Canyon | easy
+Niagara Falls | easy
+Mount Everest
+Great Wall | easy
+Eiffel Tower | easy
+Statue of Liberty | easy
+Golden Gate Bridge
+Big Ben | easy
+Leaning Tower
+Pyramids | easy
+Stonehenge
+Amazon rainforest
+Sahara Desert
+Bermuda Triangle
+North Pole | easy
+South Pole | easy
+Outer space | easy
+Ghost town
+Small town
+Big city | easy
+Suburbs
+Countryside | easy
+Farmland | easy
+Fishing village
+Mountain town
+Beach town | easy
+Border crossing
+Customs
+Passport control
+Baggage claim
+Layover
+Red eye flight
+Window seat | easy
+Aisle seat
+Middle seat
+Carry on
+Jet lag
+Time zone
+Souvenir shop | easy
+Postcard | easy
+Tourist trap
+Local favorite
+Hidden gem
+Off the beaten path
+Scenic route
+Rest stop
+Roadside diner
+Motel
+Bed and breakfast
+Youth hostel
+Campground | easy
+National park | easy
+Park ranger
+Trail map
+Lookout point
+Visitor center
+Gift shop | easy
+Lighthouse | easy
+Boardwalk | easy
+Pier
+Marina
+Ferry ride | easy
+Cruise ship | easy
+Train station | easy
+Bus depot
+Subway platform
+Taxi stand
+Airport terminal | easy
+Departure gate
+Firefighter | easy
+Mail carrier | easy
+Crossing guard | easy
+Lifeguard | easy
+Librarian | easy
+Barber | easy
+Plumber | easy
+Electrician
+Carpenter
+Locksmith
+Bus driver | easy
+Flight attendant
+Air traffic controller
+Ferry captain
+Night watchman
+Short order cook
+Dishwasher
+Barista
+Bartender | easy
+Bouncer
+Dog walker | easy
+Babysitter | easy
+Tutor | easy
+Substitute teacher
+Principal | easy
+Coach | easy
+Referee
+Umpire
+Auctioneer
+Tour guide | easy
+Translator
+Interpreter
+Cartographer | hard
+Archaeologist | hard
+Meteorologist | hard
+Neighbor | easy
+Next door neighbor
+Roommate | easy
+Pen pal
+Long lost cousin
+Family reunion | easy
+Class reunion
+Housewarming party
+Block party | easy
+Neighborhood watch

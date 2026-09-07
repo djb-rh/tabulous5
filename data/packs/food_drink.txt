@@ -1,0 +1,117 @@
+# name: Food & Drink
+# color: #F2A65A
+# icon: fork
+Peanut butter | easy
+Chocolate chip | easy
+Ice cream cone | easy
+Birthday cake | easy
+Hot dog | easy
+Grilled cheese | easy
+Scrambled eggs | easy
+Orange juice | easy
+Milkshake | easy
+French fries | easy
+Pizza slice | easy
+Apple pie | easy
+Popcorn | easy
+Cotton candy | easy
+Bubble gum | easy
+Breakfast in bed | easy
+Brunch
+Midnight snack | easy
+Comfort food
+Leftovers | easy
+Doggy bag
+All you can eat
+Buffet line
+Food truck
+Drive through
+Take out
+Delivery driver
+Tip jar
+Happy hour
+Bottomless mimosa
+Coffee run
+Double espresso
+Iced latte
+Loose leaf tea
+Sparkling water
+Lemonade stand | easy
+Sweet tooth | easy
+Guilty pleasure
+Secret recipe
+Family recipe
+Grandma's cooking
+Home cooked meal
+Potluck
+Barbecue | easy
+Backyard grill | easy
+Picnic basket | easy
+Campfire s'mores | easy
+Roasted marshmallow | easy
+Trail mix
+Snack attack
+Junk food
+Health food
+Meal prep
+Leftover pizza
+Cold pizza for breakfast
+Burnt toast | easy
+Soggy cereal | easy
+Freezer burn
+Expiration date
+Sell by date
+Spice rack
+Salt and pepper | easy
+Hot sauce | easy
+Secret ingredient
+Pinch of salt
+Dash of pepper
+A watched pot never boils | hard
+Too many cooks | hard
+Butter knife
+Rolling pin | easy
+Cutting board | easy
+Mixing bowl | easy
+Measuring cup
+Cast iron skillet
+Slow cooker
+Pressure cooker
+Air fryer
+Microwave dinner | easy
+Instant noodles | easy
+Boxed macaroni | easy
+Canned soup | easy
+Peanut butter and jelly | easy
+Bacon and eggs | easy
+Fish and chips | easy
+Chicken noodle soup | easy
+Mashed potatoes | easy
+Corn on the cob | easy
+Baked beans | easy
+Garlic bread | easy
+Caesar salad
+Fruit salad | easy
+Deviled eggs
+Pickle jar | easy
+Olive oil
+Balsamic vinegar
+Soy sauce
+Maple syrup | easy
+Whipped cream | easy
+Sprinkles | easy
+Frosting | easy
+Cupcake | easy
+Doughnut hole | easy
+Bagel and cream cheese
+Croissant
+Sourdough starter
+Bread crumbs
+Pie crust
+Cookie dough | easy
+Brownie batter
+Sugar rush
+Food coma
+Second helping
+Clean plate club
+Eyes bigger than your stomach | hard

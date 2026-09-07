@@ -1,0 +1,117 @@
+# name: Music
+# color: #9B5DE5
+# icon: note
+Guitar solo | easy
+Drum roll | easy
+Piano keys | easy
+Sing along | easy
+Karaoke night | easy
+Air guitar | easy
+Lip sync | easy
+Encore | easy
+Standing ovation
+Sound check | easy
+Opening act
+Headliner
+Backup singer
+Garage band
+Cover band
+Tribute band
+One hit wonder
+Chart topper
+Number one single
+Greatest hits
+B-side
+Deep cut
+Guilty pleasure song
+Earworm
+Catchy chorus
+Bridge
+Key change
+Fade out
+Record scratch
+Vinyl record | easy
+Turntable
+Mixtape | easy
+Playlist | easy
+Shuffle mode
+Repeat one
+Headphones | easy
+Earbuds | easy
+Volume knob | easy
+Turn it up | easy
+Bass drop
+Beat drop
+Off key
+Perfect pitch
+Tone deaf
+Sheet music
+Music stand
+Metronome
+Conductor's baton
+Orchestra pit
+String section
+Brass section
+Woodwinds
+Percussion
+Marching band | easy
+Drumline | easy
+Bagpipes | easy
+Banjo | easy
+Ukulele | easy
+Harmonica | easy
+Accordion | easy
+Tambourine | easy
+Triangle | easy
+Cowbell | easy
+More cowbell
+Kazoo | easy
+Whistling | easy
+Humming | easy
+Beatboxing
+Freestyle rap
+Jam session
+Open mic night
+Coffee house acoustic
+Street performer | easy
+Busking
+Guitar case | easy
+Tip jar
+Concert tickets | easy
+Sold out show
+Front row
+Mosh pit
+Crowd surfing
+Lighter in the air
+Phone flashlight
+Festival grounds
+Backstage pass
+Green room
+Tour bus
+Roadie
+Sound engineer
+Recording studio
+Isolation booth
+Take two
+Auto tune
+Remix
+Sample
+Mashup
+Duet
+Trio
+Quartet
+Choir | easy
+Church organ | easy
+Wedding march
+Birthday song | easy
+National anthem | easy
+Lullaby | easy
+Nursery rhyme | easy
+Elevator music
+Hold music
+Ringtone | easy
+Theme song
+Jingle
+Whistle while you work
+Face the music | hard
+Music to my ears | hard

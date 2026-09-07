@@ -1,0 +1,115 @@
+# name: Sports & Games
+# color: #3D8BCD
+# icon: trophy
+Home run | easy
+Slam dunk | easy
+Touchdown | easy
+Hole in one | easy
+Hat trick
+Free throw | easy
+Penalty kick
+Corner kick
+Full court press
+Fast break
+Buzzer beater
+Overtime
+Sudden death
+Instant replay
+Referee | easy
+Yellow card
+Red card
+Foul ball
+Strike out
+Grand slam
+Bases loaded
+Seventh inning stretch
+Bench warmer
+Team captain | easy
+Most valuable player
+Rookie of the year
+Hall of fame
+Championship ring
+Trophy case | easy
+Victory lap | easy
+Podium finish
+Photo finish
+False start
+Personal best
+World record
+Home field advantage
+Away game
+Season opener
+Playoffs
+Tiebreaker
+Halftime show | easy
+Tailgate party
+Season tickets | easy
+Nosebleed seats
+Front row seats
+Jumbotron
+Wave
+Team mascot | easy
+Cheerleader | easy
+Marching band | easy
+Locker room | easy
+Water boy | easy
+Coach's whistle | easy
+Playbook
+Time out | easy
+Substitution
+Warm up | easy
+Cool down
+Stretching
+Sweatband
+Shin guards | easy
+Mouth guard | easy
+Batting helmet
+Catcher's mitt | easy
+Ping pong | easy
+Foosball
+Air hockey | easy
+Pinball machine | easy
+Arcade cabinet
+High score | easy
+Extra life | easy
+Game over | easy
+Boss level
+Cheat code
+Button masher
+Board game night
+Roll the dice | easy
+Shuffle the deck
+Deal me in
+Poker face
+Full house
+Royal flush
+Go fish | easy
+Old maid
+Musical chairs | easy
+Hide and seek | easy
+Tag you're it | easy
+Red light green light | easy
+Hopscotch | easy
+Jump rope | easy
+Double dutch
+Tug of war | easy
+Three legged race
+Egg and spoon race
+Sack race | easy
+Freeze tag | easy
+Duck duck goose | easy
+Rock paper scissors | easy
+Thumb war | easy
+Staring contest | easy
+Dance off
+Trivia night
+Crossword
+Word search
+Sudoku
+Jigsaw puzzle
+Rubik's cube
+Chess match | easy
+Checkmate
+Stalemate
+Dominoes | easy
+Jenga tower | easy

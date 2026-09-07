@@ -1,0 +1,60 @@
+// Persisting Settings to NVS.
+//
+// A device that forgets your team names, scoring mode and volume every time it
+// reboots is a device people stop trusting, so everything the settings screen
+// can change is stored.
+#pragma once
+
+#include "fivehead.h"
+#include "phrase_game.h"
+
+namespace tabulous {
+namespace settings_store {
+
+// Fills `out` from NVS, leaving any field absent from storage at its default.
+void load(Settings *out);
+
+// Written on leaving the settings screen and on confirming a team name, rather
+// than on every stepper tap — NVS writes are flash writes.
+void save(const Settings &settings);
+
+// FiveHead keeps its own settings under its own keys, so the two games can be
+// tuned independently.
+// Solitaire's options. Kept here rather than in the rules because most of
+// them are presentation or convenience, not rules.
+struct SolitaireSettings {
+  bool draw_three = false;
+  int max_passes = 0;        // 0 = unlimited
+  bool tap_to_foundation = true;
+  bool show_timer = true;
+};
+
+// Console-wide display preference, not per game.
+bool loadLightTheme();
+void saveLightTheme(bool light);
+
+// How the launcher list is arranged: which games are shown and in what order.
+// Console-wide, so it lives here rather than in any one game's settings.
+constexpr int kMaxMenuEntries = 16;
+
+struct MenuPrefs {
+  uint8_t order[kMaxMenuEntries] = {0};
+  uint8_t count = 0;
+  uint16_t hidden = 0;  // bit per ENTRY index, not per display position
+};
+
+// Reconciles whatever is stored against the games that actually exist now:
+// unknown or duplicated indices are dropped and anything missing is appended
+// in its natural order. That way adding a game later just makes it show up at
+// the bottom rather than orphaning a saved arrangement.
+void loadMenu(MenuPrefs *out, uint8_t entry_count);
+void saveMenu(const MenuPrefs &prefs);
+
+void loadSolitaire(SolitaireSettings *out);
+void saveSolitaire(const SolitaireSettings &settings);
+
+void loadFive(fivehead::Settings *out);
+void saveFive(const fivehead::Settings &settings);
+
+}  // namespace settings_store
+}  // namespace tabulous

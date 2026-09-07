@@ -1,0 +1,119 @@
+# name: Nature & Animals
+# color: #2A9D8F
+# icon: leaf
+Thunderstorm | easy
+Rainbow | easy
+Snowflake | easy
+Sunrise | easy
+Sunset | easy
+Full moon | easy
+Shooting star
+Northern lights
+Eye of the storm
+Calm before the storm
+Heat wave
+Cold snap
+Flash flood
+Drought
+Tornado | easy
+Hurricane
+Blizzard
+Avalanche
+Earthquake
+Volcano | easy
+Tidal wave
+Undertow
+Riptide
+Low tide
+High tide
+Coral reef
+Tide pool
+Sand dune
+Oasis
+Waterfall | easy
+Hot spring
+Geyser
+Glacier
+Iceberg | easy
+Fjord
+Canyon
+Cave | easy
+Stalactite | hard
+Quicksand
+Swamp
+Marsh
+Meadow
+Prairie
+Tundra
+Rainforest
+Jungle canopy
+Tree line
+Old growth forest
+Fallen log
+Tree rings
+Acorn | easy
+Pinecone | easy
+Maple leaf | easy
+Four leaf clover
+Dandelion | easy
+Sunflower | easy
+Cactus | easy
+Venus flytrap
+Mushroom | easy
+Moss | easy
+Ivy | easy
+Weeping willow
+Bird's nest | easy
+Beehive | easy
+Anthill | easy
+Spider web | easy
+Cocoon
+Butterfly | easy
+Caterpillar | easy
+Tadpole | easy
+Firefly | easy
+Dragonfly | easy
+Ladybug | easy
+Praying mantis
+Hummingbird | easy
+Woodpecker | easy
+Owl | easy
+Penguin | easy
+Flamingo | easy
+Peacock | easy
+Ostrich | easy
+Platypus
+Armadillo
+Porcupine | easy
+Hedgehog | easy
+Sloth | easy
+Chameleon
+Gecko
+Sea turtle | easy
+Jellyfish | easy
+Starfish | easy
+Seahorse | easy
+Octopus | easy
+Dolphin | easy
+Whale | easy
+Shark | easy
+Puffer fish
+Electric eel
+Hermit crab | easy
+Polar bear | easy
+Grizzly bear | easy
+Mountain goat
+Bighorn sheep
+Moose | easy
+Beaver | easy
+Otter | easy
+Raccoon | easy
+Skunk | easy
+Chipmunk | easy
+Squirrel | easy
+Migration
+Hibernation
+Camouflage
+Food chain
+Endangered species
+Wildlife refuge

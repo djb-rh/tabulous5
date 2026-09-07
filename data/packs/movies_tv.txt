@@ -1,0 +1,116 @@
+# name: Movies & TV
+# color: #E4572E
+# icon: film
+Popcorn | easy
+Red carpet | easy
+Movie trailer | easy
+Opening credits
+Closing credits
+Plot twist | easy
+Cliffhanger
+Season finale | easy
+Series premiere
+Spoiler alert | easy
+Binge watching | easy
+Streaming service | easy
+Remote control | easy
+Movie theater | easy
+Ticket stub | easy
+Front row | easy
+Blockbuster
+Box office
+Sequel | easy
+Prequel
+Spin-off
+Reboot
+Director's cut
+Blooper reel
+Stunt double | easy
+Special effects | easy
+Green screen | easy
+Sound stage
+Casting call
+Screen test
+Table read
+Cue cards
+Laugh track
+Sitcom | easy
+Soap opera
+Reality show | easy
+Talk show | easy
+Game show | easy
+Late night host
+Talent competition
+Cooking show | easy
+Nature documentary
+True crime
+Courtroom drama
+Medical drama
+Police procedural
+Space opera
+Romantic comedy
+Horror movie | easy
+Slasher film
+Monster movie | easy
+Silent film
+Black and white
+Foreign film
+Subtitles | easy
+Dubbed
+Animated feature
+Stop motion
+Claymation | hard
+Voice actor | easy
+Method actor | hard
+Typecast | hard
+Leading role
+Supporting role
+Cameo appearance
+Extra
+Understudy
+Screenplay
+Storyboard
+Film score
+Theme song | easy
+End credits scene
+Post-credits scene
+Cast and crew
+Wrap party
+Premiere night
+Award season
+Best Picture
+Lifetime achievement
+Standing ovation
+Critics choice
+Rotten reviews
+Cult classic
+Box office bomb
+Sleeper hit
+Double feature
+Drive-in theater | easy
+Matinee
+Concession stand | easy
+Movie snacks | easy
+Reclining seats
+Silence your phone | easy
+Now playing | easy
+Coming soon | easy
+Based on a true story
+Loosely based
+Any resemblance is coincidental | hard
+The End | easy
+Fade to black
+Roll the credits
+Behind the scenes
+Making of
+Deleted scene
+Alternate ending
+Fan theory
+Spoiler-free review
+Watch party
+Season pass
+Episode recap
+Previously on
+To be continued
+Cancelled after one season
+Renewed for another season

@@ -1,0 +1,80 @@
+#!/bin/bash
+# Grab whatever the Tab5 is showing right now and open it.
+#
+#   tools/shot                     -> ~/Desktop/tab5-<timestamp>.png, opened
+#   tools/shot menu.png            -> that file instead
+#   tools/shot --wait=15           -> 15s countdown, then capture
+#   tools/shot --tap=640,682       -> tap first, then capture
+#   tools/shot --font              -> a specimen of every phrase-ladder step
+#   tools/shot --no-open out.png   -> write it, don't open it
+#
+# Use --wait to photograph a screen you reach by hand. The countdown starts
+# AFTER the board reboots (opening the serial port resets it), so the whole
+# window is usable — navigate during it and the shot catches where you land.
+#
+# Taps go through the same handler a real touch does and can be chained, so a
+# screen several steps in can be reached without hands on the panel:
+#   tools/shot --tap=640,682 --tap=845,559 settings.png
+#
+# Safe to symlink somewhere on PATH; it finds the project from its own location.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# PlatformIO's own venv always has pyserial, so there is nothing to install.
+PY=""
+for candidate in "$here/../.venv/bin/python" "$HOME/.platformio/penv/bin/python"; do
+  if [ -x "$candidate" ] && "$candidate" -c 'import serial' 2>/dev/null; then
+    PY="$candidate"
+    break
+  fi
+done
+if [ -z "$PY" ]; then
+  echo "shot: no python with pyserial found." >&2
+  echo "      expected $here/../.venv or ~/.platformio/penv" >&2
+  exit 1
+fi
+
+if ! ls /dev/cu.usbmodem* >/dev/null 2>&1; then
+  echo "shot: no Tab5 found on USB." >&2
+  echo "      check the cable, and that the board is running the Tabulous5" >&2
+  echo "      firmware rather than sitting in the bootloader." >&2
+  exit 1
+fi
+
+out=""
+open_after=1
+wait_secs=0
+passthrough=()
+for arg in "$@"; do
+  case "$arg" in
+    --no-open) open_after=0 ;;
+    --wait=*)  wait_secs="${arg#--wait=}"; passthrough+=("$arg") ;;
+    --*)       passthrough+=("$arg") ;;
+    *)         out="$arg" ;;
+  esac
+done
+
+if ! [[ "$wait_secs" =~ ^[0-9]+$ ]]; then
+  echo "shot: --wait wants a whole number of seconds, got '$wait_secs'" >&2
+  exit 1
+fi
+
+if [ -z "$out" ]; then
+  out="$HOME/Desktop/tab5-$(date +%Y%m%d-%H%M%S).png"
+fi
+
+# Opening the port resets the board, so this takes a few seconds by design —
+# the capture waits for boot before driving anything.
+if [ "$wait_secs" -gt 0 ]; then
+  echo "shot: the board is rebooting (opening the port resets it);"
+  echo "      the ${wait_secs}s countdown starts once it is back up."
+else
+  echo "shot: capturing (a few seconds; opening the port resets the board)..."
+fi
+( cd "$here" && "$PY" screenshot.py "$out" ${passthrough[@]+"${passthrough[@]}"} )
+
+echo "shot: $out"
+if [ "$open_after" -eq 1 ]; then
+  open "$out"
+fi

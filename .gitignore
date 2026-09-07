@@ -1,0 +1,12 @@
+.venv/
+.pio/
+.vscode/
+include/secrets.h
+
+# Build artefacts
+tools/fontconvert
+__pycache__/
+*.pyc
+
+# Screen captures
+*.png.raw

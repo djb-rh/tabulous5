@@ -1,0 +1,9 @@
+# Blurt Box — 16 MB ESP32-P4 flash layout.
+# No OTA: one 6 MB app slot, and everything else to LittleFS for word packs,
+# sound effects and icons (~10.4 MB). The data partition must be named "spiffs"
+# — that's the label Arduino's LittleFS.begin() looks for by default.
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x5000,
+phy_init,   data, phy,     0xe000,   0x1000,
+factory,    app,  factory, 0x10000,  0x600000,
+spiffs,     data, spiffs,  0x610000, 0x9F0000,
