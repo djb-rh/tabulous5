@@ -124,7 +124,7 @@ void drawHome() {
     drawLabel(buf, x + card_w / 2, 292, kText, &fonts::FreeSansBold24pt7b,
               middle_center, 2);
     char turns[40];
-    snprintf(turns, sizeof(turns), "%u of %u turns  ·  tap to rename",
+    snprintf(turns, sizeof(turns), "%u of %u turns  -  tap to rename",
              (unsigned)g_game->turnsTaken(t), (unsigned)s.rounds_each);
     drawLabel(turns, x + card_w / 2, 168 + card_h - 22, up ? kAccent : kMuted,
               &fonts::FreeSans9pt7b, middle_center);

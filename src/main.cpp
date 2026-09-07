@@ -290,7 +290,12 @@ void loop() {
     w_au = p3 - p2;
     w_tk = p4 - p3;
   }
-  if (total > 25000) {
+  // Not while emulating. Every NES frame exceeds this threshold by design, and
+  // a Serial.printf per frame with a host attached blocks long enough to
+  // change the very number being measured — the same trap that made touch look
+  // broken earlier in this project. nes_ui reports its own timings once a
+  // second instead.
+  if (total > 25000 && app::current() != app::GameId::Nes) {
     Serial.printf("slow loop %u ms: m5=%u tap=%u orient=%u audio=%u tick=%u\n",
                   (unsigned)(total / 1000), (unsigned)((p0 - loop_start) / 1000),
                   (unsigned)((p1 - p0) / 1000), (unsigned)((p2 - p1) / 1000),

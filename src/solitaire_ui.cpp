@@ -611,7 +611,7 @@ void repaintAll() {
     drawLabel("YOU WIN", kW / 2, kH / 2 - 20, kGood,
               &fonts::FreeSansBold24pt7b, middle_center);
     char buf[48];
-    snprintf(buf, sizeof(buf), "%u:%02u  ·  %d moves",
+    snprintf(buf, sizeof(buf), "%u:%02u  -  %d moves",
              (unsigned)(g_elapsed_s / 60), (unsigned)(g_elapsed_s % 60),
              g_game->moves());
     drawLabel(buf, kW / 2, kH / 2 + 36, kMuted, &fonts::FreeSans12pt7b,

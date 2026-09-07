@@ -118,7 +118,7 @@ void drawHome() {
     snprintf(buf, sizeof(buf), "%u", (unsigned)g_game->score(t));
     drawLabel(buf, x + card_w / 2, y + 130, kText, &fonts::FreeSansBold24pt7b,
               middle_center, 2);
-    drawLabel(starts ? "starts  ·  tap to rename" : "tap to rename",
+    drawLabel(starts ? "starts  -  tap to rename" : "tap to rename",
               x + card_w / 2, y + card_h - 24, starts ? kAccent : kMuted,
               &fonts::FreeSans9pt7b, middle_center);
     addAction(Rect{x, y, card_w, card_h}, Action::EditTeam, i);
@@ -533,7 +533,7 @@ void drawWords() {
   drawLabel("WORD PACKS", kMargin, 44, kText, &fonts::FreeSansBold18pt7b);
 
   char line[160];
-  snprintf(line, sizeof(line), "%u packs, %u phrases   ·   %u KB used of %u KB",
+  snprintf(line, sizeof(line), "%u packs, %u phrases   -   %u KB used of %u KB",
            (unsigned)g_report.packs_loaded, (unsigned)g_report.phrases_total,
            (unsigned)(g_report.bytes_used / 1024),
            (unsigned)(g_report.bytes_total / 1024));

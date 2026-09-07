@@ -21,6 +21,8 @@ enum class GameId : uint8_t {
   Minesweeper = 3,
   Sudoku = 4,
   Solitaire = 5,
+  Joypad = 6,
+  Nes = 7,
 };
 
 void begin(std::vector<Pack> *packs, const content::LoadReport &report);

@@ -10,3 +10,6 @@ __pycache__/
 
 # Screen captures
 *.png.raw
+
+# Test ROMs are other people's work; see data/roms/README.md
+data/roms/*.nes

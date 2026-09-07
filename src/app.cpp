@@ -1,6 +1,8 @@
 #include "app.h"
 
 #include "glyphs.h"
+#include "joypad_ui.h"
+#include "nes_ui.h"
 
 #include <M5Unified.h>
 
@@ -167,6 +169,41 @@ const Entry kEntries[] = {
      "\n"
      "The level button cycles Easy, Medium, Hard and Expert, which start\n"
      "you with fewer and fewer clues."},
+
+    {"Gamepad Test", "On-screen NES pad. Hold it and see how it feels.",
+     0x6B7280, glyphs::Glyph::None, GameId::Joypad,
+     "A test rig, not a game. It draws the on-screen controller an NES\n"
+     "emulator would use and lights each control while you hold it, so the\n"
+     "layout can be judged before there is anything to play.\n"
+     "\n"
+     "The picture area shows the eight buttons in the order the NES itself\n"
+     "reports them, plus the raw byte a core would be handed.\n"
+     "\n"
+     "Several controls work at once - hold a direction and press A. The\n"
+     "corners of the pad give diagonals.\n"
+     "\n"
+     "It sits at 2x (512x480) because that leaves 33 mm either side for the\n"
+     "controls. At 3x the picture is bigger but the columns shrink to 22 mm,\n"
+     "which is too narrow for a thumb.\n"
+     "\n"
+     "Hide it from SETTINGS when it is in the way."},
+
+    {"NES", "Pick a ROM and play it. No sound yet.", 0x8B2E3F,
+     glyphs::Glyph::None, GameId::Nes,
+     "Runs NES ROMs found in /roms on the device's own storage. Put .nes\n"
+     "files in data/roms and flash them with: pio run -e tab5 -t uploadfs\n"
+     "\n"
+     "Pick a ROM from the list. Anything it cannot run is still listed, but\n"
+     "dimmed and labelled with the reason - usually a memory mapper the core\n"
+     "does not implement. NROM, UxROM, MMC1 and MMC3 are supported.\n"
+     "\n"
+     "The controller is the same on-screen pad as Gamepad Test: the corners\n"
+     "of the D-pad give diagonals, and several controls work at once.\n"
+     "MENU stops the game and goes back to the list.\n"
+     "\n"
+     "There is no sound. The core has no APU yet.\n"
+     "\n"
+     "ROMs are yours to supply. None are shipped with this device."},
 };
 
 constexpr int kEntryCount = (int)(sizeof(kEntries) / sizeof(kEntries[0]));
@@ -633,6 +670,12 @@ void launch(GameId id) {
     g_phrase.begin(g_packs, s);
     ui::begin(&g_phrase, g_packs, g_report);
     ui::invalidate();
+  } else if (id == GameId::Nes) {
+    nes_ui::begin();
+    nes_ui::invalidate();
+  } else if (id == GameId::Joypad) {
+    joypad_ui::begin();
+    joypad_ui::invalidate();
   } else if (id == GameId::Solitaire) {
     solitaire_ui::begin(&g_solitaire);
     solitaire_ui::invalidate();
@@ -676,6 +719,10 @@ bool wantsOrientation() {
     case GameId::Minesweeper:
     case GameId::Sudoku:
     case GameId::Solitaire:
+    // Held in two hands in one orientation, and the IMU shares the bus with
+    // the touch controller this screen polls hardest of anything here.
+    case GameId::Joypad:
+    case GameId::Nes:
       return false;
     default:
       return true;  // the shell, where taps are rare
@@ -686,6 +733,8 @@ void invalidate() {
   g_dirty = true;
   if (g_current == GameId::PhraseCraze) ui::invalidate();
   if (g_current == GameId::FiveHead) fivehead_ui::invalidate();
+  if (g_current == GameId::Joypad) joypad_ui::invalidate();
+  if (g_current == GameId::Nes) nes_ui::invalidate();
   if (g_current == GameId::Minesweeper) mines_ui::invalidate();
   if (g_current == GameId::Sudoku) sudoku_ui::invalidate();
   if (g_current == GameId::Solitaire) solitaire_ui::invalidate();
@@ -756,6 +805,10 @@ void tick(uint32_t now_ms) {
   else if (g_current == GameId::Minesweeper) mines_ui::tick(now_ms);
   else if (g_current == GameId::Sudoku) sudoku_ui::tick(now_ms);
   else if (g_current == GameId::Solitaire) solitaire_ui::tick(now_ms);
+  // Joypad polls raw touch itself rather than waiting for tap edges, so it
+  // gets no handleTap below.
+  else if (g_current == GameId::Joypad) joypad_ui::tick(now_ms);
+  else if (g_current == GameId::Nes) nes_ui::tick(now_ms);
 }
 
 void handleTap(int x, int y, uint32_t now_ms) {
@@ -914,6 +967,10 @@ void handleTap(int x, int y, uint32_t now_ms) {
     sudoku_ui::handleTap(x, y, now_ms);
   else if (g_current == GameId::Solitaire)
     solitaire_ui::handleTap(x, y, now_ms);
+  // Joypad is absent on purpose: it polls raw touch rather than taking edges.
+  // NES takes taps only while picking a ROM, and polls once one is running.
+  else if (g_current == GameId::Nes)
+    nes_ui::handleTap(x, y, now_ms);
 }
 
 }  // namespace app
