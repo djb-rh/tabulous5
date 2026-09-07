@@ -34,6 +34,14 @@ THE SOFTWARE.
 
 #include "agnes.h"
 
+/* AGNES_HOT marks the functions on the per-cycle path. It expands to nothing
+   unless the including build defines it — see src/agnes_amalgam.c, which sets
+   it to IRAM_ATTR so this code runs from internal RAM rather than through the
+   flash cache. Only these definitions differ from upstream; see iram.patch. */
+#ifndef AGNES_HOT
+#define AGNES_HOT
+#endif
+
 //-----------------------------------------------------------------------------
 // Headers
 //-----------------------------------------------------------------------------
@@ -601,7 +609,7 @@ bool agnes_restore_state(agnes_t *agnes, const agnes_state_t *state) {
     return true;
 }
 
-bool agnes_tick(agnes_t *agnes, bool *out_new_frame) {
+AGNES_HOT bool agnes_tick(agnes_t *agnes, bool *out_new_frame) {
     int cpu_cycles = cpu_tick(&agnes->cpu);
     if (cpu_cycles == 0) {
         return false;
@@ -678,7 +686,7 @@ void cpu_init(cpu_t *cpu, agnes_t *agnes) {
     cpu_restore_flags(cpu, 0x24);
 }
 
-int cpu_tick(cpu_t *cpu) {
+AGNES_HOT int cpu_tick(cpu_t *cpu) {
     if (cpu->stall > 0) {
         cpu->stall--;
         return 1;
@@ -778,7 +786,7 @@ void cpu_set_dma_stall(cpu_t *cpu) {
     cpu->stall = (cpu->cycles & 0x1) ? 514 : 513;
 }
 
-void cpu_write8(cpu_t *cpu, uint16_t addr, uint8_t val) {
+AGNES_HOT void cpu_write8(cpu_t *cpu, uint16_t addr, uint8_t val) {
     agnes_t *agnes = cpu->agnes;
 
     if (addr < 0x2000) {
@@ -802,7 +810,7 @@ void cpu_write8(cpu_t *cpu, uint16_t addr, uint8_t val) {
     }
 }
 
-uint8_t cpu_read8(cpu_t *cpu, uint16_t addr) {
+AGNES_HOT uint8_t cpu_read8(cpu_t *cpu, uint16_t addr) {
     agnes_t *agnes = cpu->agnes;
 
     uint8_t res = 0;
@@ -825,7 +833,7 @@ uint8_t cpu_read8(cpu_t *cpu, uint16_t addr) {
     return res;
 }
 
-uint16_t cpu_read16(cpu_t *cpu, uint16_t addr) {
+AGNES_HOT uint16_t cpu_read16(cpu_t *cpu, uint16_t addr) {
     uint8_t lo = cpu_read8(cpu, addr);
     uint8_t hi = cpu_read8(cpu, addr + 1);
     return (hi << 8) | lo;
@@ -956,7 +964,7 @@ void ppu_init(ppu_t *ppu, agnes_t *agnes) {
     ppu_write_register(ppu, 0x2001, 0);
 }
 
-void ppu_tick(ppu_t *ppu, bool *out_new_frame) {
+AGNES_HOT void ppu_tick(ppu_t *ppu, bool *out_new_frame) {
     bool rendering_enabled = ppu->masks.show_background || ppu->masks.show_sprites;
 
     // https://wiki.nesdev.com/w/index.php/PPU_frame_timing#Even.2FOdd_Frames
@@ -1005,7 +1013,7 @@ void ppu_tick(ppu_t *ppu, bool *out_new_frame) {
     }
 }
 
-static void scanline_visible_pre(ppu_t *ppu, bool *out_new_frame) {
+AGNES_HOT static void scanline_visible_pre(ppu_t *ppu, bool *out_new_frame) {
     bool scanline_visible = ppu->scanline >= 0 && ppu->scanline < 240;
     bool scanline_pre = ppu->scanline == 261;
     bool dot_visible = ppu->dot > 0 && ppu->dot <= 256;
@@ -1397,7 +1405,7 @@ static void set_pixel_color_ix(ppu_t *ppu, int x, int y, uint8_t color_ix) {
     ppu->screen_buffer[ix] = color_ix;
 }
 
-static uint8_t ppu_read8(ppu_t *ppu, uint16_t addr) {
+AGNES_HOT static uint8_t ppu_read8(ppu_t *ppu, uint16_t addr) {
     addr = addr & 0x3fff;
     uint8_t res = 0;
     if (addr >= 0x3f00) { // $3F00 - $3FFF, palette reads are most common
@@ -1412,7 +1420,7 @@ static uint8_t ppu_read8(ppu_t *ppu, uint16_t addr) {
     return res;
 }
 
-static void ppu_write8(ppu_t *ppu, uint16_t addr, uint8_t val) {
+AGNES_HOT static void ppu_write8(ppu_t *ppu, uint16_t addr, uint8_t val) {
     addr = addr & 0x3fff;
     if (addr >= 0x3f00) { // $3F00 - $3FFF
         int palette_ix = g_palette_addr_map[addr & 0x1f];

@@ -179,9 +179,16 @@ bool load(int index) {
 
   File f = LittleFS.open(e.path, "r");
   if (!f) { g_error = "cannot open ROM"; return false; }
-  // The ROM goes in PSRAM: agnes keeps pointers into it for the life of the
-  // session, and internal RAM is wanted for the core itself.
-  g_rom_data = (uint8_t *)heap_caps_malloc(e.bytes, MALLOC_CAP_SPIRAM);
+  // INTERNAL RAM, not PSRAM. agnes keeps pointers into this buffer and reads
+  // it on every instruction fetch and every pattern fetch — tens of thousands
+  // of random reads per frame. Putting it in PSRAM cost more than everything
+  // else in the frame put together. Most cartridges are tens of KB against
+  // ~440 KB free, so this fits; oversized ones fall back to PSRAM and simply
+  // run slower rather than refusing to load.
+  g_rom_data = (uint8_t *)heap_caps_malloc(e.bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (!g_rom_data) {
+    g_rom_data = (uint8_t *)heap_caps_malloc(e.bytes, MALLOC_CAP_SPIRAM);
+  }
   if (!g_rom_data) { f.close(); g_error = "out of memory for ROM"; return false; }
   const size_t got = f.read(g_rom_data, e.bytes);
   f.close();

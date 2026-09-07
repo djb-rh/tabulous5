@@ -1,0 +1,20 @@
+# Local change to agnes
+
+Upstream: https://github.com/kgabis/agnes (MIT)
+
+One change only, and it is a no-op unless the including build opts in:
+
+* An `AGNES_HOT` macro is defined near the top, empty by default.
+* Nine functions on the per-cycle path are tagged with it: `agnes_tick`,
+  `cpu_tick`, `ppu_tick`, `cpu_read8`, `cpu_read16`, `cpu_write8`,
+  `ppu_read8`, `ppu_write8` and `scanline_visible_pre`.
+
+`src/agnes_amalgam.c` defines `AGNES_HOT` to `IRAM_ATTR`, which places those
+functions in the ESP32-P4's internal instruction RAM instead of running them
+through the flash cache. `ppu_tick` alone is called about 89,000 times per
+frame, so its fetch path dominates.
+
+Nothing else is modified. With `AGNES_HOT` undefined the file is byte-for-byte
+equivalent to upstream in behaviour and still builds on a host with no ESP
+headers, which is how the ROMs were verified before any of this reached
+hardware.

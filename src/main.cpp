@@ -9,6 +9,7 @@
 // the drawing in ui.cpp.
 
 #include <M5Unified.h>
+#include <esp_heap_caps.h>
 
 #include <vector>
 
@@ -62,6 +63,10 @@ void setup() {
   orientation::setEnabled(settings.auto_rotate);
   orientation::setStableMs(settings.flip_delay_ms);
 
+  Serial.printf("cpu=%uMHz psram=%uKB internal=%uKB\n",
+                (unsigned)getCpuFrequencyMhz(),
+                (unsigned)(ESP.getFreePsram() / 1024),
+                (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
   Serial.printf("imu=%d speaker=%d rot=%u calibrated=%d\n",
                 (int)M5.Imu.isEnabled(), (int)M5.Speaker.isEnabled(),
                 (unsigned)orientation::rotation(),
