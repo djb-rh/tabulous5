@@ -8,8 +8,9 @@
 #include <cstring>
 #include <vector>
 
-#include "agnes.h"
 #include "app.h"
+#include "cartridge.h"
+#include "cpu6502.h"
 #include "joypad.h"
 #include "joypad_ui.h"
 #include "nesrom.h"
@@ -41,9 +42,14 @@ std::vector<Entry> g_roms;
 Mode g_mode = Mode::Picking;
 bool g_dirty = true;
 
-agnes_t *g_agnes = nullptr;
-uint8_t *g_rom_data = nullptr;  // agnes keeps pointers into this; it must live
+Cpu6502 *g_cpu = nullptr;
+Cartridge *g_cart = nullptr;
 int g_playing = -1;
+
+// The PPU hands back finished scanlines in chunks rather than whole frames, so
+// the callback has to know how far down the picture it has got. Reset each
+// frame; the core always emits them in order.
+volatile int g_chunk_row = 0;
 const char *g_error = "";
 
 // The picture, padded to a stride that avoids the cache cliff. Held for the
@@ -162,48 +168,56 @@ void drawPicker() {
 // --------------------------------------------------------------------- play
 
 void releaseCore() {
-  if (g_agnes) {
-    agnes_destroy(g_agnes);
-    g_agnes = nullptr;
-  }
-  if (g_rom_data) {
-    heap_caps_free(g_rom_data);
-    g_rom_data = nullptr;
-  }
+  delete g_cpu;
+  g_cpu = nullptr;
+  delete g_cart;   // opened the ROM file itself, and closes it
+  g_cart = nullptr;
   g_playing = -1;
+}
+
+// Called by the PPU every SCANLINES_PER_BUFFER finished lines, with RGB565
+// pixels — no palette conversion needed, which is the single biggest saving
+// over the previous core. Doubled straight into the padded frame buffer.
+IRAM_ATTR void drawChunk(uint8_t *buffer, uint32_t size) {
+  if (!g_frame) return;
+  const uint16_t *src = (const uint16_t *)buffer;
+  const int rows = (int)(size / sizeof(uint16_t)) / joypad::kNesW;
+  const int pad = (joypad::kVideoStride - joypad::kVideoW) / 2;
+
+  for (int r = 0; r < rows; r++) {
+    const int y = g_chunk_row + r;
+    if (y >= joypad::kNesH) break;
+    uint16_t *d0 = g_frame + (size_t)(y * 2) * joypad::kVideoStride + pad;
+    uint16_t *d1 = d0 + joypad::kVideoStride;
+    const uint16_t *s = src + (size_t)r * joypad::kNesW;
+    for (int x = 0; x < joypad::kNesW; x++) {
+      const uint16_t v = s[x];
+      d0[0] = v; d0[1] = v;
+      d1[0] = v; d1[1] = v;
+      d0 += 2; d1 += 2;
+    }
+  }
+  g_chunk_row += rows;
 }
 
 bool load(int index) {
   releaseCore();
   const Entry &e = g_roms[index];
 
-  File f = LittleFS.open(e.path, "r");
-  if (!f) { g_error = "cannot open ROM"; return false; }
-  // INTERNAL RAM, not PSRAM. agnes keeps pointers into this buffer and reads
-  // it on every instruction fetch and every pattern fetch — tens of thousands
-  // of random reads per frame. Putting it in PSRAM cost more than everything
-  // else in the frame put together. Most cartridges are tens of KB against
-  // ~440 KB free, so this fits; oversized ones fall back to PSRAM and simply
-  // run slower rather than refusing to load.
-  g_rom_data = (uint8_t *)heap_caps_malloc(e.bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  if (!g_rom_data) {
-    g_rom_data = (uint8_t *)heap_caps_malloc(e.bytes, MALLOC_CAP_SPIRAM);
-  }
-  if (!g_rom_data) { f.close(); g_error = "out of memory for ROM"; return false; }
-  const size_t got = f.read(g_rom_data, e.bytes);
-  f.close();
-  if (got != e.bytes) { g_error = "short read"; releaseCore(); return false; }
-
-  // agnes_make mallocs ~83 KB. Deliberately left in INTERNAL RAM: emulation is
-  // random access over a 61 KB screen buffer and 2 KB of CPU RAM, and PSRAM
-  // would make every one of those accesses slower.
-  g_agnes = agnes_make();
-  if (!g_agnes) { g_error = "out of memory for core"; releaseCore(); return false; }
-  if (!agnes_load_ines_data(g_agnes, g_rom_data, e.bytes)) {
+  // The cartridge opens the file itself and streams from it, so there is no
+  // whole-ROM buffer to place any more.
+  g_cart = new Cartridge(e.path, ROMBackend::LRU);
+  if (!g_cart || !g_cart->isValid()) {
     g_error = "core rejected this ROM";
     releaseCore();
     return false;
   }
+
+  g_cpu = new Cpu6502();
+  if (!g_cpu) { g_error = "out of memory for core"; releaseCore(); return false; }
+  g_cpu->bus.insertCartridge(g_cart);
+  g_cpu->bus.ppu.setDrawCallback(drawChunk);
+  g_cpu->reset();
 
   if (!g_frame) {
     g_frame = (uint16_t *)heap_caps_malloc(
@@ -220,29 +234,16 @@ bool load(int index) {
   return true;
 }
 
-// 256x240 palette indices out of the core, 2x into the padded buffer.
+// The picture is already assembled by drawChunk, so this only hands it over.
 void blit() {
   auto &g = gfx();
-  const uint32_t t0 = micros();
   const int pad = (joypad::kVideoStride - joypad::kVideoW) / 2;
-  for (int y = 0; y < joypad::kNesH; y++) {
-    uint16_t *r0 = g_frame + (size_t)(y * 2) * joypad::kVideoStride + pad;
-    uint16_t *r1 = r0 + joypad::kVideoStride;
-    for (int x = 0; x < joypad::kNesW; x++) {
-      const agnes_color_t c = agnes_get_screen_pixel(g_agnes, x, y);
-      const uint16_t v = g.color565(c.r, c.g, c.b);
-      r0[0] = v; r0[1] = v;
-      r1[0] = v; r1[1] = v;
-      r0 += 2; r1 += 2;
-    }
-  }
   const uint32_t t1 = micros();
   g.startWrite();
   g.pushImage(joypad::kVideoX - pad, joypad::kVideoY, joypad::kVideoStride,
               joypad::kVideoH, g_frame);
   g.endWrite();
   g.waitDMA();
-  g_us_conv += t1 - t0;
   g_us_push += micros() - t1;
 }
 
@@ -268,28 +269,14 @@ void runFrame(uint32_t now_ms) {
   }
   if (!menu_held) g_menu_down = false;
 
-  agnes_input_t in;
-  memset(&in, 0, sizeof(in));
-  in.a = (g_pad & joypad::kA) != 0;
-  in.b = (g_pad & joypad::kB) != 0;
-  in.select = (g_pad & joypad::kSelect) != 0;
-  in.start = (g_pad & joypad::kStart) != 0;
-  in.up = (g_pad & joypad::kUp) != 0;
-  in.down = (g_pad & joypad::kDown) != 0;
-  in.left = (g_pad & joypad::kLeft) != 0;
-  in.right = (g_pad & joypad::kRight) != 0;
-  agnes_set_input(g_agnes, &in, nullptr);
+  // joypad's bit order is the NES shift register's, which is what the core
+  // expects, so the pad byte goes across untranslated.
+  g_cpu->bus.setController(g_pad);
 
   const uint32_t t_emu = micros();
-  const bool ok = agnes_next_frame(g_agnes);
+  g_chunk_row = 0;
+  g_cpu->clockFrame();   // drawChunk fires ~30 times during this
   g_us_emu += micros() - t_emu;
-  if (!ok) {
-    g_error = "core stopped";
-    releaseCore();
-    g_mode = Mode::Picking;
-    g_dirty = true;
-    return;
-  }
 
   blit();
   drawPlayChrome(false);
@@ -337,7 +324,7 @@ void invalidate() {
 bool playing() { return g_mode == Mode::Playing; }
 
 void tick(uint32_t now_ms) {
-  if (g_mode == Mode::Playing && g_agnes) {
+  if (g_mode == Mode::Playing && g_cpu) {
     if (g_dirty) {
       g_dirty = false;
       drawPlayChrome(true);

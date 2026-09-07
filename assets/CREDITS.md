@@ -6,8 +6,8 @@ Everything in `data/sfx/` is synthesised by [`tools/make_sfx.py`](../tools/make_
 from plain arithmetic — sine partials, seeded white noise, a one-pole lowpass
 and exponential envelopes. Nothing is sampled from, derived from, or trained on
 any third-party recording, so these carry **no attribution requirement and no
-licence obligations**. They are part of this project and covered by whatever
-licence the project carries.
+licence obligations**. They are part of this project and covered by its licence
+(GPL-3.0-or-later; see [../COPYING.md](../COPYING.md)).
 
 Regenerate with:
 
@@ -54,6 +54,13 @@ are CC0, as is the CC0-filtered subset of OpenGameArt. Note that the bulk of
 Freesound is CC-BY, *not* public domain; filter it out rather than quietly
 taking on an attribution requirement. Anything added from outside gets a row in
 this file naming its source and licence.
+
+## Emulator core
+
+`third_party/anemoia/` is the NES core from
+[Anemoia-ESP32](https://github.com/Shim06/Anemoia-ESP32) by Shim06, GPL-3.0.
+It is why this project is GPL rather than MIT. Local changes are listed in
+`third_party/anemoia/CHANGES.md`.
 
 ## Fonts and graphics
 
