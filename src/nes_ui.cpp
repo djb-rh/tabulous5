@@ -95,6 +95,9 @@ uint32_t g_audio_dropped = 0;
 constexpr uint32_t kApuRate = 44100;
 volatile uint32_t g_audio_made = 0;
 
+// DC blocker state. See onAudio.
+int32_t g_dc_x = 0, g_dc_y = 0;
+
 // The APU is not clocked by the CPU — upstream runs it in its own task, paced
 // entirely by i2s_write() blocking when the DMA is full. Replacing that with a
 // callback removed the brake, so the pacing has to come from somewhere else:
@@ -244,9 +247,23 @@ void onAudio(const uint16_t *samples, uint32_t bytes) {
       vTaskDelay(1);
       if (++spins > 200) { g_audio_dropped++; return; }  // consumer gone; give up
     }
-    // Unsigned to signed: the APU centres silence at 0x8000. Only one channel
-    // is kept — both carry the same value.
-    g_ring[g_ring_w] = (int16_t)((int32_t)samples[i * 2] - 32768);
+    // The APU's output is UNIPOLAR: generateSample() masks to 0xFF and shifts
+    // left 8, so it runs 0..0xFF00 with silence at ZERO, not offset-binary
+    // centred on 0x8000. Subtracting 32768 therefore pinned silence at full
+    // negative DC, and every chunk boundary became a step between that and
+    // zero — audible as a pop about 43 times a second.
+    //
+    // A one-pole DC blocker removes the offset instead of assuming one:
+    //   y = x - x_prev + R*y_prev,  R = 4085/4096 (~34 Hz corner at 44.1 kHz)
+    // Silence then really is silence, and chunks join without a step.
+    // Only one channel is kept — both carry the same value.
+    const int32_t x = (int32_t)samples[i * 2];
+    int32_t y = x - g_dc_x + ((g_dc_y * 4085) >> 12);
+    g_dc_x = x;
+    g_dc_y = y;
+    if (y > 32767) y = 32767;
+    if (y < -32768) y = -32768;
+    g_ring[g_ring_w] = (int16_t)y;
     g_ring_w = next;
     g_audio_made++;
   }
@@ -305,6 +322,7 @@ bool load(int index) {
   g_ring_w = g_ring_r = 0;
   g_audio_dropped = 0;
   g_audio_made = 0;
+  g_dc_x = g_dc_y = 0;
   Apu2A03::setAudioCallback(onAudio);
   g_cpu->apu.setVolume(80);
 
