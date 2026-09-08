@@ -1,7 +1,7 @@
 #ifndef PPU_PALETTES_H
 #define PPU_PALETTES_H
 
-#include "anemoia_config.h"
+#include "../anemoia_config.h"
 #include <stdint.h>
 
 // clang-format off

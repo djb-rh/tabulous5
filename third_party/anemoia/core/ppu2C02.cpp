@@ -74,7 +74,7 @@ inline uint8_t* Ppu2C02::ppuReadPtr(uint16_t addr)
     return nullptr;
 }
 
-IRAM_ATTR void Ppu2C02::cpuWrite(uint16_t addr, uint8_t data)
+ANEMOIA_IRAM void Ppu2C02::cpuWrite(uint16_t addr, uint8_t data)
 {
     PROFILE_SCOPE(PROF_PPU_CPU_WRITE);
     switch (addr)
@@ -123,7 +123,7 @@ IRAM_ATTR void Ppu2C02::cpuWrite(uint16_t addr, uint8_t data)
     }
 }
 
-IRAM_ATTR uint8_t Ppu2C02::cpuRead(uint16_t addr)
+ANEMOIA_IRAM uint8_t Ppu2C02::cpuRead(uint16_t addr)
 {
     PROFILE_SCOPE(PROF_PPU_CPU_READ);
     uint8_t data = 0x00;
@@ -149,20 +149,20 @@ IRAM_ATTR uint8_t Ppu2C02::cpuRead(uint16_t addr)
     return data;
 }
 
-IRAM_ATTR void Ppu2C02::setVBlank()
+ANEMOIA_IRAM void Ppu2C02::setVBlank()
 {
     status.VBlank = 1;
     if (control.Vblank_NMI) bus->NMI();
 }
 
-IRAM_ATTR void Ppu2C02::clearVBlank()
+ANEMOIA_IRAM void Ppu2C02::clearVBlank()
 {
     status.VBlank = 0;
     status.sprite_zero_hit = 0;
     status.sprite_overflow = 0;
 }
 
-IRAM_ATTR void Ppu2C02::renderScanline(uint16_t current_scanline)
+ANEMOIA_IRAM void Ppu2C02::renderScanline(uint16_t current_scanline)
 {
     scanline = current_scanline;
     transferScroll();

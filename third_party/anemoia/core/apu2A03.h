@@ -4,8 +4,13 @@
 #include <Arduino.h>
 #include <cstdint>
 
-#include "anemoia_config.h"
-#include "driver/i2s.h"
+#include "../anemoia_config.h"
+// driver/i2s.h removed. Upstream writes samples straight to the legacy I2S
+// driver; M5Unified's speaker on this device uses the NEW i2s driver, and
+// ESP-IDF calls abort() at init if both are linked into one binary. Samples
+// now leave through a callback and the host decides what to do with them —
+// which is what this device wants anyway, since it already owns an audio
+// stack. See ../CHANGES.md.
 
 #ifndef COMPOSITE_VIDEO
     #define SAMPLE_RATE 44100
@@ -34,9 +39,14 @@ public:
     void cpuWrite(uint16_t addr, uint8_t data);
     uint8_t cpuRead(uint16_t addr);
     void setVolume(uint8_t vol);
+
+    // Receives interleaved stereo 16-bit samples whenever a buffer fills.
+    typedef void (*AudioCallback)(const uint16_t* samples, uint32_t bytes);
+    static void setAudioCallback(AudioCallback cb) { audio_callback = cb; }
     void clock();
     void reset();
     static uint16_t audio_buffer[AUDIO_BUFFER_SIZE * 2];
+    static AudioCallback audio_callback;
 
     uint8_t DMC_sample_byte = 0;
     bool IRQ = false;

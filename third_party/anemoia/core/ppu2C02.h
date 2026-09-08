@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <stdint.h>
 
-#include "anemoia_config.h"
+#include "../anemoia_config.h"
 #include "../profiler.h"
 #include "cartridge.h"
 #include "mirror_mode.h"

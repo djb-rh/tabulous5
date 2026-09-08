@@ -6,10 +6,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "anemoia_debug.h"
+#include "../anemoia_debug.h"
 #include "../flash_mmap.h"
 #include "Arduino.h"
-#include "anemoia_config.h"
+#include "../anemoia_config.h"
 #include "rom_backends.h"
 #include "rom_types.h"
 

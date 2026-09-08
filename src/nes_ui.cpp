@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "app.h"
-#include "cartridge.h"
-#include "cpu6502.h"
+#include "../third_party/anemoia/core/cartridge.h"
+#include "../third_party/anemoia/core/cpu6502.h"
 #include "joypad.h"
 #include "joypad_ui.h"
 #include "nesrom.h"
@@ -240,6 +240,12 @@ void blit() {
   const int pad = (joypad::kVideoStride - joypad::kVideoW) / 2;
   const uint32_t t1 = micros();
   g.startWrite();
+  // No byte swap. Upstream targets TFT_eSPI with SCREEN_SWAP_BYTES set, so it
+  // looks like the pixels ought to need swapping here — they do not. The
+  // palette in ppu_palettes.h is stored host-order: entry 0 is 0x630C, which
+  // decodes to RGB(97,97,97), the NES's mid grey. Byte-swapped it would be
+  // bright green. Checked rather than eyeballed, because the two look equally
+  // plausible on a title screen.
   g.pushImage(joypad::kVideoX - pad, joypad::kVideoY, joypad::kVideoStride,
               joypad::kVideoH, g_frame);
   g.endWrite();

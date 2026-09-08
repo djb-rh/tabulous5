@@ -11,7 +11,7 @@ Bus::~Bus()
 {
 }
 
-IRAM_ATTR void Bus::cpuWrite(uint16_t addr, uint8_t data)
+ANEMOIA_IRAM void Bus::cpuWrite(uint16_t addr, uint8_t data)
 {
     PROFILE_SCOPE(PROF_BUS_CPU_WRITE);
     if (uint8_t* p = write_pages[addr >> 8])
@@ -22,7 +22,7 @@ IRAM_ATTR void Bus::cpuWrite(uint16_t addr, uint8_t data)
     write_handlers[addr >> 8](this, addr, data);
 }
 
-IRAM_ATTR uint8_t Bus::cpuRead(uint16_t addr)
+ANEMOIA_IRAM uint8_t Bus::cpuRead(uint16_t addr)
 {
     PROFILE_SCOPE(PROF_BUS_CPU_READ);
     if (uint8_t* p = read_pages[addr >> 8]) return p[addr & 0xFF];
@@ -52,7 +52,7 @@ void Bus::reset()
     ppu.reset();
 }
 
-IRAM_ATTR void Bus::setPPUMirrorMode(MIRROR mirror)
+ANEMOIA_IRAM void Bus::setPPUMirrorMode(MIRROR mirror)
 {
     ppu.setMirror(mirror);
 }
@@ -74,12 +74,12 @@ void Bus::connectCPU(Cpu6502* n)
     cpu = n;
 }
 
-IRAM_ATTR void Bus::IRQ()
+ANEMOIA_IRAM void Bus::IRQ()
 {
     cpu->IRQ();
 }
 
-IRAM_ATTR void Bus::NMI()
+ANEMOIA_IRAM void Bus::NMI()
 {
     cpu->NMI();
 }

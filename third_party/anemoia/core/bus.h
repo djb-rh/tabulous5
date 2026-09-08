@@ -1,10 +1,10 @@
 #ifndef BUS_H
 #define BUS_H
 
-#include "anemoia_debug.h"
+#include "../anemoia_debug.h"
 #include "../profiler.h"
 #include "cartridge.h"
-#include "anemoia_config.h"
+#include "../anemoia_config.h"
 #include "ppu2C02.h"
 #include <Arduino.h>
 // TFT_eSPI removed: the only use was an unused ptr_screen member below,

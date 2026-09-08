@@ -27,7 +27,7 @@ inline void Cpu6502::write(uint16_t addr, uint8_t data)
     bus.cpuWrite(addr, data);
 }
 
-IRAM_ATTR void Cpu6502::OAM_DMA(uint8_t page)
+ANEMOIA_IRAM void Cpu6502::OAM_DMA(uint8_t page)
 {
     PROFILE_SCOPE(PROF_CPU_OAM_DMA);
     OAM_DMA_page = page << 8;
@@ -36,7 +36,7 @@ IRAM_ATTR void Cpu6502::OAM_DMA(uint8_t page)
     cycles += 512;
 }
 
-IRAM_ATTR void Cpu6502::clock(int i)
+ANEMOIA_IRAM void Cpu6502::clock(int i)
 {
     PROFILE_SCOPE(PROF_CPU_CLOCK);
     uint8_t opcode = 0x00;
@@ -346,7 +346,7 @@ IRAM_ATTR void Cpu6502::clock(int i)
     }
 }
 
-IRAM_ATTR void Cpu6502::clockFrame()
+ANEMOIA_IRAM void Cpu6502::clockFrame()
 {
     PROFILE_SCOPE(PROF_BUS_CLOCK);
     // 1 frame == 341 dots * 261 scanlines
@@ -428,7 +428,7 @@ void Cpu6502::reset()
     cycles = 8;
 }
 
-IRAM_ATTR void Cpu6502::apuWrite(uint16_t addr, uint8_t data)
+ANEMOIA_IRAM void Cpu6502::apuWrite(uint16_t addr, uint8_t data)
 {
     apu.cpuWrite(addr, data);
 }

@@ -36,15 +36,6 @@ std::vector<Pack> g_packs;
 }  // namespace
 
 void setup() {
-  // Bisecting an early hang: prove setup() is reached at all before M5.begin()
-  // touches any hardware. A generous TX timeout on purpose — this must not be
-  // dropped, and blocking here costs nothing.
-  Serial.begin(115200);
-  Serial.setTxTimeoutMs(500);
-  delay(300);
-  Serial.println("BOOT: setup entered");
-  Serial.flush();
-
   auto cfg = M5.config();
   cfg.output_power = true;
   M5.begin(cfg);

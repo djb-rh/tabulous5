@@ -38,3 +38,12 @@ about this device.
   most collision-prone filenames there are — with them exposed, any library
   asking for its own `"config.h"` silently got this one instead. That is not a
   theoretical risk: it hung the firmware before `Serial` came up.
+* `core/apu2A03.{h,cpp}` — the APU no longer writes to I2S itself. Upstream
+  calls `i2s_write()` on the **legacy** driver; M5Unified's speaker uses the
+  **new** one, and ESP-IDF calls `abort()` during init if both are linked, so
+  the firmware crash-looped before printing a single line. Samples now leave
+  through `Apu2A03::setAudioCallback()` and the host plays them. That is the
+  right shape here regardless: this device already owns an audio stack.
+* `IRAM_ATTR` is now `ANEMOIA_IRAM`, defined empty in `anemoia_config.h`.
+  Upstream puts ~99 KB of per-cycle code in internal RAM; define it back to
+  `IRAM_ATTR` to try that once the port is running.

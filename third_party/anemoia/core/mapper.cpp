@@ -25,7 +25,7 @@ void bankInit(BankCache* cache, Bank* banks, uint8_t num_banks, uint32_t bank_si
     }
 }
 
-IRAM_ATTR uint8_t* getBank(BankCache* cache, uint8_t bank_id, RomType rom)
+ANEMOIA_IRAM uint8_t* getBank(BankCache* cache, uint8_t bank_id, RomType rom)
 {
     cache->tick++;
 

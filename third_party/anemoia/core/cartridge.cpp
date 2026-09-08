@@ -136,19 +136,19 @@ void Cartridge::mapPPUPages(Ppu2C02* ppu)
     }
 }
 
-IRAM_ATTR void Cartridge::loadPRGBank(uint8_t* bank, uint16_t size, uint32_t offset)
+ANEMOIA_IRAM void Cartridge::loadPRGBank(uint8_t* bank, uint16_t size, uint32_t offset)
 {
     rom.seek(prg_base + offset);
     rom.read(bank, size);
 }
 
-IRAM_ATTR void Cartridge::loadCHRBank(uint8_t* bank, uint16_t size, uint32_t offset)
+ANEMOIA_IRAM void Cartridge::loadCHRBank(uint8_t* bank, uint16_t size, uint32_t offset)
 {
     rom.seek(chr_base + offset);
     rom.read(bank, size);
 }
 
-IRAM_ATTR void Cartridge::setMirrorMode(MIRROR mirror)
+ANEMOIA_IRAM void Cartridge::setMirrorMode(MIRROR mirror)
 {
     bus->setPPUMirrorMode(mirror);
 }
