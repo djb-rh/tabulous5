@@ -7,6 +7,7 @@
 #include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
 
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -116,7 +117,12 @@ uint32_t g_frames = 0, g_fps_at = 0, g_fps = 0;
 // Phase timings, accumulated over a second so one print covers many frames.
 uint32_t g_us_emu = 0, g_us_conv = 0, g_us_push = 0, g_us_sync = 0;
 
-enum class Action : uint8_t { None, Pick, Back };
+enum class Action : uint8_t { None, Pick, Back, PageUp, PageDown };
+
+// Pages rather than single steps: this list is about to hold thousands of
+// entries, and stepping one row at a time through that is not navigation.
+constexpr int kPickRows = 5;
+int g_pick_scroll = 0;
 
 void addAction(const Rect &r, Action a, int param = 0) {
   uikit::addTarget(r, (int)a, param);
@@ -161,6 +167,13 @@ void scan() {
     }
     g_roms.push_back(e);
   }
+
+  // Alphabetical, case-insensitively: the filesystem hands them back in
+  // whatever order it likes, which is no order at all to a person hunting for
+  // a title.
+  std::sort(g_roms.begin(), g_roms.end(), [](const Entry &a, const Entry &b) {
+    return strcasecmp(a.name, b.name) < 0;
+  });
 }
 
 // ------------------------------------------------------------------- picker
@@ -190,10 +203,16 @@ void drawPicker() {
   }
 
   const int row_h = 96, gap = 10, top = 110;
-  const int max_rows = (kH - top - 30) / (row_h + gap);
-  for (int i = 0; i < (int)g_roms.size() && i < max_rows; i++) {
+  const int total = (int)g_roms.size();
+  const int max_scroll = total > kPickRows ? total - kPickRows : 0;
+  if (g_pick_scroll > max_scroll) g_pick_scroll = max_scroll;
+  if (g_pick_scroll < 0) g_pick_scroll = 0;
+
+  for (int slot = 0; slot < kPickRows; slot++) {
+    const int i = g_pick_scroll + slot;
+    if (i >= total) break;
     const Entry &e = g_roms[i];
-    const Rect row{kMargin, top + i * (row_h + gap), kW - 2 * kMargin, row_h};
+    const Rect row{kMargin, top + slot * (row_h + gap), kW - 2 * kMargin, row_h};
     const bool ok = e.problem[0] == '\0';
 
     // A ROM that cannot run is still listed, dimmed, with the reason on it.
@@ -216,6 +235,27 @@ void drawPicker() {
     }
     uikit::drawLabel(sub, row.x + 28, row.y + 62, ink, &fonts::FreeSans12pt7b);
     if (ok) addAction(row, Action::Pick, i);
+  }
+
+  if (max_scroll > 0) {
+    const int by = top + kPickRows * (row_h + gap) + 4;
+    const Rect up{kMargin, by, 120, 58};
+    const Rect down{kMargin + 132, by, 120, 58};
+    const bool can_up = g_pick_scroll > 0;
+    const bool can_down = g_pick_scroll < max_scroll;
+    uikit::drawArrowButton(up, true, can_up ? kSurfaceLift : kSurface,
+                           can_up ? kText : kMuted);
+    uikit::drawArrowButton(down, false, can_down ? kSurfaceLift : kSurface,
+                           can_down ? kText : kMuted);
+    if (can_up) addAction(up, Action::PageUp);
+    if (can_down) addAction(down, Action::PageDown);
+
+    char pos[48];
+    snprintf(pos, sizeof(pos), "%d-%d of %d", g_pick_scroll + 1,
+             g_pick_scroll + kPickRows < total ? g_pick_scroll + kPickRows : total,
+             total);
+    uikit::drawLabel(pos, kMargin + 280, by + 29, kMuted,
+                     &fonts::FreeSansBold12pt7b, middle_left);
   }
 }
 
@@ -562,6 +602,18 @@ void handleTap(int x, int y, uint32_t) {
       }
       g_dirty = true;
       break;
+    case Action::PageUp:
+      audio::select();
+      g_pick_scroll -= kPickRows;
+      g_dirty = true;
+      break;
+
+    case Action::PageDown:
+      audio::select();
+      g_pick_scroll += kPickRows;
+      g_dirty = true;
+      break;
+
     case Action::Back:
       app::requestExit();
       break;
