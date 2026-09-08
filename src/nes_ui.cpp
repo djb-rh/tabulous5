@@ -2,7 +2,9 @@
 
 #include <LittleFS.h>
 #include <M5Unified.h>
+#include <esp_cache.h>
 #include <esp_heap_caps.h>
+#include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
 
 #include <cstdio>
 #include <cstring>
@@ -52,9 +54,14 @@ int g_playing = -1;
 volatile int g_chunk_row = 0;
 const char *g_error = "";
 
-// The picture, padded to a stride that avoids the cache cliff. Held for the
-// life of the screen: allocating 500 KB per frame would be absurd.
-uint16_t *g_frame = nullptr;
+// One NES frame of RGB565, in INTERNAL RAM. The transpose below reads it with
+// a stride, which is cheap here and would not be in PSRAM.
+uint16_t *g_nes = nullptr;
+
+// The panel's own framebuffer, written directly. See blit() for why.
+uint8_t *g_fb = nullptr;
+size_t g_fb_stride = 0;
+uint8_t g_fb_rot = 1;
 
 uint8_t g_pad = 0, g_pad_drawn = 0xFF;
 bool g_menu_down = false;
@@ -176,27 +183,13 @@ void releaseCore() {
 }
 
 // Called by the PPU every SCANLINES_PER_BUFFER finished lines, with RGB565
-// pixels — no palette conversion needed, which is the single biggest saving
-// over the previous core. Doubled straight into the padded frame buffer.
+// pixels — no palette conversion needed. Just accumulated; the scaling and the
+// transpose happen once per frame in blit().
 IRAM_ATTR void drawChunk(uint8_t *buffer, uint32_t size) {
-  if (!g_frame) return;
-  const uint16_t *src = (const uint16_t *)buffer;
+  if (!g_nes) return;
   const int rows = (int)(size / sizeof(uint16_t)) / joypad::kNesW;
-  const int pad = (joypad::kVideoStride - joypad::kVideoW) / 2;
-
-  for (int r = 0; r < rows; r++) {
-    const int y = g_chunk_row + r;
-    if (y >= joypad::kNesH) break;
-    uint16_t *d0 = g_frame + (size_t)(y * 2) * joypad::kVideoStride + pad;
-    uint16_t *d1 = d0 + joypad::kVideoStride;
-    const uint16_t *s = src + (size_t)r * joypad::kNesW;
-    for (int x = 0; x < joypad::kNesW; x++) {
-      const uint16_t v = s[x];
-      d0[0] = v; d0[1] = v;
-      d1[0] = v; d1[1] = v;
-      d0 += 2; d1 += 2;
-    }
-  }
+  if (g_chunk_row + rows > joypad::kNesH) return;
+  memcpy(g_nes + (size_t)g_chunk_row * joypad::kNesW, buffer, size);
   g_chunk_row += rows;
 }
 
@@ -219,12 +212,25 @@ bool load(int index) {
   g_cpu->bus.ppu.setDrawCallback(drawChunk);
   g_cpu->reset();
 
-  if (!g_frame) {
-    g_frame = (uint16_t *)heap_caps_malloc(
-        (size_t)joypad::kVideoStride * joypad::kVideoH * 2, MALLOC_CAP_SPIRAM);
+  if (!g_nes) {
+    g_nes = (uint16_t *)heap_caps_malloc(
+        (size_t)joypad::kNesW * joypad::kNesH * 2,
+        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   }
-  if (!g_frame) { g_error = "out of memory for framebuffer"; releaseCore(); return false; }
-  memset(g_frame, 0, (size_t)joypad::kVideoStride * joypad::kVideoH * 2);
+  if (!g_nes) { g_error = "out of memory for framebuffer"; releaseCore(); return false; }
+  memset(g_nes, 0, (size_t)joypad::kNesW * joypad::kNesH * 2);
+
+  // Resolve the panel's framebuffer once. config_detail() is public, so this
+  // needs no games with protected members.
+  auto *panel = (lgfx::Panel_DSI *)M5.Display.getPanel();
+  g_fb = (uint8_t *)panel->config_detail().buffer;
+  g_fb_stride = ((size_t)panel->config().panel_width * 2 + 3) & ~(size_t)3;
+  g_fb_rot = (uint8_t)M5.Display.getRotation();
+  if (!g_fb || (g_fb_rot != 1 && g_fb_rot != 3)) {
+    g_error = "unexpected panel orientation";
+    releaseCore();
+    return false;
+  }
 
   g_playing = index;
   g_error = "";
@@ -234,22 +240,69 @@ bool load(int index) {
   return true;
 }
 
-// The picture is already assembled by drawChunk, so this only hands it over.
-void blit() {
-  auto &g = gfx();
-  const int pad = (joypad::kVideoStride - joypad::kVideoW) / 2;
+// Writes the picture straight into the panel's framebuffer, transposed.
+//
+// The panel is natively 720x1280 PORTRAIT and the UI runs 1280x720 landscape,
+// so LovyanGFX's rotation maps a landscape scanline onto a COLUMN of the
+// framebuffer — every pixel of a horizontal run lands 1440 bytes from the last.
+// That is what made pushImage cost 29 ms: it is not the copy, it is the stride.
+//
+// The 2x scale has to touch every destination pixel anyway, so the transpose
+// rides along for free: iterating DOWN a landscape column walks the framebuffer
+// sequentially. The strided access moves to the source, which is 120 KB in
+// internal RAM where stride costs almost nothing.
+//
+// Mapping is taken from Panel_FrameBufferBase::drawPixelPreclipped rather than
+// guessed. For rotation 1: panel row = logical x, panel column = 719 - y.
+// For rotation 3 it is the other diagonal.
+IRAM_ATTR void blit() {
+  if (!g_fb || !g_nes) return;
   const uint32_t t1 = micros();
-  g.startWrite();
-  // No byte swap. Upstream targets TFT_eSPI with SCREEN_SWAP_BYTES set, so it
-  // looks like the pixels ought to need swapping here — they do not. The
-  // palette in ppu_palettes.h is stored host-order: entry 0 is 0x630C, which
-  // decodes to RGB(97,97,97), the NES's mid grey. Byte-swapped it would be
-  // bright green. Checked rather than eyeballed, because the two look equally
-  // plausible on a title screen.
-  g.pushImage(joypad::kVideoX - pad, joypad::kVideoY, joypad::kVideoStride,
-              joypad::kVideoH, g_frame);
-  g.endWrite();
-  g.waitDMA();
+
+  const int vx = joypad::kVideoX, vy = joypad::kVideoY;
+  const int logical_h = joypad::kPanelH, logical_w = joypad::kPanelW;
+
+  for (int sx = 0; sx < joypad::kNesW; sx++) {
+    const uint16_t *src = g_nes + sx;  // walk this source column
+    for (int k = 0; k < 2; k++) {      // each source column is two output ones
+      const int lx = vx + sx * 2 + k;
+      uint16_t *dst;
+      int step;
+      if (g_fb_rot == 1) {
+        // row = lx, column = 719 - y; ascending address = descending y.
+        dst = (uint16_t *)(g_fb + (size_t)lx * g_fb_stride) +
+              (logical_h - 1 - (vy + joypad::kVideoH - 1));
+        step = 1;
+      } else {
+        // rotation 3: row = 1279 - lx, column = y; ascending address = ascending y.
+        dst = (uint16_t *)(g_fb + (size_t)(logical_w - 1 - lx) * g_fb_stride) + vy;
+        step = 1;
+      }
+      if (g_fb_rot == 1) {
+        for (int sy = joypad::kNesH - 1; sy >= 0; sy--) {
+          const uint16_t v = src[(size_t)sy * joypad::kNesW];
+          dst[0] = v; dst[1] = v;
+          dst += 2;
+        }
+      } else {
+        for (int sy = 0; sy < joypad::kNesH; sy++) {
+          const uint16_t v = src[(size_t)sy * joypad::kNesW];
+          dst[0] = v; dst[1] = v;
+          dst += 2;
+        }
+      }
+      (void)step;
+    }
+  }
+
+  // The framebuffer is cached and the DSI scans it by DMA, so the writes have
+  // to be pushed out or the panel shows stale pixels. One flush over the whole
+  // touched span rather than 512 small ones.
+  const size_t first_row = (g_fb_rot == 1) ? vx : (logical_w - (vx + joypad::kVideoW));
+  esp_cache_msync(g_fb + first_row * g_fb_stride,
+                  (size_t)joypad::kVideoW * g_fb_stride,
+                  ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+
   g_us_push += micros() - t1;
 }
 

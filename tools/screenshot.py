@@ -98,7 +98,8 @@ def main():
         countdown(wait)
 
     p.reset_input_buffer()
-    p.write(b"f" if "--font" in sys.argv else b"s")
+    cmd = b"f" if "--font" in sys.argv else (b"p" if "--panel" in sys.argv else b"s")
+    p.write(cmd)
     p.flush()
 
     deadline = time.time() + 60
@@ -125,10 +126,11 @@ def main():
     rows = []
     for y in range(h):
         row = bytearray()
-        # Big-endian: LovyanGFX sprites store 565 in the panel's byte order,
-        # not the host's. Decoding little-endian shifts the bit boundaries and
-        # turns neighbouring gradient steps into unrelated hues.
-        for v in struct.unpack(">%dH" % w, body[y * w * 2:(y + 1) * w * 2]):
+        # Sprites store 565 big-endian (panel byte order); the panel's own
+        # framebuffer is host order. Decoding the wrong one shifts the bit
+        # boundaries and turns neighbouring shades into unrelated hues.
+        fmt = "<" if "--panel" in sys.argv else ">"
+        for v in struct.unpack(fmt + "%dH" % w, body[y * w * 2:(y + 1) * w * 2]):
             r, g, b = (v >> 11) & 0x1F, (v >> 5) & 0x3F, v & 0x1F
             # Replicate high bits into low so full scale stays full scale;
             # a plain shift would cap white at 248.

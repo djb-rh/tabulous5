@@ -9,6 +9,7 @@
 // the drawing in ui.cpp.
 
 #include <M5Unified.h>
+#include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
 #include <esp_heap_caps.h>
 
 #include <vector>
@@ -103,6 +104,46 @@ void setup() {
 // readable, so it never needed to be.
 void dumpCanvas(M5Canvas *canvas);
 
+// Dump what is ACTUALLY on the panel, by reading its framebuffer.
+//
+// The canvas capture re-renders through uikit::gfx(), so it cannot see
+// anything written straight to the framebuffer — which is how the emulator
+// draws. This reads the real thing, un-rotating as it goes, and is the only
+// way to check that mapping is right rather than merely plausible.
+void dumpPanel() {
+  Serial.setTxTimeoutMs(200);
+  auto *panel = (lgfx::Panel_DSI *)M5.Display.getPanel();
+  const uint8_t *fb = (const uint8_t *)panel->config_detail().buffer;
+  const size_t stride = ((size_t)panel->config().panel_width * 2 + 3) & ~(size_t)3;
+  const uint8_t rot = (uint8_t)M5.Display.getRotation();
+  if (!fb) {
+    Serial.println("SHOTFAIL no framebuffer");
+    Serial.setTxTimeoutMs(0);
+    return;
+  }
+
+  Serial.printf("SHOT %d %d\n", theme::kW, theme::kH);
+  static uint16_t row[theme::kW];
+  for (int y = 0; y < theme::kH; y++) {
+    for (int x = 0; x < theme::kW; x++) {
+      // Same mapping as Panel_FrameBufferBase::drawPixelPreclipped.
+      size_t prow, pcol;
+      if (rot == 1) {
+        prow = (size_t)x;
+        pcol = (size_t)(theme::kH - 1 - y);
+      } else {
+        prow = (size_t)(theme::kW - 1 - x);
+        pcol = (size_t)y;
+      }
+      row[x] = *(const uint16_t *)(fb + prow * stride + pcol * 2);
+    }
+    Serial.write((const uint8_t *)row, sizeof(row));
+  }
+  Serial.flush();
+  Serial.println("ENDSHOT");
+  Serial.setTxTimeoutMs(0);
+}
+
 // Renders every ladder step so a new font can be checked without playing a
 // round to reach the phrase screen. The bitmap repacking in
 // tools/fontconvert.c is the part most likely to be subtly wrong — FreeType
@@ -191,6 +232,7 @@ void loop() {
     const int cmd = Serial.read();
     if (cmd == 's') dumpScreen();
     if (cmd == 'f') dumpFontSpecimen();
+    if (cmd == 'p') dumpPanel();
     // "t<x>,<y>" injects a tap, so a screen several taps deep can be reached
     // and captured without hands on the panel. Same entry point a real touch
     // uses, so it exercises the actual hit targets rather than a shortcut.
