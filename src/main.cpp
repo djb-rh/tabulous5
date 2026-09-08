@@ -10,6 +10,7 @@
 
 #include <M5Unified.h>
 #include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
+#include <SD_MMC.h>
 #include <esp_heap_caps.h>
 
 #include <vector>
@@ -102,6 +103,50 @@ void setup() {
 // This exists because every visual bug in this project so far has been
 // diagnosed by describing it over a chat window. The panel's framebuffer is
 // readable, so it never needed to be.
+// One-shot SD probe: which pins the board reports, whether a card is present,
+// and — the part most likely to bite on a big modern card — whether the
+// filesystem actually mounts. Cards over 32 GB ship exFAT, and Arduino's
+// FATFS is usually built without exFAT support.
+void probeSd() {
+  Serial.setTxTimeoutMs(200);
+  const int clk = M5.getPin(m5::pin_name_t::sd_spi_sclk);
+  const int cmd = M5.getPin(m5::pin_name_t::sd_spi_mosi);
+  const int d0 = M5.getPin(m5::pin_name_t::sd_spi_miso);
+  const int d3 = M5.getPin(m5::pin_name_t::sd_spi_cs);
+  Serial.printf("SD pins: clk=%d cmd/mosi=%d d0/miso=%d d3/cs=%d\n", clk, cmd,
+                d0, d3);
+
+  if (clk < 0 || cmd < 0 || d0 < 0) {
+    Serial.println("SD: board reports no SD pins");
+    Serial.setTxTimeoutMs(0);
+    return;
+  }
+
+  SD_MMC.setPins(clk, cmd, d0);
+  if (!SD_MMC.begin("/sdcard", true, false, 20000)) {  // 1-bit, 20 MHz
+    Serial.println("SD: SD_MMC.begin FAILED (no card, or not FAT32?)");
+    Serial.setTxTimeoutMs(0);
+    return;
+  }
+  const uint8_t type = SD_MMC.cardType();
+  const char *tname = type == CARD_MMC    ? "MMC"
+                      : type == CARD_SD   ? "SDSC"
+                      : type == CARD_SDHC ? "SDHC/SDXC"
+                                          : "unknown";
+  Serial.printf("SD: mounted, type=%s size=%lluMB used=%lluMB\n", tname,
+                SD_MMC.cardSize() / (1024ULL * 1024ULL),
+                SD_MMC.usedBytes() / (1024ULL * 1024ULL));
+
+  File root = SD_MMC.open("/");
+  int n = 0;
+  for (File f = root.openNextFile(); f && n < 8; f = root.openNextFile(), n++) {
+    Serial.printf("  %-40s %s\n", f.name(), f.isDirectory() ? "<dir>" : "");
+  }
+  Serial.printf("SD: %d entries listed at the root\n", n);
+  SD_MMC.end();
+  Serial.setTxTimeoutMs(0);
+}
+
 void dumpCanvas(M5Canvas *canvas);
 
 // Dump what is ACTUALLY on the panel, by reading its framebuffer.
@@ -233,6 +278,7 @@ void loop() {
     if (cmd == 's') dumpScreen();
     if (cmd == 'f') dumpFontSpecimen();
     if (cmd == 'p') dumpPanel();
+    if (cmd == 'd') probeSd();
     // "t<x>,<y>" injects a tap, so a screen several taps deep can be reached
     // and captured without hands on the panel. Same entry point a real touch
     // uses, so it exercises the actual hit targets rather than a shortcut.
