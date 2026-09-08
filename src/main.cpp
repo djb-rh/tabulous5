@@ -20,6 +20,7 @@
 #include "content.h"
 #include "contentserver.h"
 #include "app.h"
+#include "nes_ui.h"
 #include "phrase_game.h"
 #include "orientation.h"
 #include "pack.h"
@@ -279,6 +280,16 @@ void loop() {
     if (cmd == 'f') dumpFontSpecimen();
     if (cmd == 'p') dumpPanel();
     if (cmd == 'd') probeSd();
+    if (cmd == 'a') nes_ui::startAudioCapture(4);
+    // "j<hex>,<frames>": hold NES buttons, e.g. j08,20 holds START 20 frames.
+    if (cmd == 'j') {
+      const String arg = Serial.readStringUntil('\n');
+      const int comma = arg.indexOf(',');
+      if (comma > 0) {
+        nes_ui::injectPad((uint8_t)strtol(arg.substring(0, comma).c_str(), nullptr, 16),
+                          (uint32_t)arg.substring(comma + 1).toInt());
+      }
+    }
     // "t<x>,<y>" injects a tap, so a screen several taps deep can be reached
     // and captured without hands on the panel. Same entry point a real touch
     // uses, so it exercises the actual hit targets rather than a shortcut.
@@ -289,6 +300,22 @@ void loop() {
         app::handleTap(arg.substring(0, comma).toInt(),
                        arg.substring(comma + 1).toInt(), millis());
       }
+    }
+  }
+
+  // A finished audio capture is streamed out here, between frames, rather
+  // than from inside the emulator's own loop.
+  {
+    const int16_t *cap = nullptr;
+    uint32_t n = 0;
+    if (nes_ui::audioCaptureReady(&cap, &n)) {
+      Serial.setTxTimeoutMs(200);
+      Serial.printf("AUDIO %lu 44100\n", (unsigned long)n);
+      Serial.write((const uint8_t *)cap, n * sizeof(int16_t));
+      Serial.flush();
+      Serial.println("ENDAUDIO");
+      Serial.setTxTimeoutMs(0);
+      nes_ui::endAudioCapture();
     }
   }
 

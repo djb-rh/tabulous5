@@ -19,5 +19,17 @@ void handleTap(int x, int y, uint32_t now_ms);
 // than dispatched.
 bool playing();
 
+// Record the exact samples handed to the speaker, for analysis on the host.
+// The only way to tell whether a reported noise is in the samples or in the
+// playback path is to listen to the samples somewhere else.
+void startAudioCapture(uint32_t seconds);
+bool audioCaptureReady(const int16_t **samples, uint32_t *count);
+void endAudioCapture();
+
+// Hold a controller byte (NES bit order) for a number of frames, OR-ed with
+// whatever the touch pad reports. The pad bypasses tap dispatch, so this is
+// the only way to press a button on it without a finger.
+void injectPad(uint8_t buttons, uint32_t frames);
+
 }  // namespace nes_ui
 }  // namespace tabulous

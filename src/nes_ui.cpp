@@ -96,6 +96,15 @@ uint32_t g_audio_dropped = 0;
 constexpr uint32_t kApuRate = 44100;
 volatile uint32_t g_audio_made = 0;
 
+// Injected controller input. See injectPad().
+uint8_t g_inject_pad = 0;
+uint32_t g_inject_frames = 0;
+
+// Audio capture. See startAudioCapture().
+int16_t *g_cap = nullptr;
+uint32_t g_cap_len = 0, g_cap_fill = 0;
+bool g_cap_done = false;
+
 // DC blocker and low-pass state. See onAudio.
 int32_t g_dc_x = 0, g_dc_y = 0, g_lp = 0;
 
@@ -311,8 +320,12 @@ void onAudio(const uint16_t *samples, uint32_t bytes) {
     //   y = x - x_prev + R*y_prev,  R = 4085/4096 (~34 Hz corner at 44.1 kHz)
     // Silence then really is silence, and chunks join without a step.
     // Only one channel is kept — both carry the same value.
+    // Division, not >> 12: an arithmetic shift floors negative values toward
+    // -infinity, and at y = -372 that rounding exactly cancelled the decay —
+    // the filter stuck there and every stretch of silence carried a -372 DC
+    // offset. Division truncates toward zero, so it settles at exactly 0.
     const int32_t x = (int32_t)samples[i * 2];
-    int32_t y = x - g_dc_x + ((g_dc_y * 4085) >> 12);
+    int32_t y = x - g_dc_x + (g_dc_y * 4085) / 4096;
     g_dc_x = x;
     g_dc_y = y;
     // Then a gentle low-pass, which the real console has and we did not.
@@ -324,7 +337,7 @@ void onAudio(const uint16_t *samples, uint32_t bytes) {
     // reported. A NES runs its mix through an RC stage before the speaker;
     // this is a first-order equivalent at about 10 kHz, which cuts the
     // high-frequency part of that noise without dulling the square waves.
-    g_lp += ((y - g_lp) * 3539) >> 12;  // a = 0.864, ~14 kHz at 44.1 kHz
+    g_lp += ((y - g_lp) * 3539) / 4096;  // a = 0.864, ~14 kHz; same rounding point
     int32_t out = g_lp;
     if (out > 32767) out = 32767;
     if (out < -32768) out = -32768;
@@ -540,6 +553,10 @@ void runFrame(uint32_t now_ms) {
   }
   if (!menu_held) g_menu_down = false;
 
+  if (g_inject_frames > 0) {
+    g_pad |= g_inject_pad;
+    g_inject_frames--;
+  }
   // joypad's bit order is the NES shift register's, which is what the core
   // expects, so the pad byte goes across untranslated.
   g_cpu->bus.setController(g_pad);
@@ -567,6 +584,13 @@ void runFrame(uint32_t now_ms) {
     for (int i = 0; i < kAudioBufSamples; i++) {
       dst[i] = g_ring[g_ring_r];
       g_ring_r = (g_ring_r + 1) % kRing;
+    }
+    if (g_cap && !g_cap_done) {
+      const uint32_t room = g_cap_len - g_cap_fill;
+      const uint32_t take = room < (uint32_t)kAudioBufSamples ? room : kAudioBufSamples;
+      memcpy(g_cap + g_cap_fill, dst, take * sizeof(int16_t));
+      g_cap_fill += take;
+      if (g_cap_fill >= g_cap_len) g_cap_done = true;
     }
     M5.Speaker.playRaw(dst, (size_t)kAudioBufSamples, kApuRate, false, 1,
                        kAudioChannel, false);
@@ -622,6 +646,34 @@ void invalidate() {
 }
 
 bool playing() { return g_mode == Mode::Playing; }
+
+void injectPad(uint8_t buttons, uint32_t frames) {
+  g_inject_pad = buttons;
+  g_inject_frames = frames;
+}
+
+void startAudioCapture(uint32_t seconds) {
+  endAudioCapture();
+  g_cap_len = seconds * kApuRate;
+  g_cap = (int16_t *)heap_caps_malloc(g_cap_len * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  g_cap_fill = 0;
+  g_cap_done = false;
+  if (!g_cap) g_cap_len = 0;
+}
+
+bool audioCaptureReady(const int16_t **samples, uint32_t *count) {
+  if (!g_cap || !g_cap_done) return false;
+  *samples = g_cap;
+  *count = g_cap_fill;
+  return true;
+}
+
+void endAudioCapture() {
+  if (g_cap) heap_caps_free(g_cap);
+  g_cap = nullptr;
+  g_cap_len = g_cap_fill = 0;
+  g_cap_done = false;
+}
 
 void tick(uint32_t now_ms) {
   if (g_mode == Mode::Playing && g_cpu) {
