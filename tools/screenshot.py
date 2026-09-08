@@ -4,7 +4,7 @@
 Sends 's' over serial; the firmware replies with a header, one raw RGB565
 frame, and a trailer. Writes a PNG with nothing but the standard library.
 
-Usage: tools/screenshot.py [out.png] [--tap=X,Y ...] [--wait=N] [--font] [--raw]
+Usage: tools/screenshot.py [out.png] [--tap=X,Y | --sleep=N ...] [--wait=N] [--font] [--raw]
 
 --wait=N counts down N seconds before the capture, which is the window for
 navigating to a screen by hand. It deliberately runs AFTER the port is open and
@@ -87,11 +87,17 @@ def main():
     # Settle before driving: opening the port resets the board, and a tap that
     # lands before the first repaint finds no hit targets registered yet.
     time.sleep(3.5)
-    for spec in [a[6:] for a in sys.argv[1:] if a.startswith("--tap=")]:
-        p.reset_input_buffer()
-        p.write(("t%s\n" % spec).encode())
-        p.flush()
-        time.sleep(0.7)
+    # Taps and pauses run in the order given: a screen that takes a while to
+    # build (the NES list on a full card) needs --sleep=N after the tap that
+    # opens it, or the taps that follow land on whatever was there before.
+    for a in sys.argv[1:]:
+        if a.startswith("--tap="):
+            p.reset_input_buffer()
+            p.write(("t%s\n" % a[6:]).encode())
+            p.flush()
+            time.sleep(0.7)
+        elif a.startswith("--sleep="):
+            time.sleep(float(a[8:]))
 
     # Last thing before the shutter, so the countdown means what it says.
     if wait:

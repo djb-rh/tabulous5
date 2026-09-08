@@ -23,6 +23,11 @@ class Cartridge
 {
 public:
     Cartridge(const char* filename, ROMBackend backend = ROMBackend::LRU);
+    // Opens from any Arduino filesystem (LittleFS, SD_MMC, ...). The whole
+    // ROM is copied into PSRAM at construction so bank switches never touch
+    // the filesystem again — on an SD card in a big directory a single open
+    // costs hundreds of milliseconds. See ../CHANGES.md.
+    Cartridge(fs::FS& fs, const char* filename, ROMBackend backend = ROMBackend::LRU);
     ~Cartridge();
 
     void ppuScanline();
@@ -62,6 +67,12 @@ private:
     uint32_t chr_base;
 
     File rom;
+    // In-memory copy of the file (PSRAM). When null, reads fall back to `rom`.
+    uint8_t* image = nullptr;
+    size_t image_size = 0;
+    size_t image_pos = 0;
+    void init(fs::FS& fs, const char* filename, ROMBackend backend);
+    size_t imageRead(uint8_t* buf, size_t size);
     uint8_t mapper_ID = 0;
     void createMapper(uint8_t number_PRG_banks, uint8_t number_CHR_banks, ROMBackend backend);
     uint32_t crc32(const void* buf, size_t size, uint32_t seed = ~0U);

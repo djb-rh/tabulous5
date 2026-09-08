@@ -73,3 +73,9 @@ about this device.
   as well as the length-counter halt; they are the same bit on the hardware and
   the pulse channels already did this. Upstream left the noise envelope's loop
   flag unset, so a looping noise envelope decayed once and fell silent.
+* `core/cartridge.{h,cpp}` — a second constructor takes an `fs::FS&` so ROMs
+  can come from the SD card as well as LittleFS, and the whole file is copied
+  into PSRAM at construction (`image`); `loadPRGBank`/`loadCHRBank`/`seek`/
+  `read` serve from that copy. Bank switches therefore never touch the
+  filesystem, which matters on a card whose ROM directory holds thousands of
+  files: one FAT lookup there costs hundreds of milliseconds.

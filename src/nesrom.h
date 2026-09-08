@@ -12,7 +12,7 @@
 namespace tabulous {
 namespace nesrom {
 
-// What third_party/agnes implements. A ROM needing anything else is listed but
+// What third_party/anemoia implements. A ROM needing anything else is listed but
 // not launchable, which is friendlier than hiding it and leaving the owner
 // wondering where their file went.
 bool mapperSupported(uint8_t mapper);

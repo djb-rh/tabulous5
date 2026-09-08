@@ -1,10 +1,21 @@
 #include <LittleFS.h>
+#include <esp_heap_caps.h>
 
 #include "cartridge.h"
 #include "bus.h"
 #include "ppu2C02.h"
 
 Cartridge::Cartridge(const char* filename, ROMBackend backend)
+{
+    init(LittleFS, filename, backend);
+}
+
+Cartridge::Cartridge(fs::FS& fs, const char* filename, ROMBackend backend)
+{
+    init(fs, filename, backend);
+}
+
+void Cartridge::init(fs::FS& fs, const char* filename, ROMBackend backend)
 {
     struct cartridge_header
     {
@@ -19,14 +30,44 @@ Cartridge::Cartridge(const char* filename, ROMBackend backend)
         char unused[5];
     } header;
 
-    // Load Cartridge ROM
-    // LittleFS, not SD: this device keeps ROMs on internal flash and has no
-    // card reader wired. See ../CHANGES.md — this is the only local edit.
-    rom = LittleFS.open(filename, FILE_READ);
-    if (!rom) return;
+    // Load Cartridge ROM from whichever filesystem was handed in (local edit,
+    // see ../CHANGES.md), then pull the whole file into PSRAM so the mappers'
+    // bank loads below are memcpy rather than filesystem seeks.
+    rom = fs.open(filename, FILE_READ);
+    if (!rom)
+    {
+        is_valid = false;
+        return;
+    }
+    {
+        const size_t size = rom.size();
+        uint8_t* buf = size ? (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM) : nullptr;
+        if (buf)
+        {
+            size_t got = 0;
+            while (got < size)
+            {
+                const size_t n = rom.read(buf + got, size - got);
+                if (n == 0) break;
+                got += n;
+            }
+            if (got == size)
+            {
+                image = buf;
+                image_size = size;
+                rom.close();
+            }
+            else
+            {
+                heap_caps_free(buf);
+                rom.seek(0);
+            }
+        }
+    }
 
-    rom.read((uint8_t*)&header, sizeof(cartridge_header));
-    if (header.mapper1 & 0x04) rom.seek(rom.position() + 512);
+    seek(0);
+    read((uint8_t*)&header, sizeof(cartridge_header));
+    if (header.mapper1 & 0x04) seek(sizeof(cartridge_header) + 512);
 
     mapper_ID = (header.mapper2 & 0xF0) | header.mapper1 >> 4;
     hardware_mirror = (header.mapper1 & 0x01) ? MIRROR::VERTICAL : MIRROR::HORIZONTAL;
@@ -57,8 +98,8 @@ Cartridge::Cartridge(const char* filename, ROMBackend backend)
     {
         uint8_t buf[4096];
         size_t len;
-        rom.seek(prg_base);
-        while ((len = rom.read(buf, sizeof(buf))) > 0) { CRC32 = crc32(buf, len, CRC32); }
+        seek(prg_base);
+        while ((len = imageRead(buf, sizeof(buf))) > 0) { CRC32 = crc32(buf, len, CRC32); }
         CRC32 ^= ~0U;
         LOGF("CRC32: %08lX\n", (unsigned int)CRC32);
     }
@@ -73,6 +114,19 @@ Cartridge::Cartridge(const char* filename, ROMBackend backend)
 
 Cartridge::~Cartridge()
 {
+    if (image) heap_caps_free(image);
+    if (rom) rom.close();
+}
+
+// Reads from the PSRAM image when there is one, else from the file.
+size_t Cartridge::imageRead(uint8_t* buf, size_t size)
+{
+    if (!image) return rom.read(buf, size);
+    if (image_pos >= image_size) return 0;
+    const size_t n = (image_size - image_pos < size) ? image_size - image_pos : size;
+    memcpy(buf, image + image_pos, n);
+    image_pos += n;
+    return n;
 }
 
 void Cartridge::ppuScanline()
@@ -138,14 +192,14 @@ void Cartridge::mapPPUPages(Ppu2C02* ppu)
 
 ANEMOIA_IRAM void Cartridge::loadPRGBank(uint8_t* bank, uint16_t size, uint32_t offset)
 {
-    rom.seek(prg_base + offset);
-    rom.read(bank, size);
+    seek(prg_base + offset);
+    imageRead(bank, size);
 }
 
 ANEMOIA_IRAM void Cartridge::loadCHRBank(uint8_t* bank, uint16_t size, uint32_t offset)
 {
-    rom.seek(chr_base + offset);
-    rom.read(bank, size);
+    seek(chr_base + offset);
+    imageRead(bank, size);
 }
 
 ANEMOIA_IRAM void Cartridge::setMirrorMode(MIRROR mirror)
@@ -198,12 +252,13 @@ bool Cartridge::isValid()
 
 void Cartridge::seek(uint32_t offset)
 {
-    rom.seek(offset);
+    if (image) image_pos = offset;
+    else rom.seek(offset);
 }
 
 void Cartridge::read(uint8_t* buf, size_t size)
 {
-    rom.read(buf, size);
+    imageRead(buf, size);
 }
 
 void Cartridge::createMapper(uint8_t number_PRG_banks, uint8_t number_CHR_banks, ROMBackend backend)

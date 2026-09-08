@@ -193,7 +193,7 @@ const Entry kEntries[] = {
      "\n"
      "Hide it from SETTINGS when it is in the way."},
 
-    {"NES", "Pick a ROM and play it. No sound yet.", 0x8B2E3F,
+    {"NES", "Every cartridge on the card, with sound.", 0x8B2E3F,
      glyphs::Glyph::None, GameId::Nes,
      "Runs NES ROMs found in /roms on the device's own storage. Put .nes\n"
      "files in data/roms and flash them with: pio run -e tab5 -t uploadfs\n"

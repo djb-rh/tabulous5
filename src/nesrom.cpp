@@ -14,7 +14,8 @@ bool fail(const char **why, const char *reason) {
 }  // namespace
 
 bool mapperSupported(uint8_t mapper) {
-  return mapper == 0 || mapper == 1 || mapper == 2 || mapper == 4;
+  return mapper == 0 || mapper == 1 || mapper == 2 || mapper == 3 ||
+         mapper == 4 || mapper == 69;
 }
 
 const char *mapperName(uint8_t mapper) {

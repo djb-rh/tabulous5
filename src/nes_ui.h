@@ -11,6 +11,8 @@ namespace tabulous {
 namespace nes_ui {
 
 void begin();
+// Walk the filesystems again on the next begin(): the list changed underneath.
+void rescan();
 void invalidate();
 void tick(uint32_t now_ms);
 void handleTap(int x, int y, uint32_t now_ms);
