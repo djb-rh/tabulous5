@@ -130,7 +130,11 @@ void Apu2A03::cpuWrite(uint16_t addr, uint8_t data)
         break;
 
     case 0x400C:
+        // Bit 5 is BOTH the length-counter halt and the envelope loop flag,
+        // exactly as on the pulse channels above. Upstream set only the halt
+        // for noise, so a looping noise envelope decayed once and went silent.
         noise.len_counter.halt = (data >> 5) & 0x01;
+        noise.env.loop = noise.len_counter.halt;
         noise.env.constant_volume = (data >> 4) & 0x01;
         noise.env.volume = data & 0x0F;
         break;

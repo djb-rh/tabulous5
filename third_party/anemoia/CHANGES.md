@@ -69,3 +69,7 @@ about this device.
   alias through. Muting is applied per clock too, so a muted channel cannot
   contribute between samples. The mixer tables moved into `mixTables()`; the tnd table now uses
   the standard combined form `163.67 / (24329/i + 100)`.
+* `core/apu2A03.cpp` — the `$400C` write now sets `noise.env.loop` from bit 5
+  as well as the length-counter halt; they are the same bit on the hardware and
+  the pulse channels already did this. Upstream left the noise envelope's loop
+  flag unset, so a looping noise envelope decayed once and fell silent.
