@@ -114,6 +114,20 @@ volatile bool g_apu_run = false;
 uint8_t g_pad = 0, g_pad_drawn = 0xFF;
 bool g_menu_down = false;
 uint32_t g_frames = 0, g_fps_at = 0, g_fps = 0;
+
+// Emulation is paced to real time, and the picture is drawn every other frame.
+//
+// The blit costs ~9.6 ms and is at the PSRAM write ceiling, so drawing every
+// frame caps the whole machine at ~40 fps — a third slow, which is exactly what
+// it looks and sounds like. Emulating all 60 frames and showing 30 of them
+// costs 10 ms + half of 9.6, which fits inside a 16.7 ms frame. Game speed and
+// pitch come right; motion is half as smooth. Upstream offers the same trade
+// for slow displays.
+constexpr uint32_t kFrameUs = 1000000 / 60;
+constexpr int kDrawEvery = 2;
+uint32_t g_next_frame_us = 0;
+uint32_t g_frame_seq = 0;
+uint32_t g_drawn_frames = 0, g_shown = 0;
 // Phase timings, accumulated over a second so one print covers many frames.
 uint32_t g_us_emu = 0, g_us_conv = 0, g_us_push = 0, g_us_sync = 0;
 
@@ -366,6 +380,21 @@ bool load(int index) {
   Apu2A03::setAudioCallback(onAudio);
   g_cpu->apu.setVolume(80);
 
+  // Move the speaker's own task to core 0 as well. Measured: the loop takes
+  // 15.7 ms but frames arrive 21 ms apart with only 0.4 ms spent outside
+  // tick() — so 5.3 ms a frame was core 1 being preempted, and the speaker
+  // task feeding I2S is what grew when NES audio arrived. Emulation gets
+  // core 1 to itself; the two audio tasks share core 0, where the APU is
+  // elastic and simply yields.
+  {
+    auto sc = M5.Speaker.config();
+    if (sc.task_pinned_core != 0) {
+      sc.task_pinned_core = 0;
+      M5.Speaker.config(sc);
+      M5.Speaker.begin();
+    }
+  }
+
   // Core 0: the Arduino loop this emulator runs in lives on core 1, so the APU
   // gets a core to itself rather than competing with the CPU and PPU.
   g_apu_run = true;
@@ -397,6 +426,9 @@ bool load(int index) {
   g_frames = 0;
   g_fps = 0;
   g_fps_at = millis();
+  g_next_frame_us = micros();
+  g_frame_seq = 0;
+  g_drawn_frames = 0;
   return true;
 }
 
@@ -506,7 +538,12 @@ void runFrame(uint32_t now_ms) {
   g_cpu->clockFrame();   // drawChunk fires ~30 times during this
   g_us_emu += micros() - t_emu;
 
-  blit();
+  // Draw every kDrawEvery-th frame; emulate all of them.
+  if ((g_frame_seq % kDrawEvery) == 0) {
+    blit();
+    g_drawn_frames++;
+  }
+  g_frame_seq++;
 
   // Feed the speaker while it has room. Its own consumption is the clock: two
   // queued chunks per channel is the ceiling, so this hands over sound at
@@ -538,12 +575,15 @@ void runFrame(uint32_t now_ms) {
     // the display path needs replacing, and it has to be readable without a
     // screenshot (a capture repaints over the on-screen figure).
     const uint32_t n = g_fps ? g_fps : 1;
-    // made/sec should sit at ~44100: below means the speaker is starving,
-    // far above means the APU is outrunning its pacing again.
-    Serial.printf("nes %lu fps  emulate=%luus push=%luus  audio made=%lu/s dropped=%lu\n",
-                  (unsigned long)g_fps, (unsigned long)(g_us_emu / n),
-                  (unsigned long)(g_us_push / n),
+    // made/sec should sit at ~44100: below means the speaker is starving, far
+    // above means the APU is outrunning its pacing. Two frame rates now:
+    // emulated frames a second (60 = correct game speed) and drawn frames a
+    // second, which is deliberately half of it.
+    Serial.printf("nes %lu emu/s %lu drawn/s  emulate=%luus push=%luus  audio made=%lu/s dropped=%lu\n",
+                  (unsigned long)g_fps, (unsigned long)g_drawn_frames,
+                  (unsigned long)(g_us_emu / n), (unsigned long)(g_us_push / n),
                   (unsigned long)g_audio_made, (unsigned long)g_audio_dropped);
+    g_drawn_frames = 0;
     g_audio_made = 0;
     g_us_emu = g_us_conv = g_us_push = g_us_sync = 0;
     char line[32];
@@ -577,8 +617,29 @@ void tick(uint32_t now_ms) {
     if (g_dirty) {
       g_dirty = false;
       drawPlayChrome(true);
+      g_next_frame_us = micros();
     }
     runFrame(now_ms);
+
+    // Sleep the slack rather than returning and letting the main loop spin.
+    // Every spin costs an M5.update(), which polls touch over I2C — returning
+    // early burned several ms a frame on the very wait it was performing. A
+    // pad only needs sampling once a frame, so one loop iteration per frame is
+    // exactly right.
+    // Pace to 60 fps, but never accumulate debt. The previous version added a
+    // frame period unconditionally, so when frames genuinely took longer than
+    // 16.7 ms the target fell steadily behind real time until it was a whole
+    // 66 ms adrift — then resynced and slept an entire frame. It oscillated
+    // between racing and stalling, and that stall was most of the mystery
+    // 6 ms a frame. If there is slack, sleep it; if we are late, start the
+    // next frame now and forget the debt.
+    const int32_t slack = (int32_t)(g_next_frame_us + kFrameUs - micros());
+    if (slack > 1000) {
+      g_next_frame_us += kFrameUs;
+      delay((uint32_t)slack / 1000);  // yields, so the APU task keeps running
+    } else {
+      g_next_frame_us = micros();
+    }
     return;
   }
   if (!g_dirty) return;
