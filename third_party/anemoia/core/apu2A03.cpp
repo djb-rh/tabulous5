@@ -358,23 +358,46 @@ inline void Apu2A03::generateSample()
 {
     uint16_t index = (buffer_index << 1);
 
-    uint16_t sample = 0;
-    sample += pulse1.seq.output ? pulse1.env.output : 0;
-    sample += pulse2.seq.output ? pulse2.env.output : 0;
-    sample += triangle.seq.output;
-    sample += DMC.output_unit.output_level;
+    // The NES mixes its channels NON-LINEARLY. Summing them and masking to
+    // 8 bits, as upstream did, leaves only ~187 distinct output levels — a
+    // noise floor at a fixed absolute level, so it is masked while a sound is
+    // loud and audible as hiss on the tail of every effect that fades.
+    //
+    // These are the mixer formulas from the NESdev wiki, tabulated once:
+    //   pulse_out = 95.88 / (8128/(p1+p2) + 100)
+    //   tnd_out   = 159.79 / (1/(t/8227 + n/12241 + d/22638) + 100)
+    // Together they give a full 16-bit result and the console's actual
+    // balance between the channels. See ../CHANGES.md.
+    static uint16_t pulse_table[31];
+    static uint16_t tnd_table[203];
+    static bool tables_ready = false;
+    if (!tables_ready)
+    {
+        pulse_table[0] = 0;
+        for (int i = 1; i < 31; i++)
+            pulse_table[i] = (uint16_t)((95.88 / (8128.0 / i + 100.0)) * 32767.0);
+        tnd_table[0] = 0;
+        for (int i = 1; i < 203; i++)
+            tnd_table[i] = (uint16_t)((159.79 / (1.0 / (i / 22638.0) + 100.0)) * 32767.0);
+        tables_ready = true;
+    }
 
-    if (!(noise.shift_register & 0x01) && noise.len_counter.timer > 0) sample += noise.env.output;
+    const uint8_t p1 = pulse1.seq.output ? pulse1.env.output : 0;
+    const uint8_t p2 = pulse2.seq.output ? pulse2.env.output : 0;
+    const uint8_t tri = triangle.seq.output;
+    const uint8_t noi =
+        (!(noise.shift_register & 0x01) && noise.len_counter.timer > 0) ? noise.env.output : 0;
+    const uint8_t dmc = DMC.output_unit.output_level;
 
-    // Clip audio and apply a low-pass filter
-    uint32_t temp = sample * volume;
-    sample = (uint16_t)(((temp + 50) / 100));
-    sample += prev_sample;
-    sample >>= 1;
-    sample &= 0xFF;
+    uint32_t mixed = pulse_table[p1 + p2] + tnd_table[3 * tri + 2 * noi + dmc];
+    mixed = mixed * volume / 100;
+    if (mixed > 65535) mixed = 65535;
+
+    // One-pole smoothing, as before, but on the full-width value rather than
+    // on a value already crushed to 8 bits — quantising inside the filter's
+    // own feedback was adding noise of its own.
+    uint16_t sample = (uint16_t)((mixed + prev_sample) >> 1);
     prev_sample = sample;
-
-    sample <<= 8;
     audio_buffer[index] = sample;
     audio_buffer[index + 1] = sample;
 

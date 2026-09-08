@@ -47,3 +47,11 @@ about this device.
 * `IRAM_ATTR` is now `ANEMOIA_IRAM`, defined empty in `anemoia_config.h`.
   Upstream puts ~99 KB of per-cycle code in internal RAM; define it back to
   `IRAM_ATTR` to try that once the port is running.
+* `core/apu2A03.cpp` — `generateSample()` now uses the NES's **non-linear**
+  channel mixing (the NESdev formulas, tabulated once) instead of a linear sum
+  masked to 8 bits. Upstream's version left only ~187 distinct output levels,
+  a noise floor at a fixed absolute level: masked while a sound is loud, and
+  audible as hiss on the tail of every effect that fades. The tables give a
+  full 16-bit result and the console's real balance between channels. The
+  one-pole smoothing is kept but now runs on the full-width value — quantising
+  inside the filter's own feedback was adding noise of its own.

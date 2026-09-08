@@ -324,7 +324,7 @@ void onAudio(const uint16_t *samples, uint32_t bytes) {
     // reported. A NES runs its mix through an RC stage before the speaker;
     // this is a first-order equivalent at about 10 kHz, which cuts the
     // high-frequency part of that noise without dulling the square waves.
-    g_lp += ((y - g_lp) * 2867) >> 12;  // a = 0.70
+    g_lp += ((y - g_lp) * 3539) >> 12;  // a = 0.864, ~14 kHz at 44.1 kHz
     int32_t out = g_lp;
     if (out > 32767) out = 32767;
     if (out < -32768) out = -32768;
@@ -644,11 +644,21 @@ void tick(uint32_t now_ms) {
     // between racing and stalling, and that stall was most of the mystery
     // 6 ms a frame. If there is slack, sleep it; if we are late, start the
     // next frame now and forget the debt.
-    const int32_t slack = (int32_t)(g_next_frame_us + kFrameUs - micros());
+    // Frames alternate cheap and expensive: ~10.9 ms when the picture is
+    // skipped, ~20.6 ms when it is drawn. The average, 15.5 ms, fits inside
+    // 16.7 — but only if the cheap frame is allowed to make up the deficit the
+    // expensive one ran up. An earlier version discarded the deficit after
+    // every late frame, so the cheap frame got a fresh full budget and slept
+    // ~5 ms rather than catching up. That sleep was the whole missing 5.3 ms a
+    // frame, and it was self-inflicted.
+    //
+    // So carry the debt, and cap it at three frames so a genuine stall does
+    // not turn into a sprint.
+    g_next_frame_us += kFrameUs;
+    const int32_t slack = (int32_t)(g_next_frame_us - micros());
     if (slack > 1000) {
-      g_next_frame_us += kFrameUs;
       delay((uint32_t)slack / 1000);  // yields, so the APU task keeps running
-    } else {
+    } else if (slack < -(int32_t)(3 * kFrameUs)) {
       g_next_frame_us = micros();
     }
     return;
