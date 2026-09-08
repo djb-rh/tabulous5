@@ -252,6 +252,20 @@ void saveLightTheme(bool light) {
   g_prefs.end();
 }
 
+void loadNes(NesSettings *out) {
+  if (!out) return;
+  if (!g_prefs.begin(kNamespace, true)) return;
+  const uint8_t scale = g_prefs.getUChar("nes_scale", out->scale);
+  g_prefs.end();
+  if (scale == 2 || scale == 3) out->scale = scale;
+}
+
+void saveNes(const NesSettings &settings) {
+  if (!g_prefs.begin(kNamespace, false)) return;
+  g_prefs.putUChar("nes_scale", settings.scale);
+  g_prefs.end();
+}
+
 void loadSolitaire(SolitaireSettings *out) {
   if (!out) return;
   if (!g_prefs.begin(kNamespace, true)) return;

@@ -56,5 +56,13 @@ void saveSolitaire(const SolitaireSettings &settings);
 void loadFive(fivehead::Settings *out);
 void saveFive(const fivehead::Settings &settings);
 
+// The NES picture: 2x with the on-screen pad either side, or 3x, the full
+// height, for a USB gamepad.
+struct NesSettings {
+  uint8_t scale = 2;  // 2 or 3
+};
+void loadNes(NesSettings *out);
+void saveNes(const NesSettings &settings);
+
 }  // namespace settings_store
 }  // namespace tabulous

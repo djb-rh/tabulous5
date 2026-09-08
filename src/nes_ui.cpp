@@ -3,6 +3,7 @@
 #include <LittleFS.h>
 #include <M5Unified.h>
 #include <dirent.h>
+#include <driver/ppa.h>
 #include <esp_cache.h>
 #include <esp_heap_caps.h>
 #include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
@@ -21,6 +22,7 @@
 #include "nes_index.h"
 #include "nesrom.h"
 #include "sdcard.h"
+#include "settings_store.h"
 #include "theme.h"
 #include "uikit.h"
 
@@ -56,14 +58,58 @@ int g_playing = -1;
 volatile int g_chunk_row = 0;
 const char *g_error = "";
 
-// One NES frame of RGB565, in INTERNAL RAM. The transpose below reads it with
-// a stride, which is cheap here and would not be in PSRAM.
+// One NES frame of RGB565: the buffer the emulator is drawing into right now.
+//
+// There are two. While the PPA is still copying frame N out of one, the
+// emulator draws frame N+1 into the other, so the blit and the emulation
+// overlap instead of adding up. The first lives in internal RAM (the CPU
+// fallback transposes it with a stride, which PSRAM would punish); the second
+// goes wherever there is room.
 uint16_t *g_nes = nullptr;
+uint16_t *g_nes_buf[2] = {nullptr, nullptr};
+int g_nes_cur = 0;
 
 // The panel's own framebuffer, written directly. See blit() for why.
 uint8_t *g_fb = nullptr;
 size_t g_fb_stride = 0;
 uint8_t g_fb_rot = 1;
+
+// The P4's Pixel Processing Accelerator does scale + rotate + copy in
+// hardware. When it registers, blit() hands the whole transposed write to it;
+// the CPU loop below stays as the fallback.
+ppa_client_handle_t g_ppa = nullptr;
+volatile bool g_ppa_busy = false;
+
+// From the PPA's interrupt: the transfer is done, its source buffer is free.
+bool IRAM_ATTR onPpaDone(ppa_client_handle_t, ppa_event_data_t *, void *) {
+  g_ppa_busy = false;
+  return false;
+}
+
+// Waits for an in-flight transfer, with a bound so a wedged PPA cannot hang
+// the console. Returns false if it never finished.
+bool ppaWait() {
+  const uint32_t t0 = micros();
+  while (g_ppa_busy) {
+    if (micros() - t0 > 40000) return false;
+    taskYIELD();
+  }
+  return true;
+}
+
+// Picture geometry, decided per session: 2x (512x480, room for the on-screen
+// pad either side) or 3x (768x720, the full height, for a real gamepad).
+int g_scale = joypad::kScale;
+int g_vx = joypad::kVideoX, g_vy = joypad::kVideoY;
+int g_vw = joypad::kVideoW, g_vh = joypad::kVideoH;
+
+void setScale(int scale) {
+  g_scale = scale;
+  g_vw = joypad::kNesW * scale;
+  g_vh = joypad::kNesH * scale;
+  g_vx = (joypad::kPanelW - g_vw) / 2;
+  g_vy = (joypad::kPanelH - g_vh) / 2;
+}
 
 // ---- audio -------------------------------------------------------------
 //
@@ -124,16 +170,14 @@ uint8_t g_pad = 0, g_pad_drawn = 0xFF;
 bool g_menu_down = false;
 uint32_t g_frames = 0, g_fps_at = 0, g_fps = 0;
 
-// Emulation is paced to real time, and the picture is drawn every other frame.
+// Emulation is paced to real time.
 //
-// The blit costs ~9.6 ms and is at the PSRAM write ceiling, so drawing every
-// frame caps the whole machine at ~40 fps — a third slow, which is exactly what
-// it looks and sounds like. Emulating all 60 frames and showing 30 of them
-// costs 10 ms + half of 9.6, which fits inside a 16.7 ms frame. Game speed and
-// pitch come right; motion is half as smooth. Upstream offers the same trade
-// for slow displays.
+// With the CPU blit (~9.6 ms, at the PSRAM write ceiling) the picture had to
+// be drawn every other frame to fit: 10 ms of emulation plus half of 9.6 inside
+// a 16.7 ms frame. The PPA does the same blit in ~1.5 ms, so every frame is
+// drawn now. g_draw_every stays as the knob for the CPU fallback.
 constexpr uint32_t kFrameUs = 1000000 / 60;
-constexpr int kDrawEvery = 2;
+int g_draw_every = 1;
 uint32_t g_next_frame_us = 0;
 uint32_t g_frame_seq = 0;
 uint32_t g_drawn_frames = 0, g_shown = 0;
@@ -141,8 +185,10 @@ uint32_t g_drawn_frames = 0, g_shown = 0;
 uint32_t g_us_emu = 0, g_us_conv = 0, g_us_push = 0, g_us_sync = 0;
 
 enum class Action : uint8_t {
-  None, Pick, Back, PageUp, PageDown, Group, ToggleFav
+  None, Pick, Back, PageUp, PageDown, Group, ToggleFav, Scale
 };
+
+settings_store::NesSettings g_settings;
 
 // The browser: a rail of groups down the left (Favourites, #, A-Z), and the
 // chosen group's titles in pages on the right. A page is fourteen rows, which
@@ -328,6 +374,13 @@ void drawPicker() {
                     &fonts::FreeSansBold12pt7b);
   addAction(back, Action::Back);
 
+  // Picture size, as a toggle in the header: it is the one thing about play
+  // that is decided before a game starts.
+  const Rect size_btn{back.x - 12 - 100 - 12 - 100 - 12 - 200, 18, 200, 62};
+  uikit::drawButton(size_btn, g_settings.scale == 3 ? "3x  GAMEPAD" : "2x  TOUCH",
+                    kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+  addAction(size_btn, Action::Scale);
+
   if (g_lib.size() == 0) {
     uikit::drawLabel("No ROMs found", kW / 2, 300, kMuted,
                      &fonts::FreeSansBold18pt7b, middle_center);
@@ -410,14 +463,15 @@ void drawPicker() {
     if (can_down) addAction(down, Action::PageDown);
     char pos[48];
     snprintf(pos, sizeof(pos), "%d / %d", g_page + 1, pages);
-    uikit::drawLabel(pos, up.x - 16, 49, kMuted, &fonts::FreeSansBold12pt7b,
-                     middle_right);
+    uikit::drawLabel(pos, up.x + 106, 92, kMuted, &fonts::FreeSansBold12pt7b,
+                     middle_center);
   }
 }
 
 // --------------------------------------------------------------------- play
 
 void releaseCore() {
+  ppaWait();
   // Stop the APU task BEFORE the APU it points at is destroyed.
   g_apu_run = false;
   for (int i = 0; i < 200 && g_apu_task; i++) delay(1);
@@ -524,6 +578,7 @@ bool load(int index) {
     return false;
   }
 
+  setScale(g_settings.scale);
   g_cpu = new Cpu6502();
   if (!g_cpu) { g_error = "out of memory for core"; releaseCore(); return false; }
   g_cpu->bus.insertCartridge(g_cart);
@@ -568,13 +623,26 @@ bool load(int index) {
   xTaskCreatePinnedToCore(apuTask, "nes_apu", 4096, nullptr, 1, &g_apu_task, 0);
   g_cpu->reset();
 
-  if (!g_nes) {
-    g_nes = (uint16_t *)heap_caps_malloc(
-        (size_t)joypad::kNesW * joypad::kNesH * 2,
-        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  const size_t frame_bytes = (size_t)joypad::kNesW * joypad::kNesH * 2;
+  if (!g_nes_buf[0]) {
+    // Cache-line aligned: the PPA reads it by DMA.
+    g_nes_buf[0] = (uint16_t *)heap_caps_aligned_alloc(
+        128, frame_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   }
-  if (!g_nes) { g_error = "out of memory for framebuffer"; releaseCore(); return false; }
-  memset(g_nes, 0, (size_t)joypad::kNesW * joypad::kNesH * 2);
+  if (!g_nes_buf[1]) {
+    g_nes_buf[1] = (uint16_t *)heap_caps_aligned_alloc(
+        128, frame_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!g_nes_buf[1]) {
+      g_nes_buf[1] = (uint16_t *)heap_caps_aligned_alloc(128, frame_bytes,
+                                                         MALLOC_CAP_SPIRAM);
+    }
+  }
+  if (!g_nes_buf[0]) { g_error = "out of memory for framebuffer"; releaseCore(); return false; }
+  for (uint16_t *b : g_nes_buf) {
+    if (b) memset(b, 0, frame_bytes);
+  }
+  g_nes_cur = 0;
+  g_nes = g_nes_buf[0];
 
   // Resolve the panel's framebuffer once. config_detail() is public, so this
   // needs no games with protected members.
@@ -582,6 +650,20 @@ bool load(int index) {
   g_fb = (uint8_t *)panel->config_detail().buffer;
   g_fb_stride = ((size_t)panel->config().panel_width * 2 + 3) & ~(size_t)3;
   g_fb_rot = (uint8_t)M5.Display.getRotation();
+  if (!g_ppa) {
+    ppa_client_config_t cfg = {};
+    cfg.oper_type = PPA_OPERATION_SRM;
+    cfg.max_pending_trans_num = 2;
+    if (ppa_register_client(&cfg, &g_ppa) != ESP_OK) {
+      g_ppa = nullptr;
+      g_draw_every = 2;
+      Serial.println("nes: PPA unavailable, CPU blit");
+    } else {
+      ppa_event_callbacks_t cbs = {};
+      cbs.on_trans_done = onPpaDone;
+      ppa_client_register_event_callbacks(g_ppa, &cbs);
+    }
+  }
   if (!g_fb || (g_fb_rot != 1 && g_fb_rot != 3)) {
     g_error = "unexpected panel orientation";
     releaseCore();
@@ -614,11 +696,72 @@ bool load(int index) {
 // Mapping is taken from Panel_FrameBufferBase::drawPixelPreclipped rather than
 // guessed. For rotation 1: panel row = logical x, panel column = 719 - y.
 // For rotation 3 it is the other diagonal.
+// The hardware path. The framebuffer is described to the PPA in the panel's
+// own portrait terms (720 wide, 1280 tall), and the NES picture is rotated
+// into it: for rotation 1, logical x runs down the panel's rows and logical y
+// runs backwards along its columns, which is a 90-degree clockwise turn — 270
+// counter-clockwise in the driver's vocabulary. Rotation 3 is the other way.
+bool blitPpa() {
+  const int H = g_vh, W = g_vw;
+  ppa_srm_oper_config_t op = {};
+  op.in.buffer = g_nes;
+  op.in.pic_w = joypad::kNesW;
+  op.in.pic_h = joypad::kNesH;
+  op.in.block_w = joypad::kNesW;
+  op.in.block_h = joypad::kNesH;
+  op.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+  op.out.buffer = g_fb;
+  op.out.buffer_size = g_fb_stride * joypad::kPanelW;
+  op.out.pic_w = joypad::kPanelH;   // 720: the panel's own width
+  op.out.pic_h = joypad::kPanelW;   // 1280
+  op.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+  if (g_fb_rot == 1) {
+    op.out.block_offset_x = joypad::kPanelH - g_vy - H;
+    op.out.block_offset_y = g_vx;
+    op.rotation_angle = PPA_SRM_ROTATION_ANGLE_270;
+  } else {
+    op.out.block_offset_x = g_vy;
+    op.out.block_offset_y = joypad::kPanelW - g_vx - W;
+    op.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
+  }
+  op.scale_x = (float)g_scale;
+  op.scale_y = (float)g_scale;
+  // Non-blocking when there is a second buffer to draw the next frame into;
+  // the wait happens up front, for the transfer before this one.
+  const bool overlap = g_nes_buf[1] != nullptr;
+  op.mode = overlap ? PPA_TRANS_MODE_NON_BLOCKING : PPA_TRANS_MODE_BLOCKING;
+  if (!ppaWait()) return false;
+  // The source was just written by the CPU; make sure the DMA sees it.
+  esp_cache_msync(g_nes, (size_t)joypad::kNesW * joypad::kNesH * 2,
+                  ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA |
+                      ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+  g_ppa_busy = overlap;
+  if (ppa_do_scale_rotate_mirror(g_ppa, &op) != ESP_OK) {
+    g_ppa_busy = false;
+    return false;
+  }
+  if (overlap) {
+    g_nes_cur ^= 1;
+    g_nes = g_nes_buf[g_nes_cur];
+  }
+  return true;
+}
+
 IRAM_ATTR void blit() {
   if (!g_fb || !g_nes) return;
   const uint32_t t1 = micros();
 
-  const int vx = joypad::kVideoX, vy = joypad::kVideoY;
+  if (g_ppa) {
+    if (blitPpa()) {
+      g_us_push += micros() - t1;
+      return;
+    }
+    g_ppa = nullptr;  // once is enough; fall through to the CPU for good
+    g_draw_every = 2;
+  }
+  if (g_scale != 2) return;  // the CPU loop below only knows 2x
+
+  const int vx = g_vx, vy = g_vy;
   const int logical_h = joypad::kPanelH, logical_w = joypad::kPanelW;
 
   for (int sx = 0; sx < joypad::kNesW; sx++) {
@@ -630,7 +773,7 @@ IRAM_ATTR void blit() {
       if (g_fb_rot == 1) {
         // row = lx, column = 719 - y; ascending address = descending y.
         dst = (uint16_t *)(g_fb + (size_t)lx * g_fb_stride) +
-              (logical_h - 1 - (vy + joypad::kVideoH - 1));
+              (logical_h - 1 - (vy + g_vh - 1));
         step = 1;
       } else {
         // rotation 3: row = 1279 - lx, column = y; ascending address = ascending y.
@@ -664,10 +807,10 @@ IRAM_ATTR void blit() {
   // Splitting this loop across both cores was tried and gained 6% (9.6 -> 9.1
   // ms) for a task and a semaphore: the writes are bound by PSRAM bandwidth,
   // and two cores cannot push memory faster than one. Not worth the machinery.
-  const size_t first_row = (g_fb_rot == 1) ? vx : (logical_w - (vx + joypad::kVideoW));
+  const size_t first_row = (g_fb_rot == 1) ? vx : (logical_w - (vx + g_vw));
   const uint32_t t_sync = micros();
   esp_cache_msync(g_fb + first_row * g_fb_stride,
-                  (size_t)joypad::kVideoW * g_fb_stride,
+                  (size_t)g_vw * g_fb_stride,
                   ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
   g_us_sync += micros() - t_sync;
 
@@ -679,6 +822,17 @@ void drawPlayChrome(bool full) {
     gfx().fillScreen(kBg);
     g_pad_drawn = 0xFF;
   }
+  if (g_scale == 3) {
+    // No on-screen pad at 3x: the picture takes the full height and the
+    // margins hold only the way out. Input is the gamepad's job.
+    if (full) {
+      const joypad::Rect m = joypad::menuButton();
+      uikit::drawButton(Rect{m.x, m.y, m.w, m.h}, "MENU", kSurfaceLift, kText,
+                        &fonts::FreeSansBold12pt7b);
+    }
+    g_pad_drawn = g_pad;
+    return;
+  }
   joypad_ui::drawControls(g_pad, g_pad_drawn, full);
   g_pad_drawn = g_pad;
 }
@@ -686,6 +840,7 @@ void drawPlayChrome(bool full) {
 void runFrame(uint32_t now_ms) {
   bool menu_held = false;
   g_pad = joypad_ui::pollPad(&menu_held);
+  if (g_scale == 3) g_pad = 0;  // no on-screen controls to hit
 
   if (menu_held && !g_menu_down) {
     g_menu_down = true;
@@ -709,8 +864,8 @@ void runFrame(uint32_t now_ms) {
   g_cpu->clockFrame();   // drawChunk fires ~30 times during this
   g_us_emu += micros() - t_emu;
 
-  // Draw every kDrawEvery-th frame; emulate all of them.
-  if ((g_frame_seq % kDrawEvery) == 0) {
+  // Draw every g_draw_every-th frame; emulate all of them.
+  if ((g_frame_seq % g_draw_every) == 0) {
     blit();
     g_drawn_frames++;
   }
@@ -779,6 +934,7 @@ void begin() {
   releaseCore();
   g_mode = Mode::Picking;
   g_error = "";
+  settings_store::loadNes(&g_settings);
   if (!g_scanned) {
     // A card of thousands takes a moment to walk; say so rather than sit on
     // the previous screen.
@@ -899,6 +1055,12 @@ void handleTap(int x, int y, uint32_t) {
       audio::select();
       if (param != g_group) g_page = 0;
       g_group = param;
+      g_dirty = true;
+      break;
+    case Action::Scale:
+      audio::select();
+      g_settings.scale = g_settings.scale == 3 ? 2 : 3;
+      settings_store::saveNes(g_settings);
       g_dirty = true;
       break;
     case Action::ToggleFav: {
