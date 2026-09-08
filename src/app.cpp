@@ -37,7 +37,7 @@ enum class Action : uint8_t {
   None, Launch, About, AboutBack, ScrollUp, ScrollDown, ExitYes, ExitNo,
   OpenEditor, CloseEditor, SwitchWifi, ToggleTheme,
   OpenSettings, CloseSettings, VolumeDown, VolumeUp, ToggleGame,
-  MoveGameUp, MoveGameDown,
+  MoveGameUp, MoveGameDown, SettingsUp, SettingsDown,
 };
 
 std::vector<Pack> *g_packs = nullptr;
@@ -52,6 +52,11 @@ bool g_settings_open = false;
 // screen shares with PhraseCraze rather than keeping a second copy of.
 settings_store::MenuPrefs g_menu;
 Settings g_console;
+
+// The settings list scrolls: it outgrew the screen at seven games and will
+// keep growing.
+constexpr int kSettingsVisible = 5;
+int g_settings_scroll = 0;
 int g_about = -1;  // entry index whose About screen is showing, or -1
 bool g_about_over_game = false;  // opened from inside a game, not the menu
 uint32_t g_revision_at_open = 0;
@@ -605,8 +610,15 @@ void drawSettings() {
                    &fonts::FreeSans9pt7b);
 
   const int row_h = 84, row_gap = 8;
+  const int max_scroll =
+      g_menu.count > kSettingsVisible ? g_menu.count - kSettingsVisible : 0;
+  if (g_settings_scroll > max_scroll) g_settings_scroll = max_scroll;
+  if (g_settings_scroll < 0) g_settings_scroll = 0;
+
   int ry = 150;
-  for (int i = 0; i < g_menu.count; i++) {
+  for (int slot = 0; slot < kSettingsVisible; slot++) {
+    const int i = g_settings_scroll + slot;
+    if (i >= g_menu.count) break;
     const int entry = g_menu.order[i];
     const Entry &e = kEntries[entry];
     const bool off = hidden(entry);
@@ -643,6 +655,31 @@ void drawSettings() {
     if (can_down) addAction(down, Action::MoveGameDown, i);
 
     ry += row_h + row_gap;
+  }
+
+  if (max_scroll > 0) {
+    // Under the list rather than beside it: the rows already carry a pair of
+    // arrows each, and a third pair alongside them would be unreadable.
+    const int by = 150 + kSettingsVisible * (row_h + row_gap) + 6;
+    const Rect up{rx, by, 96, 56};
+    const Rect down{rx + 106, by, 96, 56};
+    const bool can_up = g_settings_scroll > 0;
+    const bool can_down = g_settings_scroll < max_scroll;
+    uikit::drawArrowButton(up, true, can_up ? kSurfaceLift : kSurface,
+                           can_up ? kText : kMuted);
+    uikit::drawArrowButton(down, false, can_down ? kSurfaceLift : kSurface,
+                           can_down ? kText : kMuted);
+    if (can_up) addAction(up, Action::SettingsUp);
+    if (can_down) addAction(down, Action::SettingsDown);
+
+    char pos[40];
+    snprintf(pos, sizeof(pos), "%d-%d of %d", g_settings_scroll + 1,
+             g_settings_scroll + kSettingsVisible < g_menu.count
+                 ? g_settings_scroll + kSettingsVisible
+                 : g_menu.count,
+             (int)g_menu.count);
+    uikit::drawLabel(pos, rx + 222, by + 28, kMuted, &fonts::FreeSans12pt7b,
+                     middle_left);
   }
 }
 
@@ -857,6 +894,17 @@ void handleTap(int x, int y, uint32_t now_ms) {
       case Action::OpenSettings:
         audio::select();
         g_settings_open = true;
+        g_settings_scroll = 0;
+        break;
+
+      case Action::SettingsUp:
+        audio::select();
+        if (g_settings_scroll > 0) g_settings_scroll--;
+        break;
+
+      case Action::SettingsDown:
+        audio::select();
+        g_settings_scroll++;
         break;
 
       case Action::CloseSettings:
