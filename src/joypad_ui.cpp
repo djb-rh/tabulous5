@@ -6,8 +6,11 @@
 
 #include "app.h"
 #include "joypad.h"
+#include "padmap.h"
+#include "settings_store.h"
 #include "theme.h"
 #include "uikit.h"
+#include "usbpad.h"
 
 namespace tabulous {
 namespace joypad_ui {
@@ -27,6 +30,22 @@ bool g_menu_down = false;
 
 constexpr uint32_t kPollMs = 16;  // ~60 Hz, matching an NES frame
 uint32_t g_last_poll = 0;
+
+// The USB pad, alongside the touch one. Its raw buttons are shown so a new
+// pad can be read off, and the mapping flow below teaches which is which.
+padmap::Map g_map;
+usbpad::State g_usb;
+uint32_t g_usb_drawn = 0xFFFFFFFFu;
+bool g_usb_conn_drawn = false;
+bool g_map_btn_down = false;
+
+// Mapping: step 0 = idle; 1..4 = waiting for A, B, Select, Start.
+int g_map_step = 0;
+padmap::Map g_map_new;
+uint32_t g_map_before = 0;
+const char *const kMapPrompts[5] = {"", "Press A", "Press B", "Press SELECT", "Press START"};
+
+const joypad::Rect kMapButton{joypad::kPanelW - 24 - 190, 24, 190, 64};
 
 uint16_t litFill(bool on) { return on ? kAccent : kSurfaceLift; }
 uint16_t litInk(bool on) { return on ? kInk : kText; }
@@ -149,11 +168,76 @@ void drawReadout(uint8_t state, bool full) {
                    &fonts::FreeSansBold18pt7b, middle_center);
 }
 
+// Under the picture area: which USB pad is attached and which of its buttons
+// are down right now, as the pad numbers them. That is the readout the
+// mapping needs and the one a new pad is judged by.
+void drawUsb() {
+  auto &g = gfx();
+  const int x = joypad::kVideoX, w = joypad::kVideoW;
+  const int y = joypad::kVideoY + joypad::kVideoH + 8;
+  g.fillRect(x, y, w, 64, kBg);
+  char line[96];
+  if (!g_usb.connected) {
+    snprintf(line, sizeof(line), "USB: no gamepad");
+  } else {
+    int n = snprintf(line, sizeof(line), "USB: %s  ", g_usb.name);
+    for (int b = 0; b < g_usb.buttons && n < (int)sizeof(line) - 4; b++) {
+      if ((g_usb.down >> b) & 1u) n += snprintf(line + n, sizeof(line) - n, "%d ", b + 1);
+    }
+  }
+  uikit::drawLabel(line, x, y + 16, g_usb.connected ? kText : kMuted,
+                   &fonts::FreeSans12pt7b, middle_left);
+  if (g_map_step > 0) {
+    uikit::drawLabel(kMapPrompts[g_map_step], x, y + 48, kAccent,
+                     &fonts::FreeSansBold12pt7b, middle_left);
+  } else if (g_usb.connected) {
+    snprintf(line, sizeof(line), "A=%d B=%d Select=%d Start=%d", g_map.a, g_map.b,
+             g_map.select, g_map.start);
+    uikit::drawLabel(line, x, y + 48, kMuted, &fonts::FreeSans12pt7b, middle_left);
+  }
+  g_usb_drawn = g_usb.down;
+  g_usb_conn_drawn = g_usb.connected;
+}
+
 void draw(bool full) {
-  if (full) gfx().fillScreen(kBg);
+  if (full) {
+    gfx().fillScreen(kBg);
+    uikit::drawButton(uikit::Rect{kMapButton.x, kMapButton.y, kMapButton.w, kMapButton.h},
+                      "MAP PAD", kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+  }
   drawControls(g_state, g_drawn, full);
   drawReadout(g_state, full);
+  drawUsb();
   g_drawn = g_state;
+}
+
+// One button per step, on a fresh press. Finishing writes the map; a step
+// that repeats a button already assigned is refused, silently, by waiting.
+void mapStep() {
+  const uint8_t pressed = padmap::newPress(g_usb.down, g_map_before);
+  g_map_before = g_usb.down;
+  if (!pressed) return;
+  const bool used = pressed == g_map_new.a || pressed == g_map_new.b ||
+                    pressed == g_map_new.select;
+  if (used) return;
+  switch (g_map_step) {
+    case 1: g_map_new.a = pressed; break;
+    case 2: g_map_new.b = pressed; break;
+    case 3: g_map_new.select = pressed; break;
+    case 4: g_map_new.start = pressed; break;
+    default: break;
+  }
+  g_map_step++;
+  if (g_map_step > 4) {
+    g_map_step = 0;
+    // The taught pad may not have spare face buttons; the doubles only make
+    // sense for the default layout.
+    g_map_new.a2 = 0;
+    g_map_new.b2 = 0;
+    g_map = g_map_new;
+    settings_store::savePadMap(g_map);
+  }
+  g_usb_drawn = 0xFFFFFFFFu;  // redraw the prompt line
 }
 
 }  // namespace
@@ -193,6 +277,9 @@ void begin() {
   g_full = true;
   g_menu_down = false;
   g_last_poll = 0;
+  g_map_step = 0;
+  g_usb_drawn = 0xFFFFFFFFu;
+  settings_store::loadPadMap(&g_map);
 }
 
 void invalidate() {
@@ -207,7 +294,7 @@ void tick(uint32_t now_ms) {
   g_last_poll = now_ms;
 
   bool menu_held = false;
-  const uint8_t fresh = pollPad(&menu_held);
+  uint8_t fresh = pollPad(&menu_held);
 
   // MENU on the press edge, so resting a thumb there does not fire repeatedly.
   if (menu_held && !g_menu_down) {
@@ -217,8 +304,34 @@ void tick(uint32_t now_ms) {
   }
   if (!menu_held) g_menu_down = false;
 
+  // MAP PAD, likewise on the edge. Starts the flow; a second tap cancels it.
+  bool map_held = false;
+  for (int i = 0; i < M5.Touch.getCount(); i++) {
+    const auto t = M5.Touch.getDetail(i);
+    if (t.isPressed() && kMapButton.contains(t.x, t.y)) map_held = true;
+  }
+  if (map_held && !g_map_btn_down && g_usb.connected) {
+    if (g_map_step == 0) {
+      g_map_step = 1;
+      g_map_new = padmap::Map{};
+      g_map_before = g_usb.down;
+    } else {
+      g_map_step = 0;
+    }
+    g_usb_drawn = 0xFFFFFFFFu;
+  }
+  g_map_btn_down = map_held;
+
+  g_usb = usbpad::state();
+  if (g_map_step > 0) {
+    mapStep();
+  } else if (g_usb.connected) {
+    fresh |= padmap::toNes(g_usb.down, g_usb.x, g_usb.y, g_map);
+  }
+
   g_state = fresh;
-  if (!g_full && g_state == g_drawn) return;  // nothing moved, nothing to draw
+  const bool usb_changed = g_usb.down != g_usb_drawn || g_usb.connected != g_usb_conn_drawn;
+  if (!g_full && g_state == g_drawn && !usb_changed) return;  // nothing moved
 
   const uint32_t t0 = micros();
   draw(g_full);

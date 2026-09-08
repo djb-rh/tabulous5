@@ -23,6 +23,7 @@
 #include "phrase_game.h"
 #include "orientation.h"
 #include "sdcard.h"
+#include "usbpad.h"
 #include "pack.h"
 #include "settings_store.h"
 #include "theme.h"
@@ -87,6 +88,9 @@ void setup() {
   // only reports, and a 0 here means the filesystem image was never flashed.
   audio::loadSamples();
   Serial.printf("sfx=%d/7\n", audio::sampleCount());
+
+  // A gamepad on the USB-A port is optional too; the stack just waits.
+  usbpad::begin();
 
   // The card is optional: without one the NES has its built-in ROMs and
   // nothing else changes.
@@ -256,11 +260,31 @@ void dumpScreen() {
   Serial.setTxTimeoutMs(0);
 }
 
+// Prints the gamepad whenever something on it changes: this is how a new pad
+// gets its buttons identified (press A, read the number).
+void reportPad() {
+  static uint32_t last_down = 0;
+  static int8_t last_x = 0, last_y = 0;
+  static bool last_conn = false;
+  const usbpad::State s = usbpad::state();
+  if (s.connected != last_conn) {
+    Serial.printf("pad: %s\n", s.connected ? s.name : "disconnected");
+    last_conn = s.connected;
+  }
+  if (s.down != last_down || s.x != last_x || s.y != last_y) {
+    Serial.printf("pad: down=%08lx x=%d y=%d\n", (unsigned long)s.down, s.x, s.y);
+    last_down = s.down;
+    last_x = s.x;
+    last_y = s.y;
+  }
+}
+
 void loop() {
   const uint32_t loop_start = micros();
   M5.update();
 
   // Screenshot request. Cheap to poll and inert unless a host asks.
+  reportPad();
   if (Serial.available()) {
     const int cmd = Serial.read();
     if (cmd == 's') dumpScreen();

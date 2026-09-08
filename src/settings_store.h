@@ -6,6 +6,7 @@
 #pragma once
 
 #include "fivehead.h"
+#include "padmap.h"
 #include "phrase_game.h"
 
 namespace tabulous {
@@ -63,6 +64,10 @@ struct NesSettings {
 };
 void loadNes(NesSettings *out);
 void saveNes(const NesSettings &settings);
+
+// Which USB gamepad button is which; taught in the Gamepad Test screen.
+void loadPadMap(padmap::Map *out);
+void savePadMap(const padmap::Map &map);
 
 }  // namespace settings_store
 }  // namespace tabulous

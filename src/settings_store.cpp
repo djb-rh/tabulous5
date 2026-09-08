@@ -266,6 +266,31 @@ void saveNes(const NesSettings &settings) {
   g_prefs.end();
 }
 
+void loadPadMap(padmap::Map *out) {
+  if (!out) return;
+  if (!g_prefs.begin(kNamespace, true)) return;
+  if (g_prefs.isKey("pad_a")) {
+    out->a = g_prefs.getUChar("pad_a", out->a);
+    out->a2 = g_prefs.getUChar("pad_a2", out->a2);
+    out->b = g_prefs.getUChar("pad_b", out->b);
+    out->b2 = g_prefs.getUChar("pad_b2", out->b2);
+    out->select = g_prefs.getUChar("pad_sel", out->select);
+    out->start = g_prefs.getUChar("pad_start", out->start);
+  }
+  g_prefs.end();
+}
+
+void savePadMap(const padmap::Map &map) {
+  if (!g_prefs.begin(kNamespace, false)) return;
+  g_prefs.putUChar("pad_a", map.a);
+  g_prefs.putUChar("pad_a2", map.a2);
+  g_prefs.putUChar("pad_b", map.b);
+  g_prefs.putUChar("pad_b2", map.b2);
+  g_prefs.putUChar("pad_sel", map.select);
+  g_prefs.putUChar("pad_start", map.start);
+  g_prefs.end();
+}
+
 void loadSolitaire(SolitaireSettings *out) {
   if (!out) return;
   if (!g_prefs.begin(kNamespace, true)) return;

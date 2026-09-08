@@ -21,10 +21,12 @@
 #include "joypad_ui.h"
 #include "nes_index.h"
 #include "nesrom.h"
+#include "padmap.h"
 #include "sdcard.h"
 #include "settings_store.h"
 #include "theme.h"
 #include "uikit.h"
+#include "usbpad.h"
 
 namespace tabulous {
 namespace nes_ui {
@@ -189,6 +191,9 @@ enum class Action : uint8_t {
 };
 
 settings_store::NesSettings g_settings;
+padmap::Map g_padmap;
+// Frames Select and Start have been held together: the gamepad's way out.
+int g_quit_hold = 0;
 
 // The browser: a rail of groups down the left (Favourites, #, A-Z), and the
 // chosen group's titles in pages on the right. A page is fourteen rows, which
@@ -842,6 +847,19 @@ void runFrame(uint32_t now_ms) {
   g_pad = joypad_ui::pollPad(&menu_held);
   if (g_scale == 3) g_pad = 0;  // no on-screen controls to hit
 
+  // A USB pad, if there is one, on top of the touch controls.
+  {
+    const usbpad::State u = usbpad::state();
+    if (u.connected) g_pad |= padmap::toNes(u.down, u.x, u.y, g_padmap);
+  }
+  // Select+Start held for about two thirds of a second leaves the game: a
+  // pad has no MENU button, and no game uses that chord for long.
+  if ((g_pad & (joypad::kSelect | joypad::kStart)) == (joypad::kSelect | joypad::kStart)) {
+    if (++g_quit_hold >= 40) menu_held = true;
+  } else {
+    g_quit_hold = 0;
+  }
+
   if (menu_held && !g_menu_down) {
     g_menu_down = true;
     releaseCore();
@@ -935,6 +953,8 @@ void begin() {
   g_mode = Mode::Picking;
   g_error = "";
   settings_store::loadNes(&g_settings);
+  settings_store::loadPadMap(&g_padmap);
+  g_quit_hold = 0;
   if (!g_scanned) {
     // A card of thousands takes a moment to walk; say so rather than sit on
     // the previous screen.
