@@ -96,8 +96,8 @@ uint32_t g_audio_dropped = 0;
 constexpr uint32_t kApuRate = 44100;
 volatile uint32_t g_audio_made = 0;
 
-// DC blocker state. See onAudio.
-int32_t g_dc_x = 0, g_dc_y = 0;
+// DC blocker and low-pass state. See onAudio.
+int32_t g_dc_x = 0, g_dc_y = 0, g_lp = 0;
 
 // The APU is not clocked by the CPU — upstream runs it in its own task, paced
 // entirely by i2s_write() blocking when the DMA is full. Replacing that with a
@@ -315,9 +315,20 @@ void onAudio(const uint16_t *samples, uint32_t bytes) {
     int32_t y = x - g_dc_x + ((g_dc_y * 4085) >> 12);
     g_dc_x = x;
     g_dc_y = y;
-    if (y > 32767) y = 32767;
-    if (y < -32768) y = -32768;
-    g_ring[g_ring_w] = (int16_t)y;
+    // Then a gentle low-pass, which the real console has and we did not.
+    //
+    // Anemoia sums the five channels linearly, so the output carries only
+    // about 187 distinct levels — roughly 7.5 bits. That noise floor sits at a
+    // fixed absolute level, so it is masked while a sound is loud and becomes
+    // audible as an effect fades: hiss on the tails, which is exactly what was
+    // reported. A NES runs its mix through an RC stage before the speaker;
+    // this is a first-order equivalent at about 10 kHz, which cuts the
+    // high-frequency part of that noise without dulling the square waves.
+    g_lp += ((y - g_lp) * 2867) >> 12;  // a = 0.70
+    int32_t out = g_lp;
+    if (out > 32767) out = 32767;
+    if (out < -32768) out = -32768;
+    g_ring[g_ring_w] = (int16_t)out;
     g_ring_w = next;
     g_audio_made++;
   }
@@ -376,7 +387,7 @@ bool load(int index) {
   g_ring_w = g_ring_r = 0;
   g_audio_dropped = 0;
   g_audio_made = 0;
-  g_dc_x = g_dc_y = 0;
+  g_dc_x = g_dc_y = g_lp = 0;
   Apu2A03::setAudioCallback(onAudio);
   g_cpu->apu.setVolume(80);
 
