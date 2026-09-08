@@ -67,7 +67,7 @@ uint8_t g_pad = 0, g_pad_drawn = 0xFF;
 bool g_menu_down = false;
 uint32_t g_frames = 0, g_fps_at = 0, g_fps = 0;
 // Phase timings, accumulated over a second so one print covers many frames.
-uint32_t g_us_emu = 0, g_us_conv = 0, g_us_push = 0;
+uint32_t g_us_emu = 0, g_us_conv = 0, g_us_push = 0, g_us_sync = 0;
 
 enum class Action : uint8_t { None, Pick, Back };
 
@@ -278,17 +278,20 @@ IRAM_ATTR void blit() {
         dst = (uint16_t *)(g_fb + (size_t)(logical_w - 1 - lx) * g_fb_stride) + vy;
         step = 1;
       }
+      // The two output pixels are adjacent and the run always starts 4-byte
+      // aligned, so each pair goes out as one 32-bit store. Measured: no
+      // faster than two 16-bit stores — this is bound by PSRAM write
+      // bandwidth (492 KB a frame at ~57 MB/s), not by instruction count.
+      uint32_t *pair = (uint32_t *)dst;
       if (g_fb_rot == 1) {
         for (int sy = joypad::kNesH - 1; sy >= 0; sy--) {
-          const uint16_t v = src[(size_t)sy * joypad::kNesW];
-          dst[0] = v; dst[1] = v;
-          dst += 2;
+          const uint32_t v = src[(size_t)sy * joypad::kNesW];
+          *pair++ = v | (v << 16);
         }
       } else {
         for (int sy = 0; sy < joypad::kNesH; sy++) {
-          const uint16_t v = src[(size_t)sy * joypad::kNesW];
-          dst[0] = v; dst[1] = v;
-          dst += 2;
+          const uint32_t v = src[(size_t)sy * joypad::kNesW];
+          *pair++ = v | (v << 16);
         }
       }
       (void)step;
@@ -299,9 +302,11 @@ IRAM_ATTR void blit() {
   // to be pushed out or the panel shows stale pixels. One flush over the whole
   // touched span rather than 512 small ones.
   const size_t first_row = (g_fb_rot == 1) ? vx : (logical_w - (vx + joypad::kVideoW));
+  const uint32_t t_sync = micros();
   esp_cache_msync(g_fb + first_row * g_fb_stride,
                   (size_t)joypad::kVideoW * g_fb_stride,
                   ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+  g_us_sync += micros() - t_sync;
 
   g_us_push += micros() - t1;
 }
@@ -351,11 +356,11 @@ void runFrame(uint32_t now_ms) {
     // the display path needs replacing, and it has to be readable without a
     // screenshot (a capture repaints over the on-screen figure).
     const uint32_t n = g_fps ? g_fps : 1;
-    Serial.printf("nes %lu fps  emulate=%lums convert=%lums push=%lums\n",
-                  (unsigned long)g_fps, (unsigned long)(g_us_emu / 1000 / n),
-                  (unsigned long)(g_us_conv / 1000 / n),
-                  (unsigned long)(g_us_push / 1000 / n));
-    g_us_emu = g_us_conv = g_us_push = 0;
+    Serial.printf("nes %lu fps  emulate=%luus push=%luus (of which sync=%luus)\n",
+                  (unsigned long)g_fps, (unsigned long)(g_us_emu / n),
+                  (unsigned long)(g_us_push / n),
+                  (unsigned long)(g_us_sync / n));
+    g_us_emu = g_us_conv = g_us_push = g_us_sync = 0;
     char line[32];
     snprintf(line, sizeof(line), "%lu fps", (unsigned long)g_fps);
     auto &g = gfx();
