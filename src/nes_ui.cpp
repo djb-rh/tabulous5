@@ -403,6 +403,10 @@ IRAM_ATTR void blit() {
   // The framebuffer is cached and the DSI scans it by DMA, so the writes have
   // to be pushed out or the panel shows stale pixels. One flush over the whole
   // touched span rather than 512 small ones.
+  //
+  // Splitting this loop across both cores was tried and gained 6% (9.6 -> 9.1
+  // ms) for a task and a semaphore: the writes are bound by PSRAM bandwidth,
+  // and two cores cannot push memory faster than one. Not worth the machinery.
   const size_t first_row = (g_fb_rot == 1) ? vx : (logical_w - (vx + joypad::kVideoW));
   const uint32_t t_sync = micros();
   esp_cache_msync(g_fb + first_row * g_fb_stride,
