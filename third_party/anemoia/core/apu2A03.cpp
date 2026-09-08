@@ -324,78 +324,85 @@ void Apu2A03::clock()
     default: break;
     }
 
-    // Put sound channels output into audio buffers
-    // Generate sample every 20.29221088 clocks
-    // (1.789773 MHz / 2) / 44100 Hz
+    // Mix at EVERY clock and average across the ~20.3 clocks that make up
+    // one output sample, instead of grabbing a single instantaneous value.
+    //
+    // Upstream sampled-and-held. A pulse channel at period 9 runs at ~11 kHz
+    // and its harmonics at 33 and 55 kHz then fold straight back into the
+    // audible band when taken at 44.1 kHz — inharmonic hash that appears
+    // exactly where a sweep reaches the top of its range, i.e. the tail of
+    // every jump. Averaging across the whole inter-sample interval is a box
+    // decimation filter: the area under the curve, which is what the real
+    // console's RC output stage approximates. See ../CHANGES.md.
+    //
+    // Muting is applied per clock too; at sample time only, a muted channel
+    // would keep contributing between samples.
+    {
+        const uint8_t p1 = (pulse1.sweep.mute || pulse1.seq.reload < 8 ||
+                            pulse1.len_counter.timer == 0 || !pulse1.seq.output)
+                               ? 0 : pulse1.env.output;
+        const uint8_t p2 = (pulse2.sweep.mute || pulse2.seq.reload < 8 ||
+                            pulse2.len_counter.timer == 0 || !pulse2.seq.output)
+                               ? 0 : pulse2.env.output;
+        const uint8_t tri = triangle.seq.output;
+        const uint8_t noi = (!(noise.shift_register & 0x01) && noise.len_counter.timer > 0)
+                                ? noise.env.output : 0;
+        const uint8_t dmc = DMC.output_unit.output_level;
+        const int32_t m = (int32_t)mixTables(p1 + p2, 3 * tri + 2 * noi + dmc);
+
+        // Anti-alias BEFORE decimation: three cascaded one-poles at ~14 kHz,
+        // running at the full 895 kHz clock. A box average alone is a weak
+        // filter — it left ~34% of the worst alias through, and the hiss was
+        // reported unchanged. Three poles give ~-24 dB at 32 kHz on their own
+        // and ~-33 dB combined with the averaging that follows.
+        //   a = 1 - exp(-2*pi*14000/894886) = 0.0937 -> 384/4096
+        lp1 += ((m - lp1) * 384) >> 12;
+        lp2 += ((lp1 - lp2) * 384) >> 12;
+        lp3 += ((lp2 - lp3) * 384) >> 12;
+        mix_acc += (uint32_t)lp3;
+        mix_n++;
+    }
+
+    // Generate a sample every 20.29221088 clocks: (1.789773 MHz / 2) / 44100 Hz
     pulse_hz += SAMPLE_RATE;
     if (pulse_hz > 894886)
     {
-        // Mute sound channels if muted
-        if (pulse1.sweep.mute || pulse1.seq.reload < 8 || pulse1.len_counter.timer == 0)
-        {
-            pulse1.seq.output = 0;
-            pulse1.env.output = 0;
-        }
-        if (pulse2.sweep.mute || pulse2.seq.reload < 8 || pulse2.len_counter.timer == 0)
-        {
-            pulse2.seq.output = 0;
-            pulse2.env.output = 0;
-        }
-        // Silencing the triangle channel when triangle.seq.reload < 2 is considered less accurate
-        // emulation, but eliminates high frequencies and popping if (!triangle_enable ||
-        // triangle.len_counter.timer == 0 || triangle.seq.reload < 2)
-        // {
-        // 	triangle.seq.output = 0;
-        // 	triangle.env.output = 0;
-        // }
         generateSample();
         pulse_hz -= 894886;
     }
     clock_counter++;
 }
 
-inline void Apu2A03::generateSample()
+// The NES's non-linear mixer (NESdev formulas), tabulated on first use.
+inline uint32_t Apu2A03::mixTables(uint8_t pulse_idx, uint8_t tnd_idx)
 {
-    uint16_t index = (buffer_index << 1);
-
-    // The NES mixes its channels NON-LINEARLY. Summing them and masking to
-    // 8 bits, as upstream did, leaves only ~187 distinct output levels — a
-    // noise floor at a fixed absolute level, so it is masked while a sound is
-    // loud and audible as hiss on the tail of every effect that fades.
-    //
-    // These are the mixer formulas from the NESdev wiki, tabulated once:
-    //   pulse_out = 95.88 / (8128/(p1+p2) + 100)
-    //   tnd_out   = 159.79 / (1/(t/8227 + n/12241 + d/22638) + 100)
-    // Together they give a full 16-bit result and the console's actual
-    // balance between the channels. See ../CHANGES.md.
     static uint16_t pulse_table[31];
     static uint16_t tnd_table[203];
-    static bool tables_ready = false;
-    if (!tables_ready)
+    static bool ready = false;
+    if (!ready)
     {
         pulse_table[0] = 0;
         for (int i = 1; i < 31; i++)
             pulse_table[i] = (uint16_t)((95.88 / (8128.0 / i + 100.0)) * 32767.0);
         tnd_table[0] = 0;
         for (int i = 1; i < 203; i++)
-            tnd_table[i] = (uint16_t)((159.79 / (1.0 / (i / 22638.0) + 100.0)) * 32767.0);
-        tables_ready = true;
+            tnd_table[i] = (uint16_t)((163.67 / (24329.0 / i + 100.0)) * 32767.0);
+        ready = true;
     }
+    return (uint32_t)pulse_table[pulse_idx] + tnd_table[tnd_idx];
+}
 
-    const uint8_t p1 = pulse1.seq.output ? pulse1.env.output : 0;
-    const uint8_t p2 = pulse2.seq.output ? pulse2.env.output : 0;
-    const uint8_t tri = triangle.seq.output;
-    const uint8_t noi =
-        (!(noise.shift_register & 0x01) && noise.len_counter.timer > 0) ? noise.env.output : 0;
-    const uint8_t dmc = DMC.output_unit.output_level;
+inline void Apu2A03::generateSample()
+{
+    uint16_t index = (buffer_index << 1);
 
-    uint32_t mixed = pulse_table[p1 + p2] + tnd_table[3 * tri + 2 * noi + dmc];
+    // The average of everything mixed since the last sample. See clock().
+    uint32_t mixed = mix_n ? mix_acc / mix_n : 0;
+    mix_acc = 0;
+    mix_n = 0;
     mixed = mixed * volume / 100;
     if (mixed > 65535) mixed = 65535;
 
-    // One-pole smoothing, as before, but on the full-width value rather than
-    // on a value already crushed to 8 bits — quantising inside the filter's
-    // own feedback was adding noise of its own.
     uint16_t sample = (uint16_t)((mixed + prev_sample) >> 1);
     prev_sample = sample;
     audio_buffer[index] = sample;

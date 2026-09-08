@@ -59,6 +59,11 @@ private:
     uint32_t clock_counter = 0;
     uint32_t pulse_hz = 0;
     uint16_t prev_sample = 0;
+    // Per-clock mix accumulator for the box decimation in clock().
+    uint32_t mix_acc = 0;
+    uint32_t mix_n = 0;
+    int32_t lp1 = 0, lp2 = 0, lp3 = 0;  // anti-alias filter state, see clock()
+    inline uint32_t mixTables(uint8_t pulse_idx, uint8_t tnd_idx);
     bool four_step_sequence_mode = true;
 
     // double pulse_out = 0.0;

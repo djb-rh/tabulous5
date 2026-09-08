@@ -55,3 +55,17 @@ about this device.
   full 16-bit result and the console's real balance between channels. The
   one-pole smoothing is kept but now runs on the full-width value — quantising
   inside the filter's own feedback was adding noise of its own.
+* `core/apu2A03.cpp` — `clock()` now mixes the channels at **every** APU clock
+  and `generateSample()` emits the **average** across the ~20.3 clocks per
+  output sample, instead of sampling-and-holding one instantaneous value.
+  Upstream's sample-and-hold had no band-limiting at all: a pulse channel at
+  period 9 runs at ~11 kHz and its harmonics at 33 and 55 kHz fold straight
+  back into the audible band at 44.1 kHz — inharmonic hash appearing exactly
+  where a sweep tops out, i.e. the tail of every jump in Super Mario Bros.
+  Averaging across the inter-sample interval is a box decimation filter (the
+  area under the curve, which the console's RC output stage approximates).
+  Ahead of that average sit three cascaded one-pole low-passes at ~14 kHz
+  running at the full clock rate — the averaging alone left ~34% of the worst
+  alias through. Muting is applied per clock too, so a muted channel cannot
+  contribute between samples. The mixer tables moved into `mixTables()`; the tnd table now uses
+  the standard combined form `163.67 / (24329/i + 100)`.
