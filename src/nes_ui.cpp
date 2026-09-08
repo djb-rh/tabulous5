@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "app.h"
+#include "audio.h"
 #include "../third_party/anemoia/core/cartridge.h"
 #include "../third_party/anemoia/core/cpu6502.h"
 #include "joypad.h"
@@ -62,6 +63,49 @@ uint16_t *g_nes = nullptr;
 uint8_t *g_fb = nullptr;
 size_t g_fb_stride = 0;
 uint8_t g_fb_rot = 1;
+
+// ---- audio -------------------------------------------------------------
+//
+// The APU hands over UNSIGNED 16-bit samples, the same value in both stereo
+// channels, at 44.1 kHz in 128-frame chunks. M5.Speaker wants SIGNED, and it
+// does not copy what it is given — it plays straight from the pointer — so the
+// samples are converted into one of several buffers that stay alive until the
+// speaker is finished with them.
+//
+// Only one channel is kept: both carry the same value, so playing mono halves
+// the work and sounds identical.
+constexpr int kAudioBufs = 4;
+// One chunk is ~23 ms of sound. The speaker holds two per channel, so at most
+// ~46 ms is ever queued — enough to ride out a slow frame, short enough that
+// input does not feel detached from what is heard.
+constexpr int kAudioBufSamples = 1024;
+// A channel of its own, so game sound effects and the emulator cannot cut each
+// other off.
+constexpr int kAudioChannel = 1;
+int16_t *g_audio[kAudioBufs] = {nullptr};
+int g_audio_which = 0;
+uint32_t g_audio_dropped = 0;
+
+// The APU has NO internal clock. It generates a sample every so many calls to
+// clock(), and upstream's only pacing was i2s_write() blocking on a full DMA
+// buffer — measured here, free-running it produces 82 kHz, near double real
+// time. So the speaker has to be the metronome, exactly as I2S was: chunks are
+// submitted only while the speaker has a free slot, which meters consumption
+// at exactly 44.1 kHz, and the ring filling up throttles the APU to match.
+constexpr uint32_t kApuRate = 44100;
+volatile uint32_t g_audio_made = 0;
+
+// The APU is not clocked by the CPU — upstream runs it in its own task, paced
+// entirely by i2s_write() blocking when the DMA is full. Replacing that with a
+// callback removed the brake, so the pacing has to come from somewhere else:
+// this ring. The producer blocks when it is full, which throttles the APU to
+// whatever rate we actually consume, and keeps sound in step with a game
+// running below full speed rather than racing ahead of it.
+constexpr int kRing = 8192;  // ~186 ms at 44.1 kHz
+int16_t *g_ring = nullptr;
+volatile uint32_t g_ring_w = 0, g_ring_r = 0;
+TaskHandle_t g_apu_task = nullptr;
+volatile bool g_apu_run = false;
 
 uint8_t g_pad = 0, g_pad_drawn = 0xFF;
 bool g_menu_down = false;
@@ -175,11 +219,47 @@ void drawPicker() {
 // --------------------------------------------------------------------- play
 
 void releaseCore() {
+  // Stop the APU task BEFORE the APU it points at is destroyed.
+  g_apu_run = false;
+  for (int i = 0; i < 200 && g_apu_task; i++) delay(1);
+  Apu2A03::setAudioCallback(nullptr);
+  M5.Speaker.stop();
   delete g_cpu;
   g_cpu = nullptr;
   delete g_cart;   // opened the ROM file itself, and closes it
   g_cart = nullptr;
   g_playing = -1;
+}
+
+// Called by the APU whenever its buffer fills. Runs inside clockFrame(), so it
+// must be cheap: convert and stash, never touch the speaker from here.
+void onAudio(const uint16_t *samples, uint32_t bytes) {
+  if (!g_ring) return;
+  const uint32_t frames = bytes / sizeof(uint16_t) / 2;  // stereo pairs
+  for (uint32_t i = 0; i < frames; i++) {
+    uint32_t next = (g_ring_w + 1) % kRing;
+    int spins = 0;
+    while (next == g_ring_r) {  // full — wait, which is what paces the APU
+      if (!g_apu_run) return;
+      vTaskDelay(1);
+      if (++spins > 200) { g_audio_dropped++; return; }  // consumer gone; give up
+    }
+    // Unsigned to signed: the APU centres silence at 0x8000. Only one channel
+    // is kept — both carry the same value.
+    g_ring[g_ring_w] = (int16_t)((int32_t)samples[i * 2] - 32768);
+    g_ring_w = next;
+    g_audio_made++;
+  }
+}
+
+// Free-running, exactly as upstream does it, on the core the main loop is not
+// using. Its speed is set by onAudio blocking, not by this loop.
+void apuTask(void *) {
+  while (g_apu_run) {
+    g_cpu->apu.clock();
+  }
+  g_apu_task = nullptr;
+  vTaskDelete(nullptr);
 }
 
 // Called by the PPU every SCANLINES_PER_BUFFER finished lines, with RGB565
@@ -210,6 +290,28 @@ bool load(int index) {
   if (!g_cpu) { g_error = "out of memory for core"; releaseCore(); return false; }
   g_cpu->bus.insertCartridge(g_cart);
   g_cpu->bus.ppu.setDrawCallback(drawChunk);
+  for (int i = 0; i < kAudioBufs; i++) {
+    if (!g_audio[i]) {
+      g_audio[i] = (int16_t *)heap_caps_malloc(kAudioBufSamples * sizeof(int16_t),
+                                               MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+  }
+  if (!g_ring) {
+    g_ring = (int16_t *)heap_caps_malloc(kRing * sizeof(int16_t),
+                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  }
+  if (!g_ring) { g_error = "out of memory for audio"; releaseCore(); return false; }
+  g_audio_which = 0;
+  g_ring_w = g_ring_r = 0;
+  g_audio_dropped = 0;
+  g_audio_made = 0;
+  Apu2A03::setAudioCallback(onAudio);
+  g_cpu->apu.setVolume(80);
+
+  // Core 0: the Arduino loop this emulator runs in lives on core 1, so the APU
+  // gets a core to itself rather than competing with the CPU and PPU.
+  g_apu_run = true;
+  xTaskCreatePinnedToCore(apuTask, "nes_apu", 4096, nullptr, 1, &g_apu_task, 0);
   g_cpu->reset();
 
   if (!g_nes) {
@@ -343,6 +445,24 @@ void runFrame(uint32_t now_ms) {
   g_us_emu += micros() - t_emu;
 
   blit();
+
+  // Feed the speaker while it has room. Its own consumption is the clock: two
+  // queued chunks per channel is the ceiling, so this hands over sound at
+  // exactly the rate it is played, and the ring backs up to throttle the APU.
+  while (audio::enabled() && M5.Speaker.isPlaying(kAudioChannel) < 2) {
+    uint32_t avail = (g_ring_w - g_ring_r + kRing) % kRing;
+    if ((int)avail < kAudioBufSamples) break;
+    int16_t *dst = g_audio[g_audio_which];
+    if (!dst) break;
+    for (int i = 0; i < kAudioBufSamples; i++) {
+      dst[i] = g_ring[g_ring_r];
+      g_ring_r = (g_ring_r + 1) % kRing;
+    }
+    M5.Speaker.playRaw(dst, (size_t)kAudioBufSamples, kApuRate, false, 1,
+                       kAudioChannel, false);
+    g_audio_which = (g_audio_which + 1) % kAudioBufs;
+  }
+
   drawPlayChrome(false);
 
   // Rate reported once a second rather than drawn per frame: the readout would
@@ -356,10 +476,13 @@ void runFrame(uint32_t now_ms) {
     // the display path needs replacing, and it has to be readable without a
     // screenshot (a capture repaints over the on-screen figure).
     const uint32_t n = g_fps ? g_fps : 1;
-    Serial.printf("nes %lu fps  emulate=%luus push=%luus (of which sync=%luus)\n",
+    // made/sec should sit at ~44100: below means the speaker is starving,
+    // far above means the APU is outrunning its pacing again.
+    Serial.printf("nes %lu fps  emulate=%luus push=%luus  audio made=%lu/s dropped=%lu\n",
                   (unsigned long)g_fps, (unsigned long)(g_us_emu / n),
                   (unsigned long)(g_us_push / n),
-                  (unsigned long)(g_us_sync / n));
+                  (unsigned long)g_audio_made, (unsigned long)g_audio_dropped);
+    g_audio_made = 0;
     g_us_emu = g_us_conv = g_us_push = g_us_sync = 0;
     char line[32];
     snprintf(line, sizeof(line), "%lu fps", (unsigned long)g_fps);
