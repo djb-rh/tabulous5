@@ -538,8 +538,9 @@ td.acts button{padding:4px 9px;font-size:13px}
 #msg.err{display:block;background:#4a1d1f;color:#ffb3b5}
 .prog{height:6px;background:#252c37;border-radius:3px;overflow:hidden;margin-bottom:12px;display:none}
 .prog i{display:block;height:100%;background:#30a46c;width:0}
-.drop{border:2px dashed #39404d;border-radius:10px;padding:12px;text-align:center;color:#8892a0;margin-bottom:12px}
-.drop.over{border-color:#30a46c;color:#f5f7fa}
+.drop{border:2px dashed #39404d;border-radius:10px;padding:12px;text-align:center;color:#8892a0;margin-bottom:12px;cursor:pointer}
+.drop:hover,.drop.over{border-color:#30a46c;color:#f5f7fa}
+.drop u{text-decoration:none;color:#7cc4ff}
 </style>
 <header>
   <h1>TABULOUS5 FILES</h1>
@@ -552,7 +553,7 @@ td.acts button{padding:4px 9px;font-size:13px}
 <div class=crumbs id=crumbs></div>
 <div id=msg></div>
 <div class=prog id=prog><i id=progbar></i></div>
-<div class=drop id=drop>Drop files here to upload them to this folder</div>
+<div class=drop id=drop>Drop files here to upload them to this folder, or <u>click to choose them</u></div>
 <input type=file id=picker multiple style="display:none">
 <div class=bar>
   <label><input type=checkbox id=all> Select all</label>
@@ -725,6 +726,7 @@ $('mkdir').onclick=function(){
 $('up').onclick=function(){$('picker').click();};
 $('picker').onchange=function(){upload(Array.prototype.slice.call(this.files));this.value='';};
 var drop=$('drop');
+drop.onclick=function(){$('picker').click();};
 drop.ondragover=function(e){e.preventDefault();drop.classList.add('over');};
 drop.ondragleave=function(){drop.classList.remove('over');};
 drop.ondrop=function(e){e.preventDefault();drop.classList.remove('over');upload(Array.prototype.slice.call(e.dataTransfer.files));};
