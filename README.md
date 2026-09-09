@@ -258,7 +258,7 @@ An arcade board's ROMs are several separate chips, and the game list is one row
 per file, so the chips are packed on the machine that has the romset:
 
 ```bash
-tools/mkarcade.py --all ~/Downloads/MAME*/ /Volumes/CARD/arcade
+tools/mkarcade.py --all ~/path/to/MAME*/ /Volumes/CARD/arcade
 ```
 
 That writes a `.arc` file per game, skipping any whose romset is not there;

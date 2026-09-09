@@ -7,8 +7,8 @@ it to open zips would mean carrying an unpacker in the firmware for no other
 reason -- so the chips are packed here instead, on the machine that already has
 the set, into a single .arc file laid out exactly as the emulator wants it.
 
-    tools/mkarcade.py --all  ~/Downloads/MAME*/            /Volumes/CARD/arcade
-    tools/mkarcade.py --set pacman ~/Downloads/MAME*/      /tmp/out
+    tools/mkarcade.py --all  ~/path/to/MAME*/              /Volumes/CARD/arcade
+    tools/mkarcade.py --set pacman ~/path/to/MAME*/        /tmp/out
     tools/mkarcade.py --list
 
 The console emulates the 1980 Namco Pac-Man board, and a great many games
