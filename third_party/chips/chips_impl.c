@@ -42,8 +42,10 @@
 /* Everything the bus callbacks need. The console plays one game at a time, so
  * there is one of these, and the CPU is handed a pointer to it. */
 typedef struct {
+    /* The four things every memory access touches, kept together and first so
+     * they share a cache line: the machine is in PSRAM and the cache is worth
+     * more here than anywhere else in this file. */
     namco_t* sys;
-    namco_fast_desc_t desc;
     /* The Ms. Pac-Man kit's current bank: 0 is the Pac-Man program the board
      * came with, 1 is the kit's own. */
     const uint8_t* cur_low;
@@ -51,6 +53,7 @@ typedef struct {
     /* One byte per 256-byte page, so the common case is a single load: only
      * the seven pages holding a switching window are ever looked at twice. */
     uint8_t page_switches[256];
+    namco_fast_desc_t desc;
 } _fast_board_t;
 
 /* Where the kit watches. Touching any of these, reading or writing, switches
@@ -68,12 +71,9 @@ static _fast_board_t _fast_board;
 /* The plain board decodes 15 address lines, so the top half of the address
  * space mirrors the bottom. A board with ROM at 0x8000 decodes all 16, and
  * answers there instead of mirroring. */
-/* Switch banks if this address is one the kit watches. Cheap enough to call on
- * every access: nearly always one indexed byte load that says "no". */
+/* Switch banks, given an address on a page the kit watches. Whether the page
+ * is watched at all is one indexed byte load, made by the caller. */
 static void _fast_watch(_fast_board_t* board, uint16_t addr) {
-    if (!board->page_switches[addr >> 8]) {
-        return;
-    }
     for (size_t i = 0; i < sizeof(_fast_mspacman_windows) / sizeof(_fast_window_t); i++) {
         const _fast_window_t* w = &_fast_mspacman_windows[i];
         if (addr >= w->first && addr <= w->last) {
@@ -89,39 +89,17 @@ static void _fast_watch(_fast_board_t* board, uint16_t addr) {
     }
 }
 
-/* The kit's board decodes all sixteen address lines: the program answers at
- * 0x0000 and 0x8000, and everything else is the usual map mirrored into the
- * gaps. */
-static uint8_t _fast_kit_rd(_fast_board_t* board, uint16_t addr) {
-    _fast_watch(board, addr);
-    if (addr < 0x4000) return board->cur_low[addr];
-    if (addr >= 0x8000 && addr < 0xC000) return board->cur_high[addr - 0x8000];
-    return 0xFF;  /* caller handles the RAM and IO half */
-}
-
-static uint8_t _fast_rd(void* ud, uint16_t addr) {
-    _fast_board_t* board = (_fast_board_t*)ud;
-    namco_t* sys = board->sys;
-    if (board->desc.rom_alt_low != 0) {
-        if (addr < 0x4000 || (addr >= 0x8000 && addr < 0xC000)) {
-            return _fast_kit_rd(board, addr);
-        }
-        _fast_watch(board, addr);
-        addr &= (uint16_t)~0xA000;  /* RAM and IO mirror into the gaps */
-    }
-    if (board->desc.rom_high_bytes != 0 && addr >= 0x8000) {
-        const uint32_t high = (uint32_t)addr - 0x8000u;
-        return high < board->desc.rom_high_bytes ? board->desc.rom_high[high] : 0xFF;
-    }
-    addr &= NAMCO_ADDR_MASK;
+/* The half of the map that is not program ROM, shared by both boards.
+ *
+ * The board decodes six address lines up here, so each port answers over a
+ * 64-byte span rather than at one address. Several games read them at the
+ * mirrors -- Paint Roller reads its DIP switches high in the range, and with
+ * only the base address answering it saw every switch set and sat in its
+ * power-on test for ever. */
+static inline uint8_t _fast_ram_io_rd(namco_t* sys, uint16_t addr) {
     if (addr < NAMCO_IOMAP_BASE) {
         return mem_rd(&sys->mem, addr);
     }
-    /* The board decodes six address lines here, so each port answers over a
-     * 64-byte span rather than at one address. Several games read them at the
-     * mirrors -- Paint Roller reads its DIP switches high in the range, and
-     * with only the base address answering it saw every switch set and sat in
-     * its power-on test for ever. */
     switch (addr & ~0x3F) {
         case NAMCO_ADDR_IN0: return ~sys->in0;
         case NAMCO_ADDR_IN1: return ~sys->in1;
@@ -130,16 +108,20 @@ static uint8_t _fast_rd(void* ud, uint16_t addr) {
     }
 }
 
+static uint8_t _fast_rd(void* ud, uint16_t addr) {
+    _fast_board_t* board = (_fast_board_t*)ud;
+    namco_t* sys = board->sys;
+    if (board->desc.rom_high_bytes != 0 && addr >= 0x8000) {
+        const uint32_t high = (uint32_t)addr - 0x8000u;
+        return high < board->desc.rom_high_bytes ? board->desc.rom_high[high] : 0xFF;
+    }
+    return _fast_ram_io_rd(sys, (uint16_t)(addr & NAMCO_ADDR_MASK));
+}
+
 static void _fast_wr(void* ud, uint16_t addr, uint8_t data) {
     _fast_board_t* board = (_fast_board_t*)ud;
     namco_t* sys = board->sys;
-    if (board->desc.rom_alt_low != 0) {
-        _fast_watch(board, addr);
-        if (addr < 0x4000 || (addr >= 0x8000 && addr < 0xC000)) {
-            return;  /* ROM either way round */
-        }
-        addr &= (uint16_t)~0xA000;
-    } else if (board->desc.rom_high_bytes != 0 && addr >= 0x8000) {
+    if (board->desc.rom_high_bytes != 0 && addr >= 0x8000) {
         return;  /* ROM up there, and nothing else is decoded */
     }
     addr &= NAMCO_ADDR_MASK;
@@ -158,6 +140,34 @@ static void _fast_wr(void* ud, uint16_t addr, uint8_t data) {
     } else if ((addr >= NAMCO_ADDR_SPRITES_COORD) && (addr < (NAMCO_ADDR_SPRITES_COORD + 0x10))) {
         sys->sprite_coords[addr & 0xF] = data;
     }
+}
+
+/* The kit's board, which is the plain one with a second program bolted across
+ * it. All sixteen address lines are decoded: the program answers at 0x0000 and
+ * 0x8000, and the RAM and IO mirror into the gaps between. */
+static uint8_t _fast_kit_rd(void* ud, uint16_t addr) {
+    _fast_board_t* board = (_fast_board_t*)ud;
+    if (board->page_switches[addr >> 8]) {
+        _fast_watch(board, addr);
+    }
+    if (addr < 0x4000) {
+        return board->cur_low[addr];
+    }
+    if (addr >= 0x8000) {
+        return addr < 0xC000 ? board->cur_high[addr - 0x8000] : 0xFF;
+    }
+    return _fast_ram_io_rd(board->sys, (uint16_t)(addr & ~0x2000));
+}
+
+static void _fast_kit_wr(void* ud, uint16_t addr, uint8_t data) {
+    _fast_board_t* board = (_fast_board_t*)ud;
+    if (board->page_switches[addr >> 8]) {
+        _fast_watch(board, addr);
+    }
+    if (addr < 0x4000 || addr >= 0x8000) {
+        return;  /* ROM whichever program is switched in */
+    }
+    _fast_wr(ud, (uint16_t)(addr & ~0x2000), data);
 }
 
 static uint8_t _fast_in(sz80* cpu, uint8_t port) {
@@ -210,8 +220,8 @@ void namco_fast_init(namco_t* sys, sz80* cpu, const namco_fast_desc_t* desc) {
     }
     sz80_init(cpu);
     cpu->userdata = &_fast_board;
-    cpu->read_byte = _fast_rd;
-    cpu->write_byte = _fast_wr;
+    cpu->read_byte = _fast_board.desc.rom_alt_low ? _fast_kit_rd : _fast_rd;
+    cpu->write_byte = _fast_board.desc.rom_alt_low ? _fast_kit_wr : _fast_wr;
     cpu->port_in = _fast_in;
     cpu->port_out = _fast_out;
 }
