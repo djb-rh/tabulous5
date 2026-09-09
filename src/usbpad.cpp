@@ -221,13 +221,28 @@ void applyReport(const uint8_t *r, int len) {
   portEXIT_CRITICAL(&g_mux);
 }
 
+// A pad reports by one interrupt transfer at a time: each completion has to
+// resubmit, or nothing is ever heard again. The submit can fail -- a stalled
+// endpoint is the usual way -- and if that goes unnoticed the pad stays open,
+// stays named, and never delivers another button. Which is indistinguishable,
+// from the outside, from a game that has locked up. So a failed resubmit is
+// recorded rather than dropped, and the client task picks it up.
+volatile bool g_xfer_live = false;
+volatile int g_xfer_last_bad = -1;
+
 void onTransfer(usb_transfer_t *t) {
   if (t->status == USB_TRANSFER_STATUS_COMPLETED) {
     applyReport(t->data_buffer, t->actual_num_bytes);
+  } else {
+    g_xfer_last_bad = (int)t->status;
   }
-  if (g_dev && t->status != USB_TRANSFER_STATUS_NO_DEVICE &&
-      t->status != USB_TRANSFER_STATUS_CANCELED) {
-    usb_host_transfer_submit(t);  // keep listening
+  if (!g_dev || t->status == USB_TRANSFER_STATUS_NO_DEVICE ||
+      t->status == USB_TRANSFER_STATUS_CANCELED) {
+    g_xfer_live = false;
+    return;
+  }
+  if (usb_host_transfer_submit(t) != ESP_OK) {
+    g_xfer_live = false;  // the client task clears the endpoint and retries
   }
 }
 
@@ -419,7 +434,9 @@ void openDevice(uint8_t addr) {
     g_xfer->num_bytes = g_ep_mps > 64 ? 64 : g_ep_mps;
     g_xfer->callback = onTransfer;
     g_xfer->context = nullptr;
-    usb_host_transfer_submit(g_xfer);
+    const esp_err_t se = usb_host_transfer_submit(g_xfer);
+    g_xfer_live = se == ESP_OK;
+    if (!g_xfer_live) Serial.printf("usbpad: first listen failed -> %d\n", (int)se);
   }
 }
 
@@ -431,6 +448,7 @@ void closeDevice() {
   usb_device_handle_t dev = g_dev;
   if (!dev) return;
   g_dev = nullptr;  // first, so a transfer callback racing this does not resubmit
+  g_xfer_live = false;
   if (g_intf != 0xFF) usb_host_interface_release(g_client, dev, g_intf);
   usb_host_device_close(g_client, dev);
   g_intf = 0xFF;
@@ -495,6 +513,25 @@ void clientTask(void *) {
       const uint8_t a = g_pending_addr;
       g_pending_addr = 0;
       openDevice(a);
+    }
+    // A pad that is open but no longer listening: clear whatever halted the
+    // endpoint and start it again. Without this a single stalled transfer
+    // silences the pad until it is unplugged.
+    if (g_dev && g_xfer && !g_xfer_live) {
+      const int why = g_xfer_last_bad;
+      g_xfer_last_bad = -1;
+      usb_host_endpoint_clear(g_dev, g_ep_in);
+      const esp_err_t se = usb_host_transfer_submit(g_xfer);
+      g_xfer_live = se == ESP_OK;
+      // Once when it happens and once when it comes back, then quietly every
+      // half minute: this runs once a second and a pad that will not listen
+      // must not fill the log.
+      static uint32_t tries = 0;
+      if (g_xfer_live || tries % 30 == 0) {
+        Serial.printf("usbpad: listening again after status %d -> %s\n", why,
+                      g_xfer_live ? "ok" : "failed, will retry");
+      }
+      tries = g_xfer_live ? 0 : tries + 1;
     }
     // Belt and braces: whatever the event delivery does, a device that is
     // there and not open gets opened.
