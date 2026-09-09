@@ -18,6 +18,7 @@ extern "C" {
 #include "../third_party/chips/clk.h"
 #include "../third_party/chips/mem.h"
 #include "../third_party/chips/namco.h"
+#include "../third_party/chips/namco_fast.h"
 }
 
 #include "app.h"
@@ -63,6 +64,10 @@ int g_quit_hold = 0;
 float g_scale = 2.0f;
 
 namco_t *g_sys = nullptr;
+// The CPU lives beside the board rather than inside it: chips' own Z80 is
+// stepped one clock at a time and costs twice the frame budget, so the board
+// is driven by an instruction-stepped one instead. See namco_fast.h.
+sz80 g_cpu;
 uint16_t g_palette[32];
 
 // The machine runs at 60 Hz and its sound chip is clocked from the same run,
@@ -204,6 +209,7 @@ bool load(int index) {
   desc.roms.pacman.gfx_1000_1FFF = {rom + info.gfx + 0x1000, 0x1000};
   desc.roms.pacman.prom_0020_011F = {rom + info.colour, arcrom::kColourBytes};
   namco_init(g_sys, &desc);
+  namco_fast_init(g_sys, &g_cpu);
   // namco_init copies every ROM into the machine, so the file goes now.
   heap_caps_free(rom);
 
@@ -306,15 +312,10 @@ void runFrame(uint32_t now_ms) {
   namco_input_set(g_sys, wanted);
   namco_input_clear(g_sys, ~wanted & 0x3FFF);
 
-  // A fixed frame of machine time per pass, not however long the last one
-  // really took. Emulating this cabinet costs about 30 ms for each 16.7 ms of
-  // machine time, so asking it to catch up only makes the next frame longer
-  // still: driving it by elapsed time was measured running away to a twelfth
-  // of real speed. A steady half speed is the honest behaviour until the CPU
-  // emulation itself gets faster — see the note in the README.
+  // One frame of machine time per pass.
   g_audio_have = 0;
   const uint32_t t_emu = micros();
-  namco_exec(g_sys, kFrameUs);
+  namco_fast_exec(g_sys, &g_cpu, kFrameUs);
   g_us_emu += micros() - t_emu;
 
   const uint32_t t_conv = micros();
