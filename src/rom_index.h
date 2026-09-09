@@ -1,8 +1,10 @@
-// The ROM library index: every .nes file the console can see, grouped for a
-// person to browse rather than listed the way the filesystem found them.
+// The ROM library index: every cartridge the console can see for one system,
+// grouped for a person to browse rather than listed the way the filesystem
+// found them. One index per system — the extension it accepts is the only
+// thing that makes it a NES index or a Game Boy one.
 //
 // Arduino-free so the grouping, ordering and favourites bookkeeping run under
-// the host tests. The filesystem walk that feeds it lives in nes_ui.cpp.
+// the host tests. The filesystem walk that feeds it lives in rom_browser.cpp.
 //
 // Thousands of entries live here (a full No-Intro set is ~5,800), so the
 // strings and the table itself go into PSRAM on the device: internal RAM is
@@ -15,7 +17,7 @@
 #include <vector>
 
 namespace tabulous {
-namespace nes_index {
+namespace rom_index {
 
 // Group 0 is Favourites, 1 is "#" (titles starting with a digit or symbol),
 // 2..27 are A..Z. Twenty-eight in all, which happens to fill a 2 x 14 rail.
@@ -44,14 +46,16 @@ struct Item {
 
 class Index {
  public:
-  Index();
+  // `extension` is matched case-insensitively and includes the dot (".gb").
+  explicit Index(const char *extension);
   ~Index();
   Index(const Index &) = delete;
   Index &operator=(const Index &) = delete;
 
   void clear();
-  // `file` is the basename including ".nes"; `dir` is the directory it sits
-  // in, joined with '/' to make the path. Strings are copied.
+  // `file` is the basename including its extension; `dir` is the directory it
+  // sits in, joined with '/' to make the path. Anything with the wrong
+  // extension is ignored. Strings are copied.
   void add(const char *dir, const char *file, Source source);
   // Sorts into groups. Call once after the last add(); adds after that are
   // ignored until the next clear().
@@ -77,6 +81,7 @@ class Index {
   void setFavourite(int i, bool fav);
 
  private:
+  char extension_[8] = {0};
   Item *items_ = nullptr;
   int count_ = 0, capacity_ = 0;
   bool finished_ = false;
@@ -91,5 +96,5 @@ class Index {
   void rebuildFavourites();
 };
 
-}  // namespace nes_index
+}  // namespace rom_index
 }  // namespace tabulous

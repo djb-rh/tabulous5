@@ -1,7 +1,8 @@
-#include "nes_index.h"
+#include "rom_index.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -10,7 +11,7 @@
 #endif
 
 namespace tabulous {
-namespace nes_index {
+namespace rom_index {
 namespace {
 
 constexpr size_t kBlock = 64 * 1024;
@@ -67,7 +68,9 @@ const char *groupLabel(int group) {
   return (group >= 0 && group < kGroups) ? labels[group] : "?";
 }
 
-Index::Index() {}
+Index::Index(const char *extension) {
+  snprintf(extension_, sizeof(extension_), "%s", extension ? extension : "");
+}
 Index::~Index() { clear(); }
 
 void Index::clear() {
@@ -109,7 +112,8 @@ const char *Index::intern(const char *s, size_t len) {
 void Index::add(const char *dir, const char *file, Source source) {
   if (finished_) return;
   const size_t flen = strlen(file);
-  if (flen < 5 || strcasecmp(file + flen - 4, ".nes") != 0) return;
+  const size_t elen = strlen(extension_);
+  if (flen <= elen || strcasecmp(file + flen - elen, extension_) != 0) return;
 
   if (count_ == capacity_) {
     const int cap = capacity_ + kGrow;
@@ -125,7 +129,7 @@ void Index::add(const char *dir, const char *file, Source source) {
   // Display name: drop the extension, and turn the underscores homebrew
   // authors use instead of spaces back into spaces.
   char name[160];
-  size_t n = flen - 4;
+  size_t n = flen - elen;
   if (n >= sizeof(name)) n = sizeof(name) - 1;
   memcpy(name, file, n);
   name[n] = '\0';
@@ -245,5 +249,5 @@ void Index::setFavourite(int i, bool fav) {
   rebuildFavourites();
 }
 
-}  // namespace nes_index
+}  // namespace rom_index
 }  // namespace tabulous

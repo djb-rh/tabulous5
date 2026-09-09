@@ -20,7 +20,7 @@
 #include "../third_party/anemoia/core/cpu6502.h"
 #include "joypad.h"
 #include "joypad_ui.h"
-#include "nes_index.h"
+#include "rom_index.h"
 #include "nesrom.h"
 #include "padmap.h"
 #include "sdcard.h"
@@ -42,7 +42,7 @@ constexpr const char *kRomDir = "/roms";
 // Everything playable, from flash and card together. Scanned once per boot:
 // a card holding a full set takes a second or two to walk, and it does not
 // change while the console is running.
-nes_index::Index g_lib;
+rom_index::Index g_lib(".nes");
 bool g_scanned = false;
 uint32_t g_scanned_rev = 0;  // filemanager::revision() at the last scan
 
@@ -269,7 +269,7 @@ void scanCardDir(const char *vfs_dir, const char *lib_dir, bool recurse) {
       scanCardDir(sub_vfs, sub_lib, false);
       continue;
     }
-    g_lib.add(lib_dir, e->d_name, nes_index::kCard);
+    g_lib.add(lib_dir, e->d_name, rom_index::kCard);
   }
   closedir(d);
 }
@@ -283,7 +283,7 @@ void scan() {
     const std::string hidden = readHidden(LittleFS, kRomDir);
     for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
       if (f.isDirectory() || isHidden(hidden, f.name())) continue;
-      g_lib.add(kRomDir, f.name(), nes_index::kFlash);
+      g_lib.add(kRomDir, f.name(), rom_index::kFlash);
     }
   }
   const int flash_n = g_lib.size();
@@ -302,15 +302,15 @@ void scan() {
                 (unsigned long)(millis() - t0));
 }
 
-fs::FS &fsFor(const nes_index::Item &it) {
-  return it.source == nes_index::kCard ? sdcard::fs() : (fs::FS &)LittleFS;
+fs::FS &fsFor(const rom_index::Item &it) {
+  return it.source == rom_index::kCard ? sdcard::fs() : (fs::FS &)LittleFS;
 }
 
 // Reads the header of one title. Deferred to the moment it is needed rather
 // than done for all of them at scan time: on the card it is an open, and see
 // scanCardDir() for what an open can cost there.
 void probe(int i) {
-  nes_index::Item &it = g_lib.mutableAt(i);
+  rom_index::Item &it = g_lib.mutableAt(i);
   if (it.status >= 0) return;
   uint8_t head[16];
   File h = fsFor(it).open(it.path, "r");
@@ -360,18 +360,18 @@ void drawStar(int cx, int cy, int r, uint16_t colour, bool filled) {
 }
 
 int groupTotal(int group) {
-  return group == nes_index::kFavourites ? g_lib.favouriteCount()
+  return group == rom_index::kFavourites ? g_lib.favouriteCount()
                                          : g_lib.groupCount(group);
 }
 
 int groupItem(int group, int n) {
-  return group == nes_index::kFavourites ? g_lib.favouriteAt(n)
+  return group == rom_index::kFavourites ? g_lib.favouriteAt(n)
                                          : g_lib.groupBegin(group) + n;
 }
 
 void drawRail() {
-  const int rows = nes_index::kGroups / kRailCols;
-  for (int gi = 0; gi < nes_index::kGroups; gi++) {
+  const int rows = rom_index::kGroups / kRailCols;
+  for (int gi = 0; gi < rom_index::kGroups; gi++) {
     const int col = gi / rows, row = gi % rows;
     const Rect cell{kRailX + col * (kRailCellW + 4), kListTop + row * (kRowH + kRowGap),
                     kRailCellW, kRowH};
@@ -381,10 +381,10 @@ void drawRail() {
                              current ? kAccent : any ? kSurfaceLift : kSurface);
     const uint16_t ink = current ? inkFor(theme::isLight() ? 0xA96A00u : 0xFFC53Du)
                                  : any ? kText : kMuted;
-    if (gi == nes_index::kFavourites) {
+    if (gi == rom_index::kFavourites) {
       drawStar(cell.x + cell.w / 2, cell.y + cell.h / 2, 13, ink, true);
     } else {
-      uikit::drawLabel(nes_index::groupLabel(gi), cell.x + cell.w / 2,
+      uikit::drawLabel(rom_index::groupLabel(gi), cell.x + cell.w / 2,
                        cell.y + cell.h / 2 + 1, ink, &fonts::FreeSansBold12pt7b,
                        middle_center);
     }
@@ -429,10 +429,10 @@ void drawPicker() {
 
   // Where we are, spelled out next to the title: group, how many, which page.
   char where[96];
-  if (g_group == nes_index::kFavourites) {
+  if (g_group == rom_index::kFavourites) {
     snprintf(where, sizeof(where), "Favourites  %d", total);
   } else {
-    snprintf(where, sizeof(where), "%s  %d of %d", nes_index::groupLabel(g_group),
+    snprintf(where, sizeof(where), "%s  %d of %d", rom_index::groupLabel(g_group),
              total, g_lib.size());
   }
   uikit::drawLabel(where, kMargin + 120, 46, kMuted, &fonts::FreeSansBold18pt7b,
@@ -444,7 +444,7 @@ void drawPicker() {
 
   const int list_w = kW - kMargin - kListX;
   if (total == 0) {
-    uikit::drawLabel(g_group == nes_index::kFavourites
+    uikit::drawLabel(g_group == rom_index::kFavourites
                          ? "Tap the star on a game to keep it here"
                          : "Nothing filed here",
                      kListX + list_w / 2, kListTop + 200, kMuted,
@@ -456,7 +456,7 @@ void drawPicker() {
     const int n = g_page * kRows + slot;
     if (n >= total) break;
     const int i = groupItem(g_group, n);
-    const nes_index::Item &e = g_lib.at(i);
+    const rom_index::Item &e = g_lib.at(i);
     const Rect row{kListX, kListTop + slot * (kRowH + kRowGap), list_w, kRowH};
     // A title already found unplayable stays listed, dimmed, with the reason:
     // hiding it would leave the owner hunting for a file that is right there.
@@ -468,7 +468,7 @@ void drawPicker() {
     if (bad) {
       uikit::drawLabel(e.problem, row.x + row.w - 200, row.y + kRowH / 2 + 1, kDanger,
                        &fonts::FreeSans9pt7b, middle_right);
-    } else if (e.source == nes_index::kFlash) {
+    } else if (e.source == rom_index::kFlash) {
       uikit::drawLabel("built in", row.x + row.w - 200, row.y + kRowH / 2 + 1, kMuted,
                        &fonts::FreeSans9pt7b, middle_right);
     }
@@ -587,7 +587,7 @@ IRAM_ATTR void drawChunk(uint8_t *buffer, uint32_t size) {
 bool load(int index) {
   releaseCore();
   probe(index);
-  const nes_index::Item &e = g_lib.at(index);
+  const rom_index::Item &e = g_lib.at(index);
   if (e.status != 0) {
     g_error = e.problem;
     return false;
@@ -599,7 +599,7 @@ bool load(int index) {
   g_cart = new Cartridge(fsFor(e), e.path, ROMBackend::LRU);
   Serial.printf("nes: opened %s (%lu KB, %s) in %lu ms\n", e.file,
                 (unsigned long)(e.bytes / 1024),
-                e.source == nes_index::kCard ? "card" : "flash",
+                e.source == rom_index::kCard ? "card" : "flash",
                 (unsigned long)(millis() - t0));
   if (!g_cart || !g_cart->isValid()) {
     g_error = "core rejected this ROM";

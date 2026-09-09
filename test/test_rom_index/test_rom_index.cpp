@@ -2,9 +2,9 @@
 
 #include <cstring>
 
-#include "nes_index.h"
+#include "rom_index.h"
 
-using namespace tabulous::nes_index;
+using namespace tabulous::rom_index;
 
 void setUp() {}
 void tearDown() {}
@@ -22,13 +22,14 @@ void test_groups_by_first_letter() {
 }
 
 void test_sorted_into_contiguous_groups() {
-  Index ix;
+  Index ix(".nes");
   ix.add("/roms", "Zelda.nes", kFlash);
   ix.add("/roms/S", "Super Mario Bros. (World).nes", kCard);
   ix.add("/roms", "1942.nes", kCard);
   ix.add("/roms", "alter_ego.nes", kFlash);
   ix.add("/roms", "Solomon's Key.nes", kCard);
-  ix.add("/roms", "notes.txt", kCard);  // ignored
+  ix.add("/roms", "notes.txt", kCard);   // wrong extension: ignored
+  ix.add("/roms", "Tetris.gb", kCard);   // another system's: ignored
   ix.finish();
 
   TEST_ASSERT_EQUAL(5, ix.size());
@@ -49,7 +50,7 @@ void test_sorted_into_contiguous_groups() {
 }
 
 void test_favourites_round_trip() {
-  Index ix;
+  Index ix(".nes");
   ix.add("/roms", "Zelda.nes", kFlash);
   ix.add("/roms", "Metroid.nes", kCard);
   ix.add("/roms", "Contra.nes", kCard);
@@ -72,7 +73,7 @@ void test_favourites_round_trip() {
 }
 
 void test_favourites_survive_rescan() {
-  Index ix;
+  Index ix(".nes");
   ix.applyFavourites("Metroid.nes\n");
   ix.add("/roms", "Metroid.nes", kCard);
   ix.finish();
@@ -87,7 +88,7 @@ void test_favourites_survive_rescan() {
 }
 
 void test_same_title_on_flash_and_card_is_one_favourite() {
-  Index ix;
+  Index ix(".nes");
   ix.add("/roms", "Chase.nes", kFlash);
   ix.add("/roms/C", "Chase.nes", kCard);
   ix.finish();
@@ -98,8 +99,19 @@ void test_same_title_on_flash_and_card_is_one_favourite() {
   TEST_ASSERT_EQUAL_STRING("Chase.nes\nChase.nes\n", ix.favouritesText().c_str());
 }
 
+void test_extension_decides_what_belongs() {
+  Index gb(".gb");
+  gb.add("/gb", "Tetris (World).gb", kCard);
+  gb.add("/gb", "Metroid.nes", kCard);
+  gb.add("/gb", ".gb", kCard);  // extension with no name in front of it
+  gb.finish();
+  TEST_ASSERT_EQUAL(1, gb.size());
+  TEST_ASSERT_EQUAL_STRING("Tetris (World)", gb.at(0).name);
+}
+
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_extension_decides_what_belongs);
   RUN_TEST(test_groups_by_first_letter);
   RUN_TEST(test_sorted_into_contiguous_groups);
   RUN_TEST(test_favourites_round_trip);
