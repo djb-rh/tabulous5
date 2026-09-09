@@ -310,7 +310,7 @@ bool load(int index) {
     // the whole width. Upright, 2.5x is exactly the panel's 720.
     g_scale = g_portrait ? (big ? 2.5f : 2.0f) : (big ? 2.5f : 1.75f);
   }
-  joypad_ui::setLabels("COIN", "1P START");
+  joypad_ui::setLabels("COIN", "1P START", "2P", nullptr);
   if (!joypad_ui::beginPlay(g_portrait, g_shown_w, g_shown_h, g_scale)) {
     rom_browser::setError("no room for the picture");
     releaseCore();
@@ -403,8 +403,14 @@ void drawPlayChrome(bool full) {
   g_pad_drawn = g_pad;
 }
 
-// A cabinet has a four-way stick, a coin slot and a start button. SELECT is
+// A cabinet has a four-way stick, a coin slot and two start buttons. SELECT is
 // the coin, because inserting one is what you do first.
+//
+// The second start button is worth having even on a console nobody plays two
+// players on: several of these games read it during play. Ms. Pac-Man Plus
+// puts its speed-up there, and invincibility on the first start button, which
+// is how that hack was meant to be switched on -- there is no DIP switch for
+// either, on any of these boards.
 uint32_t toCabinet(uint8_t pad) {
   uint32_t m = 0;
   if (pad & joypad::kUp) m |= NAMCO_INPUT_P1_UP;
@@ -413,6 +419,7 @@ uint32_t toCabinet(uint8_t pad) {
   if (pad & joypad::kRight) m |= NAMCO_INPUT_P1_RIGHT;
   if (pad & joypad::kSelect) m |= NAMCO_INPUT_P1_COIN;
   if (pad & joypad::kStart) m |= NAMCO_INPUT_P1_START;
+  if (pad & joypad::kA) m |= NAMCO_INPUT_P2_START;
   return m;
 }
 

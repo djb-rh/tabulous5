@@ -292,7 +292,18 @@ its bootlegs are the exception — the same board, the monitor the usual way
 round — and turning those would be the bug, so MAME's orientation for each game
 travels in the `.arc` header and a horizontal picture is left alone. **FULL**
 is 2.5x, exactly the panel's height. SELECT puts a coin in, START begins a
-game.
+game, and the round button is the cabinet's second start button.
+
+That second button is there because several of these games read it during
+play. Ms. Pac-Man Plus keeps its speed-up on it, and its invincibility on the
+first start button; neither is a DIP switch on any of these boards, which is
+the only speed-up any of the Ms. Pac-Man sets here has. Verified by running
+the same scripted game twice, with the button held and not, and diffing the
+frame: it changes play in Ms. Pac-Man Plus and nowhere else.
+
+Note that the board runs a power-on self test for about nine seconds before it
+starts reading its inputs, so a coin dropped in the first few seconds is
+ignored -- by the real board too.
 
 It runs at **60 frames a second**, which took replacing the CPU. chips' own Z80
 is stepped one clock at a time — exact, and about 30 ms of work for each 16.7

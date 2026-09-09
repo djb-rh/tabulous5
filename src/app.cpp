@@ -249,7 +249,11 @@ const Entry kEntries[] = {
      "fills the panel's height exactly and expects a USB gamepad; 2x leaves\n"
      "room for the on-screen controls.\n"
      "\n"
-     "SELECT puts a coin in. START begins the game. Hold both to come back."},
+     "SELECT puts a coin in. START begins the game. Hold both to come back.\n"
+     "\n"
+     "2P is the cabinet's second start button. A few of these games read it\n"
+     "during play: Ms. Pac-Man Plus keeps its speed-up there, and its\n"
+     "invincibility on the first start button. Neither is a DIP switch."},
 
 #if defined(HAVE_SNES)
     {"SNES", "Super Nintendo, if you brought the core.", 0x4C3B8F,

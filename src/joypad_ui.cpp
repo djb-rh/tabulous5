@@ -22,6 +22,8 @@ using uikit::gfx;
 
 const char *g_select_label = "SELECT";
 const char *g_start_label = "START";
+const char *g_a_label = "A";
+const char *g_b_label = "B";
 uint8_t g_state = 0;
 uint8_t g_drawn = 0xFF;  // forces the first pass to paint every control
 bool g_full = true;
@@ -101,8 +103,8 @@ void drawFace(uint8_t state, uint8_t prev, bool full) {
   auto &g = gfx();
   struct Round { joypad::Circle c; uint8_t bit; const char *label; };
   const Round rounds[] = {
-      {joypad::buttonA(), joypad::kA, "A"},
-      {joypad::buttonB(), joypad::kB, "B"},
+      {joypad::buttonA(), joypad::kA, g_a_label},
+      {joypad::buttonB(), joypad::kB, g_b_label},
   };
   for (const Round &r : rounds) {
     const bool on = (state & r.bit) != 0;
@@ -293,9 +295,12 @@ bool beginPlay(bool portrait, int src_w, int src_h, float scale) {
   return true;
 }
 
-void setLabels(const char *select_label, const char *start_label) {
+void setLabels(const char *select_label, const char *start_label,
+               const char *a_label, const char *b_label) {
   g_select_label = select_label ? select_label : "SELECT";
   g_start_label = start_label ? start_label : "START";
+  g_a_label = a_label ? a_label : "A";
+  g_b_label = b_label ? b_label : "B";
 }
 
 void endPlay() {

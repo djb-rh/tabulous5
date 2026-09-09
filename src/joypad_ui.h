@@ -27,9 +27,10 @@ uint8_t state();
 // drawn in; pass 0xFF to force every one of them to paint.
 void drawControls(uint8_t state, uint8_t prev, bool full);
 
-// What the two small buttons are called. A cabinet has a coin slot, not a
-// select button. Passing nothing puts them back to SELECT and START.
-void setLabels(const char *select_label = nullptr, const char *start_label = nullptr);
+// What the buttons are called. A cabinet has a coin slot, not a select
+// button, and no A or B. Passing nothing puts a name back to its default.
+void setLabels(const char *select_label = nullptr, const char *start_label = nullptr,
+               const char *a_label = nullptr, const char *b_label = nullptr);
 
 // Turns the screen for play and places the picture and controls on it. Upright
 // the game sits at the top with everything else underneath, which is how a
