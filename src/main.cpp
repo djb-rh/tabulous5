@@ -20,10 +20,12 @@
 #include "contentserver.h"
 #include "filemanager.h"
 #include "app.h"
+#include "gb_ui.h"
 #include "nes_ui.h"
 #include "phrase_game.h"
 #include "orientation.h"
 #include "sdcard.h"
+#include "snes_ui.h"
 #include "usbpad.h"
 #include "pack.h"
 #include "settings_store.h"
@@ -54,6 +56,9 @@ void setup() {
   // makes the symptom vanish, so it hides from exactly the tool used to look
   // for it. Zero means: write if the host is listening, otherwise drop it.
   Serial.setTxTimeoutMs(0);
+
+  // Before anything else claims internal memory. See snes_ui.h.
+  snes_ui::reserveWorkRamEarly();
 
   // Theme before anything draws, so the first frame is already correct.
   theme::setLight(settings_store::loadLightTheme());
@@ -465,5 +470,14 @@ void loop() {
 
   // The beep schedule is checked inside tick(); a short yield keeps the timer
   // accurate to a few milliseconds without spinning the CPU flat out.
-  delay(5);
+  // Sleeping here is right for a menu or a card game: it hands the CPU to
+  // WiFi and the idle task, and nothing on screen needs the loop to spin.
+  //
+  // It is wrong for an emulator. Those pace themselves against their own
+  // machine's frame rate and then return; five milliseconds on top of that is
+  // taken straight out of the next frame's budget. It cost the NES its last
+  // few frames a second — a gap of about 5 ms a frame that went unexplained
+  // for days — and it was holding the SNES at 46 frames instead of 60. The
+  // emulators yield inside their own pacing, so nothing is starved.
+  if (!nes_ui::playing() && !gb_ui::playing() && !snes_ui::playing()) delay(5);
 }

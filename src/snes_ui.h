@@ -16,6 +16,12 @@ constexpr const char *kFavouritesFile = "/snes_favs.txt";
 // False when the core was not present at build time.
 bool available();
 
+// Claims the core's 128 KB of work RAM while the heap is still whole, at the
+// very start of boot. By the time a cartridge is picked there is no internal
+// block that big left, and the core silently falls back to PSRAM -- which
+// costs about a third of the frame. Does nothing without the core.
+void reserveWorkRamEarly();
+
 void begin();
 void rescan();
 void invalidate();

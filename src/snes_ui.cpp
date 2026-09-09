@@ -7,6 +7,7 @@
 namespace tabulous {
 namespace snes_ui {
 bool available() { return false; }
+void reserveWorkRamEarly() {}
 void begin() {}
 void rescan() {}
 void invalidate() {}
@@ -21,6 +22,7 @@ bool playing() { return false; }
 #include <LittleFS.h>
 #include <M5Unified.h>
 #include <esp_heap_caps.h>
+#include <esp_memory_utils.h>
 
 #include <cstdio>
 #include <cstring>
@@ -123,7 +125,29 @@ uint8_t g_pad = 0, g_pad_drawn = 0xFF;
 bool g_menu_down = false;
 uint32_t g_next_frame_us = 0;
 uint32_t g_frames = 0, g_fps_at = 0, g_fps = 0;
-uint32_t g_us_emu = 0, g_us_copy = 0, g_us_push = 0;
+uint32_t g_us_emu = 0, g_us_skip = 0, g_us_copy = 0, g_us_push = 0;
+uint32_t g_us_mix = 0, g_us_frame = 0;
+uint32_t g_drawn = 0;
+
+// The core asks for its 128 KB of work RAM in internal memory and falls back
+// to PSRAM, and that fallback costs about a third of the frame. Internal
+// memory has the room, but by the time a cartridge is picked the largest
+// single block is a few kilobytes short of 128 KB -- so the block is claimed
+// on the way into this screen, while the heap is still whole, and handed
+// straight back the instant before the core asks for it.
+uint8_t *g_wram_reserve = nullptr;
+
+void reserveWorkRam() {
+  if (g_wram_reserve) return;
+  g_wram_reserve = (uint8_t *)heap_caps_malloc(0x20000,
+                                               MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+
+void releaseWorkRamReserve() {
+  if (!g_wram_reserve) return;
+  heap_caps_free(g_wram_reserve);
+  g_wram_reserve = nullptr;
+}
 
 void *psram(size_t bytes) {
   return heap_caps_calloc(1, bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -203,11 +227,19 @@ void probeRom(fs::FS &fs, rom_index::Item *it) {
   }
 }
 
-bool allocateBuffers() {
+// The core wants its 128 KB of work RAM in internal memory and falls back to
+// PSRAM, which costs about a third of the frame. Internal memory has the room
+// but only just, so nothing else may take an internal block before the core
+// has had its turn: the audio buffers below are claimed afterwards.
+bool allocateVideoBuffers() {
   if (!g_screen) g_screen = (uint16_t *)psram((size_t)kMaxW * kMaxH * 2);
   if (!g_subscreen) g_subscreen = (uint16_t *)psram((size_t)kMaxW * kMaxH * 2);
   if (!g_zbuf) g_zbuf = (uint8_t *)psram((size_t)kMaxW * kMaxH);
   if (!g_subzbuf) g_subzbuf = (uint8_t *)psram((size_t)kMaxW * kMaxH);
+  return g_screen && g_subscreen && g_zbuf && g_subzbuf;
+}
+
+bool allocateAudioBuffers() {
   if (!g_mix) {
     g_mix = (int16_t *)heap_caps_malloc(kAudioFrames * 2 * sizeof(int16_t),
                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -219,7 +251,7 @@ bool allocateBuffers() {
     }
     if (!g_audio[i]) return false;
   }
-  return g_screen && g_subscreen && g_zbuf && g_subzbuf && g_mix;
+  return g_mix != nullptr;
 }
 
 bool load(int index) {
@@ -230,12 +262,12 @@ bool load(int index) {
     rom_browser::setError(e.problem);
     return false;
   }
-  if (!allocateBuffers()) {
-    Serial.println("snes: could not allocate the core's buffers");
+  if (!allocateVideoBuffers()) {
     rom_browser::setError("out of memory for the core");
     return false;
   }
 
+  releaseWorkRamReserve();
   memset(&::Settings, 0, sizeof(::Settings));
   ::Settings.CyclesPercentage = 100;
   ::Settings.H_Max = SNES_CYCLES_PER_SCANLINE;
@@ -253,6 +285,13 @@ bool load(int index) {
     return false;
   }
   g_running = true;
+  Serial.printf("snes: work RAM in %s\n",
+                esp_ptr_internal(::Memory.RAM) ? "internal SRAM" : "PSRAM");
+  if (!allocateAudioBuffers()) {
+    rom_browser::setError("out of memory for sound");
+    releaseCore();
+    return false;
+  }
 
   // The core reads these when it works out its own offsets, so they are set
   // before S9xInitGFX rather than after.
@@ -417,6 +456,7 @@ void copyOut() {
 }
 
 void runFrame(uint32_t now_ms) {
+  const uint32_t t_frame = micros();
   bool menu_held = false;
   g_pad = joypad_ui::pollPad(&menu_held);
   if (g_scale >= 3) g_pad = 0;
@@ -431,6 +471,7 @@ void runFrame(uint32_t now_ms) {
     g_menu_down = true;
     releaseCore();
     g_mode = Mode::Picking;
+    reserveWorkRam();  // ready for the next cartridge
     rom_browser::invalidate();
     return;
   }
@@ -438,18 +479,33 @@ void runFrame(uint32_t now_ms) {
 
   ::IPPU.Joypads[0] = toSnes(g_pad, u);
 
+  // Every frame is emulated; only every other one is drawn. The picture is
+  // where the time goes -- the machine's own logic and its sound run at full
+  // speed either way, which is what keeps a game playing and sounding right.
+  static bool render = true;
   const uint32_t t_emu = micros();
-  ::IPPU.RenderThisFrame = true;
+  ::IPPU.RenderThisFrame = render;
   S9xMainLoop();
-  g_us_emu += micros() - t_emu;
+  const uint32_t took = micros() - t_emu;
+  if (render) {
+    g_us_emu += took;
+    g_drawn++;
+  } else {
+    g_us_skip += took;
+  }
 
-  const uint32_t t_copy = micros();
-  copyOut();
-  g_us_copy += micros() - t_copy;
-  emu_video::present();
-  g_us_push += emu_video::lastUs();
+  if (render) {
+    const uint32_t t_copy = micros();
+    copyOut();
+    g_us_copy += micros() - t_copy;
+    emu_video::present();
+    g_us_push += emu_video::lastUs();
+  }
+  render = !render;
 
+  const uint32_t t_mix = micros();
   S9xMixSamples(g_mix, kAudioFrames * 2);
+  g_us_mix += micros() - t_mix;
   if (audio::enabled() && M5.Speaker.isPlaying(kAudioChannel) < 2) {
     int16_t *out = g_audio[g_audio_which];
     for (int i = 0; i < kAudioFrames; i++) {
@@ -474,22 +530,33 @@ void runFrame(uint32_t now_ms) {
     }
   }
 
+  g_us_frame += micros() - t_frame;
   g_frames++;
   if (now_ms - g_fps_at >= 1000) {
     g_fps = g_frames * 1000 / (now_ms - g_fps_at);
     const uint32_t n = g_fps ? g_fps : 1;
-    Serial.printf("snes %lu fps  emulate=%luus copy=%luus push=%luus\n",
-                  (unsigned long)g_fps, (unsigned long)(g_us_emu / n),
-                  (unsigned long)(g_us_copy / n), (unsigned long)(g_us_push / n));
+    const uint32_t d = g_drawn ? g_drawn : 1;
+    const uint32_t sk = (n > g_drawn) ? n - g_drawn : 1;
+    Serial.printf("snes %lu emu/s %lu drawn/s  drawn=%luus skipped=%luus copy=%luus push=%luus mix=%luus frame=%luus\n",
+                  (unsigned long)g_fps, (unsigned long)g_drawn,
+                  (unsigned long)(g_us_emu / d), (unsigned long)(g_us_skip / sk),
+                  (unsigned long)(g_us_copy / d), (unsigned long)(g_us_push / d),
+                  (unsigned long)(g_us_mix / n), (unsigned long)(g_us_frame / n));
     g_frames = 0;
+    g_drawn = 0;
     g_fps_at = now_ms;
-    g_us_emu = g_us_copy = g_us_push = 0;
+    g_us_emu = g_us_skip = g_us_copy = g_us_push = g_us_mix = g_us_frame = 0;
   }
 }
 
 }  // namespace
 
 bool available() { return true; }
+
+void reserveWorkRamEarly() {
+  reserveWorkRam();
+  Serial.printf("snes: work RAM reserved=%d\n", g_wram_reserve != nullptr);
+}
 
 void begin() {
   releaseCore();
@@ -511,6 +578,7 @@ void begin() {
   cfg.empty_hint = "Put .sfc files in /snes on the card";
   rom_browser::begin(cfg, g_settings.scale);
   rom_browser::ensureScanned();
+  reserveWorkRam();  // no-op when the boot-time reservation still stands
   g_dirty = true;
 }
 

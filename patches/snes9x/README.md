@@ -18,3 +18,7 @@ Each patch should be as small as it can be, and say why it is needed.
   outright, unable to put the small-data section anywhere. A single-purpose
   SNES machine can afford the trade. This one also runs a NES, a Game Boy,
   WiFi and a USB host, so the core runs from flash instead.
+Tried and rejected: putting `cpuops.c` (the 65816 interpreter) back in IRAM.
+It gained 4% and cost 61 KB of the SRAM the core wants for its 128 KB of work
+RAM -- and work RAM landing in PSRAM instead of internal memory is worth far
+more than 4%. Instruction fetches come through a cache; data accesses do not.
