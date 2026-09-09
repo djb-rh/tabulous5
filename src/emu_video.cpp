@@ -161,17 +161,16 @@ bool configure(int src_w, int src_h, int scale) {
   g_geom.x = (theme::kW - g_geom.w) / 2;
   g_geom.y = (theme::kH - g_geom.h) / 2;
 
-  // Cache-line aligned: the scaler reads these by DMA. The first goes in
-  // internal RAM, where the CPU fallback's strided reads are cheap; the
-  // second takes PSRAM if internal has no room, which costs only the overlap.
-  if (!g_buf[0]) {
-    g_buf[0] = (uint16_t *)heap_caps_aligned_alloc(128, bytes,
-                                                   MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  }
-  if (!g_buf[1]) {
-    g_buf[1] = (uint16_t *)heap_caps_aligned_alloc(128, bytes,
-                                                   MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (!g_buf[1]) g_buf[1] = (uint16_t *)heap_caps_aligned_alloc(128, bytes, MALLOC_CAP_SPIRAM);
+  // Cache-line aligned: the scaler reads these by DMA, and it reads PSRAM as
+  // happily as internal RAM. Internal is still tried first, because the CPU
+  // fallback walks the source with a stride and PSRAM would punish that — but
+  // a frame is over a hundred kilobytes, and a system with a large core linked
+  // in may have no internal block that big left. Falling back is what lets it
+  // run at all.
+  for (uint16_t *&b : g_buf) {
+    if (b) continue;
+    b = (uint16_t *)heap_caps_aligned_alloc(128, bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!b) b = (uint16_t *)heap_caps_aligned_alloc(128, bytes, MALLOC_CAP_SPIRAM);
   }
   if (!g_buf[0]) return false;
   for (uint16_t *b : g_buf) {

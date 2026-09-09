@@ -4,6 +4,7 @@
 #include "joypad_ui.h"
 #include "gb_ui.h"
 #include "nes_ui.h"
+#include "snes_ui.h"
 
 #include <M5Unified.h>
 
@@ -228,6 +229,24 @@ const Entry kEntries[] = {
      "Games that saved to a battery-backed cartridge save here too, to a .sav\n"
      "file beside the ROM, written ten seconds after the game last wrote to it\n"
      "and again on the way out."},
+
+#if defined(HAVE_SNES)
+    {"SNES", "Super Nintendo, if you brought the core.", 0x4C3B8F,
+     glyphs::Glyph::None, GameId::Snes,
+     "Runs SNES ROMs from /snes on a FAT32 microSD card.\n"
+     "\n"
+     "The emulator core is not part of this project and is not shipped with\n"
+     "it - this entry exists because whoever built this firmware fetched the\n"
+     "core themselves. See third_party/snes9x/README.md.\n"
+     "\n"
+     "Cartridges with a Super FX chip do not run. Games with battery-backed\n"
+     "saves keep them in a .srm file beside the ROM.\n"
+     "\n"
+     "2x TOUCH plays with the on-screen pad, which has no X, Y or shoulder\n"
+     "buttons - a real SNES game usually wants them, so 3x GAMEPAD and a USB\n"
+     "controller is the better way to play. Hold SELECT and START to come\n"
+     "back."},
+#endif
 };
 
 constexpr int kEntryCount = (int)(sizeof(kEntries) / sizeof(kEntries[0]));
@@ -726,6 +745,9 @@ void launch(GameId id) {
     g_phrase.begin(g_packs, s);
     ui::begin(&g_phrase, g_packs, g_report);
     ui::invalidate();
+  } else if (id == GameId::Snes) {
+    snes_ui::begin();
+    snes_ui::invalidate();
   } else if (id == GameId::GameBoy) {
     gb_ui::begin();
     gb_ui::invalidate();
@@ -783,6 +805,7 @@ bool wantsOrientation() {
     case GameId::Joypad:
     case GameId::Nes:
     case GameId::GameBoy:
+    case GameId::Snes:
       return false;
     default:
       return true;  // the shell, where taps are rare
@@ -796,6 +819,7 @@ void invalidate() {
   if (g_current == GameId::Joypad) joypad_ui::invalidate();
   if (g_current == GameId::Nes) nes_ui::invalidate();
   if (g_current == GameId::GameBoy) gb_ui::invalidate();
+  if (g_current == GameId::Snes) snes_ui::invalidate();
   if (g_current == GameId::Minesweeper) mines_ui::invalidate();
   if (g_current == GameId::Sudoku) sudoku_ui::invalidate();
   if (g_current == GameId::Solitaire) solitaire_ui::invalidate();
@@ -871,6 +895,7 @@ void tick(uint32_t now_ms) {
   else if (g_current == GameId::Joypad) joypad_ui::tick(now_ms);
   else if (g_current == GameId::Nes) nes_ui::tick(now_ms);
   else if (g_current == GameId::GameBoy) gb_ui::tick(now_ms);
+  else if (g_current == GameId::Snes) snes_ui::tick(now_ms);
 }
 
 void handleTap(int x, int y, uint32_t now_ms) {
@@ -1046,6 +1071,8 @@ void handleTap(int x, int y, uint32_t now_ms) {
     nes_ui::handleTap(x, y, now_ms);
   else if (g_current == GameId::GameBoy)
     gb_ui::handleTap(x, y, now_ms);
+  else if (g_current == GameId::Snes)
+    snes_ui::handleTap(x, y, now_ms);
 }
 
 }  // namespace app

@@ -280,6 +280,20 @@ void saveGb(const GbSettings &settings) {
   g_prefs.end();
 }
 
+void loadSnes(SnesSettings *out) {
+  if (!out) return;
+  if (!g_prefs.begin(kNamespace, true)) return;
+  const uint8_t scale = g_prefs.getUChar("snes_scale", out->scale);
+  g_prefs.end();
+  if (scale == 2 || scale == 3) out->scale = scale;
+}
+
+void saveSnes(const SnesSettings &settings) {
+  if (!g_prefs.begin(kNamespace, false)) return;
+  g_prefs.putUChar("snes_scale", settings.scale);
+  g_prefs.end();
+}
+
 void loadPadMap(padmap::Map *out) {
   if (!out) return;
   if (!g_prefs.begin(kNamespace, true)) return;

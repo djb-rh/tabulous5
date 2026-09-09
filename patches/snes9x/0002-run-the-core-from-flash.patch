@@ -1,0 +1,25 @@
+--- a/port.h
++++ b/port.h
+@@ -3,6 +3,22 @@
+ #ifndef _PORT_H_
+ #define _PORT_H_
+ 
++/* Run the core from flash, not from internal RAM.
++ *
++ * The core marks its 65816 interpreter and much of its PPU with IRAM_ATTR.
++ * That is a good trade for a machine doing nothing else, but on the ESP32-P4
++ * the instruction RAM and the data RAM are the same block of SRAM, so a
++ * hundred-odd KB of code there is a hundred-odd KB the rest of the firmware
++ * cannot use for data -- and this one also runs a NES, a Game Boy, WiFi and a
++ * USB host. With the core's code in IRAM the link fails outright, unable to
++ * place the small-data section anywhere.
++ *
++ * Both orders work: whichever of this header and esp_attr.h is reached first,
++ * the other's include guard means this definition is the one left standing. */
++#include <esp_attr.h>
++#undef IRAM_ATTR
++#define IRAM_ATTR
++
+ #include <limits.h>
+ #include <stdbool.h>
+ #include <string.h>

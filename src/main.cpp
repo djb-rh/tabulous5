@@ -429,7 +429,8 @@ void loop() {
   // broken earlier in this project. nes_ui reports its own timings once a
   // second instead.
   if (total > 25000 && app::current() != app::GameId::Nes &&
-      app::current() != app::GameId::GameBoy) {
+      app::current() != app::GameId::GameBoy &&
+      app::current() != app::GameId::Snes) {
     Serial.printf("slow loop %u ms: m5=%u tap=%u orient=%u audio=%u tick=%u\n",
                   (unsigned)(total / 1000), (unsigned)((p0 - loop_start) / 1000),
                   (unsigned)((p1 - p0) / 1000), (unsigned)((p2 - p1) / 1000),

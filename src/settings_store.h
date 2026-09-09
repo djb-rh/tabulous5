@@ -73,6 +73,14 @@ struct GbSettings {
 void loadGb(GbSettings *out);
 void saveGb(const GbSettings &settings);
 
+// The SNES picture: 2x with the on-screen pad either side, or 3x for a USB
+// gamepad.
+struct SnesSettings {
+  uint8_t scale = 2;  // 2 or 3
+};
+void loadSnes(SnesSettings *out);
+void saveSnes(const SnesSettings &settings);
+
 // Which USB gamepad button is which; taught in the Gamepad Test screen.
 void loadPadMap(padmap::Map *out);
 void savePadMap(const padmap::Map &map);

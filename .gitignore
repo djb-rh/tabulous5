@@ -14,3 +14,8 @@ __pycache__/
 # Test ROMs are other people's work; see data/roms/README.md
 data/nes/*.nes
 data/gb/*.gb
+
+# The SNES core is fetched by whoever builds it, never committed.
+# See third_party/snes9x/README.md.
+third_party/snes9x/*
+!third_party/snes9x/README.md
