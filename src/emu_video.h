@@ -24,9 +24,12 @@ struct Geometry {
 // Safe to call repeatedly; false means neither is available.
 bool begin();
 
-// Sets the source size and magnification, and allocates the frames. Returns
-// false if there is no memory for them.
-bool configure(int src_w, int src_h, int scale);
+// Sets the source size and magnification, and allocates the frames. The
+// magnification may be fractional — the hardware scaler takes it either way,
+// and 2.5x is what makes a 288-line arcade picture exactly fill the panel.
+// Returns false if there is no memory for the frames, or if a fractional
+// magnification is asked for on a machine that has no hardware scaler.
+bool configure(int src_w, int src_h, float scale);
 
 // Frees the frames. Waits for any transfer still in flight first.
 void release();

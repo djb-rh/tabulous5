@@ -22,6 +22,7 @@
 #include "app.h"
 #include "gb_ui.h"
 #include "nes_ui.h"
+#include "pacman_ui.h"
 #include "phrase_game.h"
 #include "orientation.h"
 #include "sdcard.h"
@@ -443,7 +444,8 @@ void loop() {
   // second instead.
   if (total > 25000 && app::current() != app::GameId::Nes &&
       app::current() != app::GameId::GameBoy &&
-      app::current() != app::GameId::Snes) {
+      app::current() != app::GameId::Snes &&
+      app::current() != app::GameId::Arcade) {
     Serial.printf("slow loop %u ms: m5=%u tap=%u orient=%u audio=%u tick=%u\n",
                   (unsigned)(total / 1000), (unsigned)((p0 - loop_start) / 1000),
                   (unsigned)((p1 - p0) / 1000), (unsigned)((p2 - p1) / 1000),
@@ -487,5 +489,8 @@ void loop() {
   // few frames a second — a gap of about 5 ms a frame that went unexplained
   // for days — and it was holding the SNES at 46 frames instead of 60. The
   // emulators yield inside their own pacing, so nothing is starved.
-  if (!nes_ui::playing() && !gb_ui::playing() && !snes_ui::playing()) delay(5);
+  if (!nes_ui::playing() && !gb_ui::playing() && !snes_ui::playing() &&
+      !pacman_ui::playing()) {
+    delay(5);
+  }
 }

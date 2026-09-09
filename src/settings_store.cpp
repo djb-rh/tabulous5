@@ -294,6 +294,20 @@ void saveSnes(const SnesSettings &settings) {
   g_prefs.end();
 }
 
+void loadArcade(ArcadeSettings *out) {
+  if (!out) return;
+  if (!g_prefs.begin(kNamespace, true)) return;
+  const uint8_t scale = g_prefs.getUChar("arc_scale", out->scale);
+  g_prefs.end();
+  if (scale == 2 || scale == 5) out->scale = scale;
+}
+
+void saveArcade(const ArcadeSettings &settings) {
+  if (!g_prefs.begin(kNamespace, false)) return;
+  g_prefs.putUChar("arc_scale", settings.scale);
+  g_prefs.end();
+}
+
 void loadPadMap(padmap::Map *out) {
   if (!out) return;
   if (!g_prefs.begin(kNamespace, true)) return;

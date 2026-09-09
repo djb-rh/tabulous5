@@ -81,6 +81,14 @@ struct SnesSettings {
 void loadSnes(SnesSettings *out);
 void saveSnes(const SnesSettings &settings);
 
+// The arcade picture: 2x with the on-screen pad, or 2.5x — stored as 5 — which
+// is exactly the panel's height for a 288-line cabinet.
+struct ArcadeSettings {
+  uint8_t scale = 2;  // 2 or 5
+};
+void loadArcade(ArcadeSettings *out);
+void saveArcade(const ArcadeSettings &settings);
+
 // Which USB gamepad button is which; taught in the Gamepad Test screen.
 void loadPadMap(padmap::Map *out);
 void savePadMap(const padmap::Map &map);

@@ -8,6 +8,7 @@ namespace tabulous {
 namespace snes_ui {
 bool available() { return false; }
 void reserveWorkRamEarly() {}
+void yieldWorkRamReserve() {}
 void begin() {}
 void rescan() {}
 void invalidate() {}
@@ -552,6 +553,8 @@ void runFrame(uint32_t now_ms) {
 }  // namespace
 
 bool available() { return true; }
+
+void yieldWorkRamReserve() { releaseWorkRamReserve(); }
 
 void reserveWorkRamEarly() {
   reserveWorkRam();

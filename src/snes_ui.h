@@ -22,6 +22,11 @@ bool available();
 // costs about a third of the frame. Does nothing without the core.
 void reserveWorkRamEarly();
 
+// Hands the reservation back, for another emulator that needs a large block of
+// internal memory more than the SNES needs a fast one. The SNES falls back to
+// PSRAM if it is launched afterwards, until the next reboot.
+void yieldWorkRamReserve();
+
 void begin();
 void rescan();
 void invalidate();

@@ -6,6 +6,7 @@
 #include <esp_heap_caps.h>
 #include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
 
+#include <cmath>
 #include <cstring>
 
 #include "theme.h"
@@ -31,7 +32,8 @@ volatile bool g_ppa_busy = false;
 
 uint16_t *g_buf[2] = {nullptr, nullptr};
 int g_cur = 0;
-int g_src_w = 0, g_src_h = 0, g_scale = 0;
+int g_src_w = 0, g_src_h = 0;
+float g_scale = 0.0f;
 size_t g_frame_bytes = 0;
 Geometry g_geom;
 uint32_t g_last_us = 0;
@@ -69,8 +71,8 @@ bool blitPpa(const uint16_t *src) {
     op.out.block_offset_y = theme::kW - g_geom.x - g_geom.w;
     op.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
   }
-  op.scale_x = (float)g_scale;
-  op.scale_y = (float)g_scale;
+  op.scale_x = g_scale;
+  op.scale_y = g_scale;
   // Non-blocking when there is a second buffer to draw the next frame into;
   // the wait happens up front, for the transfer before this one.
   const bool overlap = g_buf[1] != nullptr;
@@ -94,9 +96,13 @@ bool blitPpa(const uint16_t *src) {
 // source, which is small and in internal RAM where stride costs almost
 // nothing.
 void blitCpu(const uint16_t *src) {
+  // Whole pixels only: the fallback duplicates them, where the scaler
+  // resamples. A fractional magnification never reaches here — configure()
+  // refuses it when there is no scaler.
+  const int scale = (int)g_scale;
   for (int sx = 0; sx < g_src_w; sx++) {
-    for (int k = 0; k < g_scale; k++) {
-      const int lx = g_geom.x + sx * g_scale + k;
+    for (int k = 0; k < scale; k++) {
+      const int lx = g_geom.x + sx * scale + k;
       uint16_t *dst;
       if (g_fb_rot == 1) {
         // row = lx, column = (kH - 1) - y: ascending address, descending y.
@@ -108,7 +114,7 @@ void blitCpu(const uint16_t *src) {
       for (int i = 0; i < g_src_h; i++) {
         const int sy = (g_fb_rot == 1) ? (g_src_h - 1 - i) : i;
         const uint16_t v = src[(size_t)sy * g_src_w + sx];
-        for (int j = 0; j < g_scale; j++) *dst++ = v;
+        for (int j = 0; j < scale; j++) *dst++ = v;
       }
     }
   }
@@ -148,7 +154,7 @@ bool begin() {
   return g_fb != nullptr;
 }
 
-bool configure(int src_w, int src_h, int scale) {
+bool configure(int src_w, int src_h, float scale) {
   waitIdle();
   const size_t bytes = (size_t)src_w * src_h * 2;
   if (bytes != g_frame_bytes) release();
@@ -156,8 +162,8 @@ bool configure(int src_w, int src_h, int scale) {
   g_src_h = src_h;
   g_scale = scale;
   g_frame_bytes = bytes;
-  g_geom.w = src_w * scale;
-  g_geom.h = src_h * scale;
+  g_geom.w = (int)lroundf(src_w * scale);
+  g_geom.h = (int)lroundf(src_h * scale);
   g_geom.x = (theme::kW - g_geom.w) / 2;
   g_geom.y = (theme::kH - g_geom.h) / 2;
 
@@ -173,6 +179,7 @@ bool configure(int src_w, int src_h, int scale) {
     if (!b) b = (uint16_t *)heap_caps_aligned_alloc(128, bytes, MALLOC_CAP_SPIRAM);
   }
   if (!g_buf[0]) return false;
+  if (!g_ppa && g_scale != (float)(int)g_scale) return false;  // see blitCpu
   for (uint16_t *b : g_buf) {
     if (b) memset(b, 0, bytes);
   }

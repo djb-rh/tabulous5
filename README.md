@@ -239,6 +239,39 @@ whatever layout you give it — one open in a folder of thousands of files costs
 ~110 ms on the 4-bit bus, which is fine for a pick and would not be for a
 scan, so the scan uses `readdir` and reads no file headers until you pick.
 
+## Arcade
+
+Menu → **Arcade**. Pac-Man hardware: Pac-Man itself, and the Ms. Pac-Man
+bootleg that ran on an unmodified board — so no daughterboard is emulated and
+both are ordinary six-ROM sets.
+
+An arcade board's ROMs are several separate chips, and the game list is one row
+per file, so the chips are packed on the machine that has the romset:
+
+```bash
+tools/mkarcade.py pacman   ~/Downloads/MAME*/puckman.zip  data/arcade
+tools/mkarcade.py mspacman ~/Downloads/MAME*/mspacman.zip data/arcade
+```
+
+That writes a `.arc` file per game. Put them in `/arcade` on the card, or in
+`data/arcade` and flash them with `pio run -t uploadfs` — they are only 25 KB
+each. **No ROMs come with this project.** Merged romsets keep clones in
+subfolders and store each file once, so the packer matches on file name
+wherever in the zip it sits.
+
+The cabinet's monitor stands on its side, so the picture does too: it is turned
+upright while the palette is applied, which costs nothing extra. **FULL** is
+2.5x, exactly the panel's height. SELECT puts a coin in, START begins a game.
+
+**It runs at half speed**, at about 30 frames a second, and that is honest
+rather than fixed: the emulator is cycle-stepped, ticking the Z80 and the sound
+chip three million times a second, which measures at about 30 ms of work for
+each 16.7 ms of machine time. Neither internal RAM nor running the code from
+IRAM changed it — the cost is the work itself. Driving the machine by elapsed
+time instead makes it worse, not better: it cannot catch up, so each frame asks
+for more than the last and it runs away. Getting to full speed means an
+instruction-stepped CPU core in place of the cycle-stepped one.
+
 ## Files (Wi-Fi)
 
 The address on the Wi-Fi screen opens the file manager, for the card and the

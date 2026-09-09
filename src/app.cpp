@@ -4,6 +4,7 @@
 #include "joypad_ui.h"
 #include "gb_ui.h"
 #include "nes_ui.h"
+#include "pacman_ui.h"
 #include "snes_ui.h"
 
 #include <M5Unified.h>
@@ -229,6 +230,21 @@ const Entry kEntries[] = {
      "Games that saved to a battery-backed cartridge save here too, to a .sav\n"
      "file beside the ROM, written ten seconds after the game last wrote to it\n"
      "and again on the way out."},
+
+    {"Arcade", "Pac-Man and Ms. Pac-Man, off the board.", 0x1F3A93,
+     glyphs::Glyph::None, GameId::Arcade,
+     "Runs Pac-Man hardware: Pac-Man itself, and the Ms. Pac-Man bootleg that\n"
+     "ran on an unmodified board, so no daughterboard is emulated.\n"
+     "\n"
+     "An arcade machine's ROMs are several separate chips. tools/mkarcade.py\n"
+     "packs a romset you already have into one .arc file; put those in\n"
+     "/arcade on the card. No ROMs come with this device.\n"
+     "\n"
+     "The cabinet's monitor stands on its side, so the picture does too. FULL\n"
+     "fills the panel's height exactly and expects a USB gamepad; 2x leaves\n"
+     "room for the on-screen controls.\n"
+     "\n"
+     "SELECT puts a coin in. START begins the game. Hold both to come back."},
 
 #if defined(HAVE_SNES)
     {"SNES", "Super Nintendo, if you brought the core.", 0x4C3B8F,
@@ -745,6 +761,9 @@ void launch(GameId id) {
     g_phrase.begin(g_packs, s);
     ui::begin(&g_phrase, g_packs, g_report);
     ui::invalidate();
+  } else if (id == GameId::Arcade) {
+    pacman_ui::begin();
+    pacman_ui::invalidate();
   } else if (id == GameId::Snes) {
     snes_ui::begin();
     snes_ui::invalidate();
@@ -806,6 +825,7 @@ bool wantsOrientation() {
     case GameId::Nes:
     case GameId::GameBoy:
     case GameId::Snes:
+    case GameId::Arcade:
       return false;
     default:
       return true;  // the shell, where taps are rare
@@ -820,6 +840,7 @@ void invalidate() {
   if (g_current == GameId::Nes) nes_ui::invalidate();
   if (g_current == GameId::GameBoy) gb_ui::invalidate();
   if (g_current == GameId::Snes) snes_ui::invalidate();
+  if (g_current == GameId::Arcade) pacman_ui::invalidate();
   if (g_current == GameId::Minesweeper) mines_ui::invalidate();
   if (g_current == GameId::Sudoku) sudoku_ui::invalidate();
   if (g_current == GameId::Solitaire) solitaire_ui::invalidate();
@@ -896,6 +917,7 @@ void tick(uint32_t now_ms) {
   else if (g_current == GameId::Nes) nes_ui::tick(now_ms);
   else if (g_current == GameId::GameBoy) gb_ui::tick(now_ms);
   else if (g_current == GameId::Snes) snes_ui::tick(now_ms);
+  else if (g_current == GameId::Arcade) pacman_ui::tick(now_ms);
 }
 
 void handleTap(int x, int y, uint32_t now_ms) {
@@ -1073,6 +1095,8 @@ void handleTap(int x, int y, uint32_t now_ms) {
     gb_ui::handleTap(x, y, now_ms);
   else if (g_current == GameId::Snes)
     snes_ui::handleTap(x, y, now_ms);
+  else if (g_current == GameId::Arcade)
+    pacman_ui::handleTap(x, y, now_ms);
 }
 
 }  // namespace app
