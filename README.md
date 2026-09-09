@@ -241,13 +241,24 @@ scan, so the scan uses `readdir` and reads no file headers until you pick.
 
 ## Files (Wi-Fi)
 
-The content editor has a **Files** link: a file manager for the card and the
-built-in filesystem. Upload (drag and drop, one request per file, written to
-a temporary name and renamed into place so a dropped connection leaves no
-half-written ROM), new folder, rename, delete, and **Hide**, which keeps a
-title on the card but out of the NES list — recorded as one name per line in
-a `.hidden` file next to it, so it travels with the card and can be edited by
-hand. The NES list re-scans after any change.
+The address on the Wi-Fi screen opens the file manager, for the card and the
+built-in filesystem; the word-pack editor is a link away at `/packs`.
+
+Upload is drag-and-drop, one request per file, written to a temporary name and
+renamed into place so a dropped connection leaves no half-written ROM. Each row
+has **Rename**; everything else works on a selection, with **Select all**
+taking whichever rows the current view is showing:
+
+- **Hide** / **Unhide** keep titles on the card but out of the NES list.
+  Recorded as one name per line in a `.hidden` file in the same folder, so the
+  list travels with the card and can be edited by hand.
+- **Favourite** / **Unfavourite** write the same `/nes_favs.txt` the star in
+  the NES browser does, so the two agree.
+- **Delete** asks first, and is the only destructive one.
+
+**Show: All / Hidden / Favourites** filters the folder, which is how you find
+something to unhide or unfavourite. Renaming carries both flags across. The
+NES list re-scans after any change.
 
 ## Content editor (Wi-Fi)
 

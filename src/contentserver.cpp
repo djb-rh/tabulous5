@@ -134,7 +134,7 @@ textarea{width:100%;height:58vh;box-sizing:border-box;background:#12161d;color:#
   <select id=root></select>
   <button id=new>New file</button>
   <button id=help>Help</button>
-  <a id=files href="/files">Files</a>
+  <a id=files href="/">Files</a>
   <span id=msg></span>
 </header>
 
@@ -385,13 +385,21 @@ void routeFile() {
 
 void beginServer() {
   g_server = new WebServer(80);
+  // Hooks first: WebServer gives the URL to whichever handler was registered
+  // first, so the file manager claims "/" as the front door. The editor's own
+  // "/" below is the fallback for a build with no file manager in it, which
+  // also keeps the captive-portal redirect (which points at "/") from
+  // bouncing off a 404 forever.
+  for (RouteHook h : g_hooks) h(*g_server);
+  g_server->on("/packs", HTTP_GET, []() {
+    g_server->send_P(200, "text/html", kPage);
+  });
   g_server->on("/", HTTP_GET, []() {
     g_server->send_P(200, "text/html", kPage);
   });
   g_server->on("/api/roots", HTTP_GET, handleRoots);
   g_server->on("/api/list", HTTP_GET, handleList);
   g_server->on("/api/file", routeFile);
-  for (RouteHook h : g_hooks) h(*g_server);
   g_server->onNotFound([]() {
     // Phones probe a known URL to decide whether a network is "captive".
     // Redirecting anything we don't serve is what makes the sign-in sheet

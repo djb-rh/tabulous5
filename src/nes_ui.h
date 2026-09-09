@@ -10,6 +10,10 @@
 namespace tabulous {
 namespace nes_ui {
 
+// Favourite ROMs: one file name per line, on the built-in filesystem so a
+// card swap does not lose them. The web file manager edits this file too.
+constexpr const char *kFavouritesFile = "/nes_favs.txt";
+
 void begin();
 // Walk the filesystems again on the next begin(): the list changed underneath.
 void rescan();

@@ -38,7 +38,6 @@ using uikit::Rect;
 using uikit::gfx;
 
 constexpr const char *kRomDir = "/roms";
-constexpr const char *kFavFile = "/nes_favs.txt";
 
 // Everything playable, from flash and card together. Scanned once per boot:
 // a card holding a full set takes a second or two to walk, and it does not
@@ -216,7 +215,7 @@ void addAction(const Rect &r, Action a, int param = 0) {
 // ------------------------------------------------------------------ scanning
 
 void loadFavourites() {
-  File f = LittleFS.open(kFavFile, "r");
+  File f = LittleFS.open(kFavouritesFile, "r");
   if (!f) return;
   String text = f.readString();
   f.close();
@@ -225,7 +224,7 @@ void loadFavourites() {
 
 void saveFavourites() {
   const std::string text = g_lib.favouritesText();
-  File f = LittleFS.open(kFavFile, "w");
+  File f = LittleFS.open(kFavouritesFile, "w");
   if (!f) return;
   f.write((const uint8_t *)text.data(), text.size());
   f.close();
