@@ -337,13 +337,9 @@ void drawPlayChrome(bool full) {
     g_pad_drawn = 0xFF;
   }
   if (g_scale == 3) {
-    // No on-screen pad at 3x: the picture takes the full height and the
-    // margins hold only the way out. Input is the gamepad's job.
-    if (full) {
-      const joypad::Rect m = joypad::menuButton();
-      uikit::drawButton(Rect{m.x, m.y, m.w, m.h}, "MENU", kSurfaceLift, kText,
-                        &fonts::FreeSansBold12pt7b);
-    }
+    // No on-screen pad at this size: the picture takes the full height
+    // and the margins hold the way out and which gamepad is playing.
+    joypad_ui::drawGamepadChrome(full);
     g_pad_drawn = g_pad;
     return;
   }

@@ -27,6 +27,13 @@ uint8_t state();
 // drawn in; pass 0xFF to force every one of them to paint.
 void drawControls(uint8_t state, uint8_t prev, bool full);
 
+// The chrome for the sizes that draw no on-screen pad, where the picture takes
+// the whole height and a USB gamepad is the only way to play: the way out, and
+// which pad is going to do the playing. Without the second part an unplugged
+// gamepad looks exactly like a game that has frozen -- a picture that moves
+// and nothing that answers. Call it every frame; it only paints on a change.
+void drawGamepadChrome(bool full);
+
 // What the buttons are called. A cabinet has a coin slot, not a select
 // button, and no A or B. Passing nothing puts a name back to its default.
 void setLabels(const char *select_label = nullptr, const char *start_label = nullptr,

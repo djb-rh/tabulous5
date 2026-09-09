@@ -96,6 +96,16 @@ def main():
             p.write(("t%s\n" % a[6:]).encode())
             p.flush()
             time.sleep(0.7)
+        elif a.startswith("--pad="):
+            # Hold NES buttons, e.g. --pad=08,20 for START. A game that waits
+            # on the start button cannot be reached any other way from here:
+            # an injected tap goes through the shell's hit targets, and the
+            # controls an emulator draws are polled straight off the touch
+            # chip instead.
+            p.reset_input_buffer()
+            p.write(("j%s\n" % a[6:]).encode())
+            p.flush()
+            time.sleep(0.7)
         elif a.startswith("--sleep="):
             time.sleep(float(a[8:]))
 

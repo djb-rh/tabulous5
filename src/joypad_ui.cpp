@@ -3,6 +3,7 @@
 #include <M5Unified.h>
 
 #include <cstdio>
+#include <cstring>
 
 #include "app.h"
 #include "emu_video.h"
@@ -261,6 +262,40 @@ uint8_t pollPad(bool *menu_held) {
     if (m.contains(t.x, t.y)) *menu_held = true;
   }
   return out;
+}
+
+void drawGamepadChrome(bool full) {
+  const joypad::Rect m = joypad::menuButton();
+  if (full) {
+    uikit::drawButton(uikit::Rect{m.x, m.y, m.w, m.h}, "MENU", kSurfaceLift,
+                      kText, &fonts::FreeSansBold12pt7b);
+  }
+  const usbpad::State u = usbpad::state();
+  // The name lives in the state struct, which is returned by value, so it is
+  // copied rather than pointed at.
+  static char g_shown[48] = "";
+  static bool g_shown_valid = false;
+  const char *name = u.connected ? u.name : "";
+  if (!full && g_shown_valid && strcmp(g_shown, name) == 0) return;
+  snprintf(g_shown, sizeof(g_shown), "%s", name);
+  g_shown_valid = true;
+
+  // Below the frame-rate readout the emulator screens put just under MENU.
+  const int x = m.x, y = 180;
+  gfx().fillRect(x, y - 26, 320, 136, kBg);
+  if (u.connected) {
+    uikit::drawLabel(u.name[0] ? u.name : "Gamepad", x, y, kMuted,
+                     &fonts::FreeSans12pt7b, middle_left);
+    return;
+  }
+  uikit::drawLabel("No gamepad", x, y, kDanger, &fonts::FreeSansBold12pt7b,
+                   middle_left);
+  uikit::drawLabel("Plug one in, or pick the", x, y + 36, kMuted,
+                   &fonts::FreeSans9pt7b, middle_left);
+  uikit::drawLabel("smaller size in the list", x, y + 58, kMuted,
+                   &fonts::FreeSans9pt7b, middle_left);
+  uikit::drawLabel("for on-screen controls.", x, y + 80, kMuted,
+                   &fonts::FreeSans9pt7b, middle_left);
 }
 
 void drawControls(uint8_t state, uint8_t prev, bool full) {

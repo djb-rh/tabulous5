@@ -222,6 +222,9 @@ The header button chooses the picture size. **2x TOUCH** draws the game at
 512x480 with a D-pad, A, B, Select and Start on the screen either side of it.
 **3x GAMEPAD** fills the full height (768x720) and expects a USB gamepad on
 the USB-A port; hold Select+Start to leave a game, or tap MENU in the margin.
+That size names the pad it found under MENU, or says there isn't one: a game
+plays its attract loop whether or not anything is listening, so without that
+line an unplugged pad looks exactly like a console that has locked up.
 Any generic HID pad should work — the console reads the pad's own report
 descriptor rather than matching vendor IDs. The GP100's SNES layout is mapped
 out of the box (X and Y double as A and B); **Gamepad Test → MAP PAD** teaches
