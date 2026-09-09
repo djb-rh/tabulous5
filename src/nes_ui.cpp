@@ -165,18 +165,28 @@ void probeRom(fs::FS &fs, rom_index::Item *it) {
 
 // --------------------------------------------------------------------- play
 
+// Leaving a game touches the scaler, the audio task, the codec, the heap and
+// the card, and a wedged I2C bus turns the codec step into a wait that never
+// ends. Each step says it is about to happen, so a capture of a freeze names
+// the call that did not come back. The watchdog catches it either way; this is
+// for when someone is watching.
 void releaseCore() {
+  Serial.println("nes: leaving, waiting for the scaler");
   emu_video::waitIdle();
   // Stop the APU task BEFORE the APU it points at is destroyed.
+  Serial.println("nes: leaving, stopping the audio task");
   g_apu_run = false;
   for (int i = 0; i < 200 && g_apu_task; i++) delay(1);
   Apu2A03::setAudioCallback(nullptr);
+  Serial.println("nes: leaving, stopping the speaker");
   M5.Speaker.stop();
+  Serial.println("nes: leaving, freeing the machine");
   delete g_cpu;
   g_cpu = nullptr;
   delete g_cart;   // opened the ROM file itself, and closes it
   g_cart = nullptr;
   g_playing = -1;
+  Serial.println("nes: left");
 }
 
 // Called by the APU whenever its buffer fills. Runs inside clockFrame(), so it
@@ -360,6 +370,16 @@ void runFrame(uint32_t now_ms) {
     const usbpad::State u = usbpad::state();
     if (u.connected) g_pad |= padmap::toNes(u.down, u.x, u.y, g_padmap);
   }
+  // Injected input joins here rather than further down, so that a held
+  // Select+Start from the serial port leaves a game exactly as a real pad
+  // does. Leaving is the one path that cannot be reached any other way from a
+  // host: taps do not reach a playing screen, and it is where a freeze was
+  // reported.
+  if (g_inject_frames > 0) {
+    g_pad |= g_inject_pad;
+    g_inject_frames--;
+  }
+
   // Select+Start held for about two thirds of a second leaves the game: a
   // pad has no MENU button, and no game uses that chord for long.
   if ((g_pad & (joypad::kSelect | joypad::kStart)) == (joypad::kSelect | joypad::kStart)) {
@@ -377,10 +397,6 @@ void runFrame(uint32_t now_ms) {
   }
   if (!menu_held) g_menu_down = false;
 
-  if (g_inject_frames > 0) {
-    g_pad |= g_inject_pad;
-    g_inject_frames--;
-  }
   // joypad's bit order is the NES shift register's, which is what the core
   // expects, so the pad byte goes across untranslated.
   g_cpu->bus.setController(g_pad);

@@ -448,6 +448,22 @@ API opens every entry it lists, and one open in a FAT directory of thousands
 of files is a linear search through the whole directory. Anything that walks
 the card must use `readdir` (see `filemanager.cpp` and the NES scan).
 
+**The console freezes and nothing responds.** Not a crash: a crash reboots and
+leaves a core dump. A freeze is the main loop blocked, and because that loop is
+what reads the touch screen and the gamepad, both go dead together while the
+last frame stays on the panel. Leaving a game is the likeliest moment, because
+that path stops the speaker and closes a file on the card, and a wedged I2C bus
+turns the codec call into a wait that never ends.
+
+**If sound had already stopped working, that is the same fault one step
+earlier** — the codec is wedged, and only a power cycle clears it. Reflashing
+does not.
+
+The main loop is now watched, and fifteen seconds without a pass is a panic
+rather than a freeze, so `tools/coredump` names the call that blocked. Serial
+`H` hangs on purpose to prove that still works; `C` crashes on purpose to prove
+the dump does.
+
 **WiFi won't associate.** Overwhelmingly the likeliest cause is stale
 `esp_hosted` slave firmware on the ESP32-C6, not a bad password. The
 `m5stack-tab5-basics-panel` ESPHome project has a known-good

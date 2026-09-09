@@ -11,6 +11,7 @@
 #include <M5Unified.h>
 #include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
 
 #include <vector>
 
@@ -42,6 +43,11 @@ namespace {
 std::vector<Pack> g_packs;
 
 }  // namespace
+
+// Whether the loop is subscribed to the task watchdog. Feeding one it is not
+// subscribed to logs an error every pass, which drowns the log it exists to
+// make readable.
+bool g_wdt_on = false;
 
 void setup() {
   auto cfg = M5.config();
@@ -116,6 +122,27 @@ void setup() {
   app::begin(&g_packs, report);
 
   Serial.printf("PSRAM free %u KB\n", (unsigned)(ESP.getFreePsram() / 1024));
+  // A freeze that is not a crash leaves nothing behind: no panic, no core
+  // dump, and both inputs dead because the loop that reads them is the thing
+  // that is stuck. Leaving a game blocks on the codec and on the card, and a
+  // wedged I2C bus turns either into a wait that never ends. Subscribing the
+  // loop makes that a panic instead, which the core dump partition keeps --
+  // so the next one says where it stopped rather than only that it did.
+  //
+  // Fifteen seconds: the slowest thing here on purpose is walking a card of
+  // thousands, which has been measured at two.
+  esp_task_wdt_config_t wdt = {};
+  wdt.timeout_ms = 15000;
+  wdt.idle_core_mask = 0;
+  wdt.trigger_panic = true;
+  esp_err_t we = esp_task_wdt_reconfigure(&wdt);
+  if (we != ESP_OK) we = esp_task_wdt_init(&wdt);
+  const esp_err_t wa = esp_task_wdt_add(nullptr);
+  g_wdt_on = wa == ESP_OK;
+  Serial.printf("wdt: %s (configure=%d add=%d)\n",
+                g_wdt_on ? "the main loop has fifteen seconds to come back"
+                         : "not watching the main loop",
+                (int)we, (int)wa);
 }
 
 
@@ -145,6 +172,7 @@ void probeSd() {
   }
   Serial.printf("SD: %d entries listed at the root\n", n);
   Serial.setTxTimeoutMs(0);
+
 }
 
 void dumpCanvas(M5Canvas *canvas);
@@ -317,6 +345,7 @@ void reportTouch() {
 
 void loop() {
   const uint32_t loop_start = micros();
+  if (g_wdt_on) esp_task_wdt_reset();
   M5.update();
 
   // Screenshot request. Cheap to poll and inert unless a host asks.
@@ -335,6 +364,16 @@ void loop() {
       Serial.println("crashing on purpose");
       Serial.flush();
       *(volatile int *)0 = 1;
+    }
+    // And the other kind. A freeze is not a crash: no panic, no dump, and
+    // nothing to read afterwards but a dead screen. The watchdog is what turns
+    // one into the other, and this is how to know it works without waiting for
+    // the real thing.
+    if (cmd == 'H') {
+      Serial.println("hanging on purpose; the watchdog has fifteen seconds");
+      Serial.flush();
+      for (;;) {
+      }
     }
     if (cmd == 'a') nes_ui::startAudioCapture(4);
     // "j<hex>,<frames>": hold NES buttons, e.g. j08,20 holds START 20 frames.
