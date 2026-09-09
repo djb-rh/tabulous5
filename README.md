@@ -211,7 +211,7 @@ game's tension and it must land exactly where the round timer says.
 ## NES
 
 Menu → **NES**. Put `.nes` files in a `/roms` folder on a FAT32 microSD card
-(subfolders one level deep are fine), or in `data/roms/` and `pio run -t
+(subfolders one level deep are fine), or in `data/nes/` and `pio run -t
 uploadfs` for a few built-in ones. The card is read once per boot: a full
 No-Intro set of 5,800-odd titles takes about two seconds to index. The list
 is a rail of groups down the left — Favourites, `#`, A to Z — and pages of

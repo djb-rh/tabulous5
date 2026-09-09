@@ -162,6 +162,16 @@ bool writeList(fs::FS &fs, const std::string &path, const std::vector<std::strin
 
 std::string hiddenPath(const std::string &dir) { return join(dir, ".hidden"); }
 
+// Folders a game or the console itself expects to find. Deleting one from a
+// browser would be a long walk back.
+bool isProtected(const std::string &p) {
+  static const char *const kKeep[] = {"/", "/packs", "/sfx", "/nes", "/gb"};
+  for (const char *k : kKeep) {
+    if (p == k) return true;
+  }
+  return false;
+}
+
 // Adds or removes `names` from a list file, and says whether anything changed.
 bool editList(fs::FS &fs, const std::string &path, const std::vector<std::string> &names,
               bool add, int *changed) {
@@ -410,7 +420,7 @@ void handleDelete() {
   std::string failed;
   for (size_t i = 0; i < names.size(); i++) {
     const std::string path = join(dir, names[i]);
-    if (path == "/" || path == "/packs" || path == "/sfx" || path == "/roms") continue;
+    if (isProtected(path)) continue;
     if (removeTree(*fs, path, 0)) {
       gone++;
     } else if (failed.size() < 120) {

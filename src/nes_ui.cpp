@@ -18,6 +18,7 @@
 #include "../third_party/anemoia/core/cpu6502.h"
 #include "joypad.h"
 #include "joypad_ui.h"
+#include "rom_browser.h"
 #include "rom_index.h"
 #include "nesrom.h"
 #include "padmap.h"
@@ -35,14 +36,7 @@ using namespace theme;
 using uikit::Rect;
 using uikit::gfx;
 
-constexpr const char *kRomDir = "/roms";
-
-// Everything playable, from flash and card together. Scanned once per boot:
-// a card holding a full set takes a second or two to walk, and it does not
-// change while the console is running.
-rom_index::Index g_lib(".nes");
-bool g_scanned = false;
-uint32_t g_scanned_rev = 0;  // filemanager::revision() at the last scan
+constexpr const char *kRomDir = "/nes";
 
 enum class Mode : uint8_t { Picking, Playing };
 
@@ -57,7 +51,6 @@ int g_playing = -1;
 // the callback has to know how far down the picture it has got. Reset each
 // frame; the core always emits them in order.
 volatile int g_chunk_row = 0;
-const char *g_error = "";
 
 // How much the picture is magnified, which decides whether there is room for
 // the on-screen pad beside it. The panel work itself is emu_video's.
@@ -136,313 +129,35 @@ uint32_t g_drawn_frames = 0, g_shown = 0;
 // Phase timings, accumulated over a second so one print covers many frames.
 uint32_t g_us_emu = 0, g_us_conv = 0, g_us_push = 0, g_us_sync = 0;
 
-enum class Action : uint8_t {
-  None, Pick, Back, PageUp, PageDown, Group, ToggleFav, Scale
-};
-
 settings_store::NesSettings g_settings;
 padmap::Map g_padmap;
 // Frames Select and Start have been held together: the gamepad's way out.
 int g_quit_hold = 0;
 
-// The browser: a rail of groups down the left (Favourites, #, A-Z), and the
-// chosen group's titles in pages on the right. A page is fourteen rows, which
-// is as many as read comfortably at this size; a group like S holds several
-// hundred, so paging is by whole screens and the position is spelled out.
-constexpr int kRows = 14;
-constexpr int kRowH = 40, kRowGap = 2;
-constexpr int kListTop = 100;
-constexpr int kRailX = kMargin, kRailCellW = 60, kRailCols = 2;
-constexpr int kListX = kMargin + kRailCols * (kRailCellW + 4) + 16;
-int g_group = 2;  // 'A'
-int g_page = 0;
-
-void addAction(const Rect &r, Action a, int param = 0) {
-  uikit::addTarget(r, (int)a, param);
-}
-
-// ------------------------------------------------------------------ scanning
-
-void loadFavourites() {
-  File f = LittleFS.open(kFavouritesFile, "r");
-  if (!f) return;
-  String text = f.readString();
-  f.close();
-  g_lib.applyFavourites(text.c_str());
-}
-
-void saveFavourites() {
-  const std::string text = g_lib.favouritesText();
-  File f = LittleFS.open(kFavouritesFile, "w");
-  if (!f) return;
-  f.write((const uint8_t *)text.data(), text.size());
-  f.close();
-}
-
-// The card is walked with readdir rather than the Arduino File API: that API
-// opens every entry it lists, and one open in a FAT directory of thousands of
-// files is a linear search through the whole directory. Names are all the
-// index needs. One level of subdirectories is included, so a card laid out as
-// /roms/A, /roms/B ... (which keeps those opens fast) works the same as a
-// flat /roms.
-// The names in a directory's .hidden file, as written by the web file
-// manager: those titles stay on the card but out of the list.
-std::string readHidden(fs::FS &fs, const char *dir) {
-  char path[300];
-  snprintf(path, sizeof(path), "%s/.hidden", dir);
-  File f = fs.open(path, "r");
-  if (!f) return "";
-  String s = f.readString();
-  f.close();
-  return std::string("\n") + s.c_str() + "\n";
-}
-
-bool isHidden(const std::string &hidden, const char *name) {
-  if (hidden.empty()) return false;
-  return hidden.find("\n" + std::string(name) + "\n") != std::string::npos ||
-         hidden.find("\n" + std::string(name) + "\r\n") != std::string::npos;
-}
-
-void scanCardDir(const char *vfs_dir, const char *lib_dir, bool recurse) {
-  DIR *d = opendir(vfs_dir);
-  if (!d) return;
-  const std::string hidden = readHidden(sdcard::fs(), lib_dir);
-  for (struct dirent *e = readdir(d); e; e = readdir(d)) {
-    if (e->d_name[0] == '.') continue;
-    if (isHidden(hidden, e->d_name)) continue;
-    if (e->d_type == DT_DIR) {
-      if (!recurse) continue;
-      char sub_vfs[300], sub_lib[160];
-      snprintf(sub_vfs, sizeof(sub_vfs), "%s/%s", vfs_dir, e->d_name);
-      snprintf(sub_lib, sizeof(sub_lib), "%s/%s", lib_dir, e->d_name);
-      scanCardDir(sub_vfs, sub_lib, false);
-      continue;
-    }
-    g_lib.add(lib_dir, e->d_name, rom_index::kCard);
-  }
-  closedir(d);
-}
-
-void scan() {
-  const uint32_t t0 = millis();
-  g_lib.clear();
-
-  File dir = LittleFS.open(kRomDir);
-  if (dir && dir.isDirectory()) {
-    const std::string hidden = readHidden(LittleFS, kRomDir);
-    for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
-      if (f.isDirectory() || isHidden(hidden, f.name())) continue;
-      g_lib.add(kRomDir, f.name(), rom_index::kFlash);
-    }
-  }
-  const int flash_n = g_lib.size();
-
-  if (sdcard::begin()) {
-    char vfs[64];
-    snprintf(vfs, sizeof(vfs), "%s%s", sdcard::mountPoint(), kRomDir);
-    scanCardDir(vfs, kRomDir, true);
-  }
-  g_lib.finish();
-  loadFavourites();
-  g_scanned = true;
-  g_scanned_rev = filemanager::revision();
-  Serial.printf("nes: %d ROMs (%d built in, %d on card) in %lu ms\n",
-                g_lib.size(), flash_n, g_lib.size() - flash_n,
-                (unsigned long)(millis() - t0));
-}
-
-fs::FS &fsFor(const rom_index::Item &it) {
-  return it.source == rom_index::kCard ? sdcard::fs() : (fs::FS &)LittleFS;
-}
-
-// Reads the header of one title. Deferred to the moment it is needed rather
-// than done for all of them at scan time: on the card it is an open, and see
-// scanCardDir() for what an open can cost there.
-void probe(int i) {
-  rom_index::Item &it = g_lib.mutableAt(i);
-  if (it.status >= 0) return;
+// The one system-specific part of choosing a cartridge: whether this file is
+// something the core can run. Called when a title is picked, not when it is
+// listed — on a card holding thousands, an open is expensive.
+void probeRom(fs::FS &fs, rom_index::Item *it) {
   uint8_t head[16];
-  File h = fsFor(it).open(it.path, "r");
+  File h = fs.open(it->path, "r");
   const size_t got = h ? h.read(head, sizeof(head)) : 0;
-  it.bytes = h ? (uint32_t)h.size() : 0;
+  it->bytes = h ? (uint32_t)h.size() : 0;
   if (h) h.close();
 
   nesrom::Info info;
   const char *why = "";
-  const bool readable = got == sizeof(head) &&
-                        nesrom::parseHeader(head, it.bytes, &info, &why);
-  it.mapper = info.mapper;
+  const bool readable =
+      got == sizeof(head) && nesrom::parseHeader(head, it->bytes, &info, &why);
+  it->mapper = info.mapper;
   if (!readable) {
-    it.status = 1;
-    it.problem = why[0] ? why : "unreadable";
+    it->status = 1;
+    it->problem = why[0] ? why : "unreadable";
   } else if (!info.supported) {
-    it.status = 1;
-    it.problem = "mapper not supported";
+    it->status = 1;
+    it->problem = "mapper not supported";
   } else {
-    it.status = 0;
-    it.problem = "";
-  }
-}
-
-// ------------------------------------------------------------------- picker
-
-// A five-point star, as a fan of triangles from the centre. Fonts here are
-// ASCII, so the glyph is drawn rather than typed.
-void drawStar(int cx, int cy, int r, uint16_t colour, bool filled) {
-  auto &g = gfx();
-  int px[10], py[10];
-  for (int k = 0; k < 10; k++) {
-    const float a = -1.5707963f + k * 0.62831853f;  // start at the top
-    const float rr = (k & 1) ? r * 0.42f : (float)r;
-    px[k] = cx + (int)lroundf(cosf(a) * rr);
-    py[k] = cy + (int)lroundf(sinf(a) * rr);
-  }
-  if (filled) {
-    for (int k = 0; k < 10; k++) {
-      g.fillTriangle(cx, cy, px[k], py[k], px[(k + 1) % 10], py[(k + 1) % 10], colour);
-    }
-  } else {
-    for (int k = 0; k < 10; k++) {
-      g.drawLine(px[k], py[k], px[(k + 1) % 10], py[(k + 1) % 10], colour);
-    }
-  }
-}
-
-int groupTotal(int group) {
-  return group == rom_index::kFavourites ? g_lib.favouriteCount()
-                                         : g_lib.groupCount(group);
-}
-
-int groupItem(int group, int n) {
-  return group == rom_index::kFavourites ? g_lib.favouriteAt(n)
-                                         : g_lib.groupBegin(group) + n;
-}
-
-void drawRail() {
-  const int rows = rom_index::kGroups / kRailCols;
-  for (int gi = 0; gi < rom_index::kGroups; gi++) {
-    const int col = gi / rows, row = gi % rows;
-    const Rect cell{kRailX + col * (kRailCellW + 4), kListTop + row * (kRowH + kRowGap),
-                    kRailCellW, kRowH};
-    const bool current = gi == g_group;
-    const bool any = groupTotal(gi) > 0;
-    uikit::fillRoundRectFast(cell.x, cell.y, cell.w, cell.h, 8,
-                             current ? kAccent : any ? kSurfaceLift : kSurface);
-    const uint16_t ink = current ? inkFor(theme::isLight() ? 0xA96A00u : 0xFFC53Du)
-                                 : any ? kText : kMuted;
-    if (gi == rom_index::kFavourites) {
-      drawStar(cell.x + cell.w / 2, cell.y + cell.h / 2, 13, ink, true);
-    } else {
-      uikit::drawLabel(rom_index::groupLabel(gi), cell.x + cell.w / 2,
-                       cell.y + cell.h / 2 + 1, ink, &fonts::FreeSansBold12pt7b,
-                       middle_center);
-    }
-    addAction(cell, Action::Group, gi);
-  }
-}
-
-void drawPicker() {
-  auto &g = gfx();
-  g.fillScreen(kBg);
-  uikit::drawLabel("NES", kMargin, 46, kText, &fonts::FreeSansBold24pt7b,
-                   middle_left);
-
-  const Rect back{kW - kMargin - 190, 18, 190, 62};
-  uikit::drawButton(back, "MENU", kSurfaceLift, kText,
-                    &fonts::FreeSansBold12pt7b);
-  addAction(back, Action::Back);
-
-  // Picture size, as a toggle in the header: it is the one thing about play
-  // that is decided before a game starts.
-  const Rect size_btn{back.x - 12 - 100 - 12 - 100 - 12 - 200, 18, 200, 62};
-  uikit::drawButton(size_btn, g_settings.scale == 3 ? "3x  GAMEPAD" : "2x  TOUCH",
-                    kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
-  addAction(size_btn, Action::Scale);
-
-  if (g_lib.size() == 0) {
-    uikit::drawLabel("No ROMs found", kW / 2, 300, kMuted,
-                     &fonts::FreeSansBold18pt7b, middle_center);
-    uikit::drawLabel(sdcard::mounted()
-                         ? "Put .nes files in /roms on the card, or in data/roms and run: pio run -t uploadfs"
-                         : "Insert a FAT32 card with .nes files in /roms, or put them in data/roms and run: pio run -t uploadfs",
-                     kW / 2, 350, kMuted, &fonts::FreeSans12pt7b, middle_center);
-    return;
-  }
-
-  drawRail();
-
-  const int total = groupTotal(g_group);
-  const int pages = total > 0 ? (total + kRows - 1) / kRows : 1;
-  if (g_page >= pages) g_page = pages - 1;
-  if (g_page < 0) g_page = 0;
-
-  // Where we are, spelled out next to the title: group, how many, which page.
-  char where[96];
-  if (g_group == rom_index::kFavourites) {
-    snprintf(where, sizeof(where), "Favourites  %d", total);
-  } else {
-    snprintf(where, sizeof(where), "%s  %d of %d", rom_index::groupLabel(g_group),
-             total, g_lib.size());
-  }
-  uikit::drawLabel(where, kMargin + 120, 46, kMuted, &fonts::FreeSansBold18pt7b,
-                   middle_left);
-  if (g_error[0]) {
-    uikit::drawLabel(g_error, kMargin + 120, 78, kDanger, &fonts::FreeSans12pt7b,
-                     middle_left);
-  }
-
-  const int list_w = kW - kMargin - kListX;
-  if (total == 0) {
-    uikit::drawLabel(g_group == rom_index::kFavourites
-                         ? "Tap the star on a game to keep it here"
-                         : "Nothing filed here",
-                     kListX + list_w / 2, kListTop + 200, kMuted,
-                     &fonts::FreeSansBold18pt7b, middle_center);
-    return;
-  }
-
-  for (int slot = 0; slot < kRows; slot++) {
-    const int n = g_page * kRows + slot;
-    if (n >= total) break;
-    const int i = groupItem(g_group, n);
-    const rom_index::Item &e = g_lib.at(i);
-    const Rect row{kListX, kListTop + slot * (kRowH + kRowGap), list_w, kRowH};
-    // A title already found unplayable stays listed, dimmed, with the reason:
-    // hiding it would leave the owner hunting for a file that is right there.
-    const bool bad = e.status == 1;
-    uikit::fillRoundRectFast(row.x, row.y, row.w, row.h, 8, bad ? kSurface : kSurfaceLift);
-    const uint16_t ink = bad ? kMuted : kText;
-    uikit::drawLabel(e.name, row.x + 16, row.y + kRowH / 2 + 1, ink,
-                     &fonts::FreeSansBold12pt7b, middle_left);
-    if (bad) {
-      uikit::drawLabel(e.problem, row.x + row.w - 200, row.y + kRowH / 2 + 1, kDanger,
-                       &fonts::FreeSans9pt7b, middle_right);
-    } else if (e.source == rom_index::kFlash) {
-      uikit::drawLabel("built in", row.x + row.w - 200, row.y + kRowH / 2 + 1, kMuted,
-                       &fonts::FreeSans9pt7b, middle_right);
-    }
-    const Rect star{row.x + row.w - 64, row.y, 64, kRowH};
-    drawStar(star.x + star.w / 2, star.y + star.h / 2, 13, e.fav ? kAccent : kMuted, e.fav);
-    const Rect title{row.x, row.y, row.w - 64, row.h};
-    if (!bad) addAction(title, Action::Pick, i);
-    addAction(star, Action::ToggleFav, i);
-  }
-
-  if (pages > 1) {
-    const Rect up{back.x - 12 - 100 - 12 - 100, 18, 100, 62};
-    const Rect down{back.x - 12 - 100, 18, 100, 62};
-    const bool can_up = g_page > 0;
-    const bool can_down = g_page + 1 < pages;
-    uikit::drawArrowButton(up, true, can_up ? kSurfaceLift : kSurface,
-                           can_up ? kText : kMuted);
-    uikit::drawArrowButton(down, false, can_down ? kSurfaceLift : kSurface,
-                           can_down ? kText : kMuted);
-    if (can_up) addAction(up, Action::PageUp);
-    if (can_down) addAction(down, Action::PageDown);
-    char pos[48];
-    snprintf(pos, sizeof(pos), "%d / %d", g_page + 1, pages);
-    uikit::drawLabel(pos, up.x + 106, 92, kMuted, &fonts::FreeSansBold12pt7b,
-                     middle_center);
+    it->status = 0;
+    it->problem = "";
   }
 }
 
@@ -536,30 +251,30 @@ IRAM_ATTR void drawChunk(uint8_t *buffer, uint32_t size) {
 
 bool load(int index) {
   releaseCore();
-  probe(index);
-  const rom_index::Item &e = g_lib.at(index);
+  rom_browser::probeItem(index);
+  const rom_index::Item &e = rom_browser::item(index);
   if (e.status != 0) {
-    g_error = e.problem;
+    rom_browser::setError(e.problem);
     return false;
   }
 
   // The cartridge copies the whole file into PSRAM and runs from there, so a
   // title on the card costs one open, not one per bank switch.
   const uint32_t t0 = millis();
-  g_cart = new Cartridge(fsFor(e), e.path, ROMBackend::LRU);
+  g_cart = new Cartridge(rom_browser::fsFor(e), e.path, ROMBackend::LRU);
   Serial.printf("nes: opened %s (%lu KB, %s) in %lu ms\n", e.file,
                 (unsigned long)(e.bytes / 1024),
                 e.source == rom_index::kCard ? "card" : "flash",
                 (unsigned long)(millis() - t0));
   if (!g_cart || !g_cart->isValid()) {
-    g_error = "core rejected this ROM";
+    rom_browser::setError("core rejected this ROM");
     releaseCore();
     return false;
   }
 
-  g_scale = g_settings.scale;
+  g_scale = rom_browser::scale();
   g_cpu = new Cpu6502();
-  if (!g_cpu) { g_error = "out of memory for core"; releaseCore(); return false; }
+  if (!g_cpu) { rom_browser::setError("out of memory for core"); releaseCore(); return false; }
   g_cpu->bus.insertCartridge(g_cart);
   g_cpu->bus.ppu.setDrawCallback(drawChunk);
   for (int i = 0; i < kAudioBufs; i++) {
@@ -572,7 +287,7 @@ bool load(int index) {
     g_ring = (int16_t *)heap_caps_malloc(kRing * sizeof(int16_t),
                                          MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   }
-  if (!g_ring) { g_error = "out of memory for audio"; releaseCore(); return false; }
+  if (!g_ring) { rom_browser::setError("out of memory for audio"); releaseCore(); return false; }
   g_audio_which = 0;
   g_ring_w = g_ring_r = 0;
   g_audio_dropped = 0;
@@ -604,7 +319,7 @@ bool load(int index) {
 
   if (!emu_video::begin() ||
       !emu_video::configure(joypad::kNesW, joypad::kNesH, g_scale)) {
-    g_error = "no room for the picture";
+    rom_browser::setError("no room for the picture");
     releaseCore();
     return false;
   }
@@ -746,30 +461,33 @@ void runFrame(uint32_t now_ms) {
 void begin() {
   releaseCore();
   g_mode = Mode::Picking;
-  g_error = "";
   settings_store::loadNes(&g_settings);
   settings_store::loadPadMap(&g_padmap);
   g_quit_hold = 0;
-  if (g_scanned && filemanager::revision() != g_scanned_rev) g_scanned = false;
-  if (!g_scanned) {
-    // A card of thousands takes a moment to walk; say so rather than sit on
-    // the previous screen.
-    auto &g = gfx();
-    g.fillScreen(kBg);
-    uikit::drawLabel("Reading the game list...", kW / 2, kH / 2, kMuted,
-                     &fonts::FreeSansBold18pt7b, middle_center);
-    uikit::present();
-    scan();
-  }
+
+  rom_browser::Config cfg;
+  cfg.title = "NES";
+  cfg.dir = kRomDir;
+  cfg.extension = ".nes";
+  cfg.favourites_file = kFavouritesFile;
+  cfg.scale_label[0] = "2x  TOUCH";
+  cfg.scale_label[1] = "3x  GAMEPAD";
+  cfg.scale_value[0] = 2;
+  cfg.scale_value[1] = 3;
+  cfg.probe = probeRom;
+  cfg.empty_hint = "Put .nes files in /nes on the card, or in data/nes and run: pio run -t uploadfs";
+  rom_browser::begin(cfg, g_settings.scale);
+  rom_browser::ensureScanned();
   g_dirty = true;
 }
 
 // Forces the next entry to walk the filesystems again — after the web file
 // manager has added or removed something, say.
-void rescan() { g_scanned = false; }
+void rescan() { rom_browser::rescan(); }
 
 void invalidate() {
   g_dirty = true;
+  rom_browser::invalidate();
   g_pad_drawn = 0xFF;
 }
 
@@ -843,63 +561,35 @@ void tick(uint32_t now_ms) {
     }
     return;
   }
-  if (!g_dirty) return;
-  g_dirty = false;
+  if (!rom_browser::dirty()) return;
   const uint32_t t0 = micros();
   uikit::clearTargets();
-  drawPicker();
+  rom_browser::draw();
   uikit::present();
   uikit::noteRepaint(micros() - t0, 71);
 }
 
 void handleTap(int x, int y, uint32_t) {
   if (g_mode == Mode::Playing) return;  // play polls touch itself
-  int action = 0, param = 0;
-  if (!uikit::findTarget(x, y, &action, &param)) return;
-  switch ((Action)action) {
-    case Action::Pick:
-      g_error = "";
-      if (load(param)) {
+  int index = 0;
+  switch (rom_browser::handleTap(x, y, &index)) {
+    case rom_browser::Result::Launch:
+      if (load(index)) {
         g_mode = Mode::Playing;
         g_menu_down = true;  // the tap that launched it must not also exit
+        g_dirty = true;
       } else {
         audio::reject();
       }
-      g_dirty = true;
       break;
-    case Action::Group:
-      audio::select();
-      if (param != g_group) g_page = 0;
-      g_group = param;
-      g_dirty = true;
-      break;
-    case Action::Scale:
-      audio::select();
-      g_settings.scale = g_settings.scale == 3 ? 2 : 3;
+    case rom_browser::Result::ScaleChanged:
+      g_settings.scale = rom_browser::scale();
       settings_store::saveNes(g_settings);
-      g_dirty = true;
       break;
-    case Action::ToggleFav: {
-      audio::select();
-      g_lib.setFavourite(param, !g_lib.at(param).fav);
-      saveFavourites();
-      g_dirty = true;
-      break;
-    }
-    case Action::PageUp:
-      audio::select();
-      g_page--;
-      g_dirty = true;
-      break;
-    case Action::PageDown:
-      audio::select();
-      g_page++;
-      g_dirty = true;
-      break;
-    case Action::Back:
+    case rom_browser::Result::Back:
       app::requestExit();
       break;
-    case Action::None:
+    case rom_browser::Result::None:
       break;
   }
 }
