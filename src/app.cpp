@@ -1050,6 +1050,13 @@ void handleTap(int x, int y, uint32_t now_ms) {
         g_settings_open = false;  // the editor replaces it; DONE comes back
         g_editor_open = true;
         g_revision_at_open = contentserver::revision();
+        // The WiFi co-processor talks over SDIO, and its driver wants DMA
+        // buffers in internal memory. With the SNES core's 128 KB reservation
+        // still held there is not enough left, and bringing the radio up
+        // aborts inside the tick hook -- the console reboots the moment the
+        // editor is opened. Hand the reservation back first; it is taken
+        // again when the editor closes.
+        snes_ui::yieldWorkRamReserve();
         // Auto: try the house network, fall back to the device's own
         // hotspot if it can't be reached.
         contentserver::start(contentserver::Mode::Auto, WIFI_SSID,
@@ -1065,6 +1072,8 @@ void handleTap(int x, int y, uint32_t now_ms) {
         audio::select();
         const bool changed = contentserver::revision() != g_revision_at_open;
         contentserver::stop();
+        // The radio is down, so the SNES can have its fast work RAM back.
+        snes_ui::reserveWorkRamEarly();
         g_editor_open = false;
         g_settings_open = true;  // back where it was opened from
         // Reload only if something was actually written — rereading 900

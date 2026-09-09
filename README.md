@@ -338,6 +338,14 @@ Menu → **EDIT CONTENT OVER WI-FI**. Two ways in, because neither always works:
 A button on the editor screen switches between the two without a reflash.
 Games reload their packs on FINISH, but only if something was actually written.
 
+Opening the editor hands back the SNES core's 128 KB internal-memory
+reservation first, and takes it again on FINISH. The Wi-Fi co-processor talks
+over SDIO and its driver wants DMA buffers in internal memory; with the
+reservation held there was not enough left, and bringing the radio up aborted
+inside the FreeRTOS tick hook — the console rebooted the moment the editor was
+opened. The SNES falls back to PSRAM until the next reboot, which is the same
+trade the other emulators make.
+
 ### It is not a word-pack editor
 
 It edits text files inside directories registered as editable roots. A future
