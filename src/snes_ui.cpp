@@ -55,9 +55,12 @@ bool JustifierOffscreen(void) { return true; }
 void JustifierButtons(uint32_t *) {}
 bool S9xReadMousePosition(int32_t, int32_t *, int32_t *, uint32_t *) { return false; }
 bool S9xReadSuperScopePosition(int32_t *, int32_t *, uint32_t *) { return false; }
-// The pad is written straight into IPPU.Joypads once a frame, so nothing is
-// read back through here.
-uint32_t S9xReadJoypad(int32_t) { return 0; }
+// What the controller port reads. The core refills IPPU.Joypads from here
+// every frame, near the end of the visible picture, so writing that array from
+// outside is pointless -- whatever is put there is overwritten before the
+// program ever sees it. This is the only way in.
+volatile uint32_t g_snes_pad = 0;
+uint32_t S9xReadJoypad(int32_t port) { return port == 0 ? g_snes_pad : 0; }
 }
 
 #include "app.h"
@@ -478,7 +481,7 @@ void runFrame(uint32_t now_ms) {
   }
   if (!menu_held) g_menu_down = false;
 
-  ::IPPU.Joypads[0] = toSnes(g_pad, u);
+  g_snes_pad = toSnes(g_pad, u);
 
   // Every frame is emulated; only every other one is drawn. The picture is
   // where the time goes -- the machine's own logic and its sound run at full
@@ -625,6 +628,14 @@ void handleTap(int x, int y, uint32_t) {
   int index = 0;
   switch (rom_browser::handleTap(x, y, &index)) {
     case rom_browser::Result::Launch:
+      // Say the tap landed before disappearing to read the card: opening a
+      // cartridge takes a couple of seconds and the list would otherwise sit
+      // there looking as though nothing had happened.
+      {
+        char busy[96];
+        snprintf(busy, sizeof(busy), "Loading %s...", rom_browser::item(index).name);
+        rom_browser::showBusy(busy);
+      }
       if (load(index)) {
         g_mode = Mode::Playing;
         g_menu_down = true;

@@ -270,11 +270,7 @@ void ensureScanned() {
   if (g_scanned) return;
   // A card of thousands takes a moment to walk; say so rather than sit on the
   // previous screen.
-  auto &g = gfx();
-  g.fillScreen(kBg);
-  uikit::drawLabel("Reading the game list...", kW / 2, kH / 2, kMuted,
-                   &fonts::FreeSansBold18pt7b, middle_center);
-  uikit::present();
+  showBusy("Reading the game list...");
   scan();
   g_dirty = true;
 }
@@ -287,6 +283,18 @@ uint8_t scale() { return g_scale; }
 bool portrait() { return g_portrait; }
 void setExtraLabel(const char *label) {
   g_cfg.extra_label = label;
+  g_dirty = true;
+}
+
+void showBusy(const char *message) {
+  auto &g = gfx();
+  g.fillScreen(kBg);
+  uikit::drawLabel(message, kW / 2, kH / 2, kMuted, &fonts::FreeSansBold18pt7b,
+                   middle_center);
+  uikit::present();
+  // The list is gone from the screen, so its hit targets have to go with it:
+  // a tap during the wait must not land on a row that is no longer there.
+  uikit::clearTargets();
   g_dirty = true;
 }
 

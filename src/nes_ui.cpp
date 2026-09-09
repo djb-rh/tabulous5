@@ -610,6 +610,14 @@ void handleTap(int x, int y, uint32_t) {
   int index = 0;
   switch (rom_browser::handleTap(x, y, &index)) {
     case rom_browser::Result::Launch:
+      // Say the tap landed before disappearing to read the card: opening a
+      // cartridge takes a couple of seconds and the list would otherwise sit
+      // there looking as though nothing had happened.
+      {
+        char busy[96];
+        snprintf(busy, sizeof(busy), "Loading %s...", rom_browser::item(index).name);
+        rom_browser::showBusy(busy);
+      }
       if (load(index)) {
         g_mode = Mode::Playing;
         g_menu_down = true;  // the tap that launched it must not also exit

@@ -80,6 +80,12 @@ bool portrait();
 // Shown under the title until the next pick; for "that ROM would not load".
 void setError(const char *message);
 
+// Fills the screen with one line, immediately. Opening a cartridge reads it
+// from the card and hands it to a core, which takes long enough on a big one
+// to look like nothing happened -- and the screen still holds the list, so
+// there is nothing to say the tap landed. Call this first.
+void showBusy(const char *message);
+
 // Renames the extra button, for one that shows what it is set to.
 void setExtraLabel(const char *label);
 
