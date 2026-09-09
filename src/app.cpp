@@ -2,6 +2,7 @@
 
 #include "glyphs.h"
 #include "joypad_ui.h"
+#include "gb_ui.h"
 #include "nes_ui.h"
 
 #include <M5Unified.h>
@@ -195,20 +196,38 @@ const Entry kEntries[] = {
 
     {"NES", "Every cartridge on the card, with sound.", 0x8B2E3F,
      glyphs::Glyph::None, GameId::Nes,
-     "Runs NES ROMs found in /roms on the device's own storage. Put .nes\n"
-     "files in data/roms and flash them with: pio run -e tab5 -t uploadfs\n"
+     "Runs NES ROMs from /nes on a FAT32 microSD card. A few can be built in\n"
+     "instead: put .nes files in data/nes and flash them with\n"
+     "pio run -e tab5 -t uploadfs\n"
      "\n"
      "Pick a ROM from the list. Anything it cannot run is still listed, but\n"
      "dimmed and labelled with the reason - usually a memory mapper the core\n"
      "does not implement. NROM, UxROM, MMC1 and MMC3 are supported.\n"
      "\n"
-     "The controller is the same on-screen pad as Gamepad Test: the corners\n"
-     "of the D-pad give diagonals, and several controls work at once.\n"
-     "MENU stops the game and goes back to the list.\n"
+     "The list is grouped: Favourites, then # and A to Z down the left. The\n"
+     "star on a row keeps a game in Favourites.\n"
      "\n"
-     "There is no sound. The core has no APU yet.\n"
+     "2x TOUCH plays with the on-screen pad. 3x GAMEPAD fills the height and\n"
+     "expects a USB gamepad; hold SELECT and START together to come back.\n"
      "\n"
      "ROMs are yours to supply. None are shipped with this device."},
+
+    {"Game Boy", "The 1989 handheld, in its own green.", 0x2E6B4F,
+     glyphs::Glyph::None, GameId::GameBoy,
+     "Runs Game Boy ROMs from /gb on a FAT32 microSD card. A few can be built\n"
+     "in instead: put .gb files in data/gb and flash them with\n"
+     "pio run -e tab5 -t uploadfs\n"
+     "\n"
+     "Game Boy Color cartridges are a different machine and are not supported.\n"
+     "Anything the core cannot run is still listed, dimmed, with the reason.\n"
+     "\n"
+     "3x TOUCH plays with the on-screen pad. 5x GAMEPAD fills the height\n"
+     "exactly - every Game Boy pixel becomes five - and expects a USB gamepad;\n"
+     "hold SELECT and START together to come back.\n"
+     "\n"
+     "Games that saved to a battery-backed cartridge save here too, to a .sav\n"
+     "file beside the ROM, written ten seconds after the game last wrote to it\n"
+     "and again on the way out."},
 };
 
 constexpr int kEntryCount = (int)(sizeof(kEntries) / sizeof(kEntries[0]));
@@ -707,6 +726,9 @@ void launch(GameId id) {
     g_phrase.begin(g_packs, s);
     ui::begin(&g_phrase, g_packs, g_report);
     ui::invalidate();
+  } else if (id == GameId::GameBoy) {
+    gb_ui::begin();
+    gb_ui::invalidate();
   } else if (id == GameId::Nes) {
     nes_ui::begin();
     nes_ui::invalidate();
@@ -760,6 +782,7 @@ bool wantsOrientation() {
     // the touch controller this screen polls hardest of anything here.
     case GameId::Joypad:
     case GameId::Nes:
+    case GameId::GameBoy:
       return false;
     default:
       return true;  // the shell, where taps are rare
@@ -772,6 +795,7 @@ void invalidate() {
   if (g_current == GameId::FiveHead) fivehead_ui::invalidate();
   if (g_current == GameId::Joypad) joypad_ui::invalidate();
   if (g_current == GameId::Nes) nes_ui::invalidate();
+  if (g_current == GameId::GameBoy) gb_ui::invalidate();
   if (g_current == GameId::Minesweeper) mines_ui::invalidate();
   if (g_current == GameId::Sudoku) sudoku_ui::invalidate();
   if (g_current == GameId::Solitaire) solitaire_ui::invalidate();
@@ -846,6 +870,7 @@ void tick(uint32_t now_ms) {
   // gets no handleTap below.
   else if (g_current == GameId::Joypad) joypad_ui::tick(now_ms);
   else if (g_current == GameId::Nes) nes_ui::tick(now_ms);
+  else if (g_current == GameId::GameBoy) gb_ui::tick(now_ms);
 }
 
 void handleTap(int x, int y, uint32_t now_ms) {
@@ -1019,6 +1044,8 @@ void handleTap(int x, int y, uint32_t now_ms) {
   // NES takes taps only while picking a ROM, and polls once one is running.
   else if (g_current == GameId::Nes)
     nes_ui::handleTap(x, y, now_ms);
+  else if (g_current == GameId::GameBoy)
+    gb_ui::handleTap(x, y, now_ms);
 }
 
 }  // namespace app

@@ -445,6 +445,8 @@ void handleDelete() {
 // connection that drops halfway leaves no half-written ROM behind.
 
 File g_up;
+size_t g_up_bytes = 0;
+uint32_t g_up_started = 0;
 std::string g_up_tmp, g_up_final;
 bool g_up_ok = false;
 const char *g_up_error = "";
@@ -469,14 +471,22 @@ void handleUploadData() {
     fs->remove(g_up_tmp.c_str());
     g_up = fs->open(g_up_tmp.c_str(), "w");
     if (!g_up) g_up_error = "could not create the file";
+    g_up_bytes = 0;
+    g_up_started = millis();
+    Serial.printf("upload: start %s\n", g_up_final.c_str());
   } else if (up.status == UPLOAD_FILE_WRITE) {
     if (g_up && up.currentSize) {
+      const uint32_t t0 = millis();
       if (g_up.write(up.buf, up.currentSize) != up.currentSize) {
         g_up.close();
         g_up_error = "write failed (out of space?)";
       }
+      (void)t0;
+      g_up_bytes += up.currentSize;
     }
   } else if (up.status == UPLOAD_FILE_END) {
+    Serial.printf("upload: end after %u bytes in %lums\n", (unsigned)g_up_bytes,
+                  (unsigned long)(millis() - g_up_started));
     if (g_up) {
       g_up.close();
       fs::FS *fs = volumeFs(g_server->arg("vol").c_str());
@@ -487,6 +497,8 @@ void handleUploadData() {
       }
     }
   } else if (up.status == UPLOAD_FILE_ABORTED) {
+    Serial.printf("upload: ABORTED after %u bytes in %lums\n", (unsigned)g_up_bytes,
+                  (unsigned long)(millis() - g_up_started));
     if (g_up) g_up.close();
     fs::FS *fs = volumeFs(g_server->arg("vol").c_str());
     if (fs && !g_up_tmp.empty()) fs->remove(g_up_tmp.c_str());

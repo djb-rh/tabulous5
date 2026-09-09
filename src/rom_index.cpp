@@ -152,6 +152,17 @@ void Index::add(const char *dir, const char *file, Source source) {
   count_++;
 }
 
+void Index::removeFile(const char *file) {
+  if (finished_ || !file) return;
+  for (int i = count_ - 1; i >= 0; i--) {
+    if (strcmp(items_[i].file, file) != 0) continue;
+    // Order does not matter yet — finish() sorts — so fill the hole from the
+    // end rather than shuffling everything down.
+    items_[i] = items_[count_ - 1];
+    count_--;
+  }
+}
+
 void Index::finish() {
   if (finished_) return;
   finished_ = true;

@@ -109,8 +109,20 @@ void test_extension_decides_what_belongs() {
   TEST_ASSERT_EQUAL_STRING("Tetris (World)", gb.at(0).name);
 }
 
+void test_remove_file_drops_every_copy() {
+  Index ix(".nes");
+  ix.add("/nes", "Chase.nes", kFlash);
+  ix.add("/nes/C", "Chase.nes", kCard);   // the same title on the card
+  ix.add("/nes", "Metroid.nes", kCard);
+  ix.removeFile("Chase.nes");
+  ix.finish();
+  TEST_ASSERT_EQUAL(1, ix.size());
+  TEST_ASSERT_EQUAL_STRING("Metroid", ix.at(0).name);
+}
+
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_remove_file_drops_every_copy);
   RUN_TEST(test_extension_decides_what_belongs);
   RUN_TEST(test_groups_by_first_letter);
   RUN_TEST(test_sorted_into_contiguous_groups);

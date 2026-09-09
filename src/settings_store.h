@@ -65,6 +65,14 @@ struct NesSettings {
 void loadNes(NesSettings *out);
 void saveNes(const NesSettings &settings);
 
+// The Game Boy picture: 3x with the on-screen pad either side, or 5x, which is
+// exactly the panel's height, for a USB gamepad.
+struct GbSettings {
+  uint8_t scale = 3;  // 3 or 5
+};
+void loadGb(GbSettings *out);
+void saveGb(const GbSettings &settings);
+
 // Which USB gamepad button is which; taught in the Gamepad Test screen.
 void loadPadMap(padmap::Map *out);
 void savePadMap(const padmap::Map &map);

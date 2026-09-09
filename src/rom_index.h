@@ -57,6 +57,9 @@ class Index {
   // sits in, joined with '/' to make the path. Anything with the wrong
   // extension is ignored. Strings are copied.
   void add(const char *dir, const char *file, Source source);
+  // Drops every entry with this file name. Only meaningful before finish().
+  void removeFile(const char *file);
+
   // Sorts into groups. Call once after the last add(); adds after that are
   // ignored until the next clear().
   void finish();

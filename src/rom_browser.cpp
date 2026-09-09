@@ -65,23 +65,34 @@ void saveFavourites() {
   f.close();
 }
 
-// The names in a directory's .hidden file, as written by the web file
-// manager: those titles stay on the card but out of the list.
-std::string readHidden(fs::FS &fs, const char *dir) {
+// Titles the web file manager has hidden: still on the card, kept out of the
+// list. Dropped after the walk rather than filtered during it, because of what
+// it costs to ask a filesystem whether a file exists.
+//
+// A FAT open that FINDS its file stops there — ~110 ms in a directory of
+// 5,829. One that does not find it must compare every entry before it can say
+// so, which measured at four seconds and made every boot's scan three times
+// slower. The walk itself already passes .hidden if there is one, so the open
+// only happens when there is something to open.
+void dropHidden(rom_index::Index *lib, fs::FS &fs, const char *dir) {
   char path[300];
   snprintf(path, sizeof(path), "%s/.hidden", dir);
   File f = fs.open(path, "r");
-  if (!f) return "";
-  String s = f.readString();
+  if (!f) return;
+  const String text = f.readString();
   f.close();
-  return std::string("\n") + s.c_str() + "\n";
+  int at = 0;
+  while (at < (int)text.length()) {
+    int e = text.indexOf('\n', at);
+    if (e < 0) e = text.length();
+    String line = text.substring(at, e);
+    line.trim();
+    if (line.length()) lib->removeFile(line.c_str());
+    at = e + 1;
+  }
 }
 
-bool isHidden(const std::string &hidden, const char *name) {
-  if (hidden.empty()) return false;
-  return hidden.find("\n" + std::string(name) + "\n") != std::string::npos ||
-         hidden.find("\n" + std::string(name) + "\r\n") != std::string::npos;
-}
+bool isDotHidden(const char *name) { return strcmp(name, ".hidden") == 0; }
 
 // The card is walked with readdir rather than the Arduino File API: that API
 // opens every entry it lists, and one open in a FAT directory of thousands of
@@ -91,10 +102,12 @@ bool isHidden(const std::string &hidden, const char *name) {
 void scanCardDir(const char *vfs_dir, const char *lib_dir, bool recurse) {
   DIR *d = opendir(vfs_dir);
   if (!d) return;
-  const std::string hidden = readHidden(sdcard::fs(), lib_dir);
+  bool has_hidden = false;
   for (struct dirent *e = readdir(d); e; e = readdir(d)) {
-    if (e->d_name[0] == '.') continue;
-    if (isHidden(hidden, e->d_name)) continue;
+    if (e->d_name[0] == '.') {
+      has_hidden = has_hidden || isDotHidden(e->d_name);
+      continue;
+    }
     if (e->d_type == DT_DIR) {
       if (!recurse) continue;
       char sub_vfs[300], sub_lib[160];
@@ -106,6 +119,7 @@ void scanCardDir(const char *vfs_dir, const char *lib_dir, bool recurse) {
     g_lib->add(lib_dir, e->d_name, rom_index::kCard);
   }
   closedir(d);
+  if (has_hidden) dropHidden(g_lib, sdcard::fs(), lib_dir);
 }
 
 void scan() {
@@ -114,11 +128,16 @@ void scan() {
 
   File dir = LittleFS.open(g_cfg.dir);
   if (dir && dir.isDirectory()) {
-    const std::string hidden = readHidden(LittleFS, g_cfg.dir);
+    bool has_hidden = false;
     for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
-      if (f.isDirectory() || isHidden(hidden, f.name())) continue;
+      if (f.isDirectory()) continue;
+      if (f.name()[0] == '.') {
+        has_hidden = has_hidden || isDotHidden(f.name());
+        continue;
+      }
       g_lib->add(g_cfg.dir, f.name(), rom_index::kFlash);
     }
+    if (has_hidden) dropHidden(g_lib, LittleFS, g_cfg.dir);
   }
   const int flash_n = g_lib->size();
 
