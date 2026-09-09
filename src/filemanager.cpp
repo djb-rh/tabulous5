@@ -2,6 +2,7 @@
 
 #include <LittleFS.h>
 #include <WebServer.h>
+#include <esp_heap_caps.h>
 #include <dirent.h>
 #include <sys/stat.h>
 
@@ -440,68 +441,150 @@ void handleDelete() {
 
 // ---- upload --------------------------------------------------------------
 //
-// Streamed straight to a temporary file in the target folder as the chunks
-// arrive, then renamed over any existing file of that name at the end, so a
-// connection that drops halfway leaves no half-written ROM behind.
+// The body is staged in PSRAM and written to the filesystem in one go at the
+// end, rather than a piece at a time as it arrives. That is not for speed --
+// it is what makes large uploads work at all.
+//
+// WebServer reads a multipart body ONE BYTE AT A TIME, and waits only
+// Stream::setTimeout() (1 second by default) for the next one before it gives
+// up and aborts the upload. Writing each 1436-byte piece straight to the
+// filesystem puts that write inside the read loop, so the sender's TCP window
+// closes while we are busy; if a window update is late coming back over the
+// link to the WiFi co-processor, the read times out and the whole upload is
+// lost. It showed up as a size limit -- 448 KB to the card was fine, 512 KB
+// was not, and the much slower internal flash gave up at 420 KB -- because the
+// longer the transfer, the likelier the stall. Consuming at memory speed keeps
+// the window open, and the longer timeout below covers a stall that happens
+// anyway.
+//
+// The file is still written to a temporary name and renamed into place, so a
+// dropped connection leaves no half-written ROM behind.
 
-File g_up;
-size_t g_up_bytes = 0;
+constexpr size_t kStageStart = 512 * 1024;
+constexpr size_t kStageMax = 12 * 1024 * 1024;  // a very large ROM, and PSRAM has room
+constexpr size_t kWriteChunk = 32 * 1024;
+
+File g_up;                 // only used when staging is not possible
+uint8_t *g_up_buf = nullptr;
+size_t g_up_cap = 0, g_up_len = 0;
+bool g_up_streaming = false;
 uint32_t g_up_started = 0;
 std::string g_up_tmp, g_up_final;
+fs::FS *g_up_fs = nullptr;
 bool g_up_ok = false;
 const char *g_up_error = "";
+
+void uploadCleanup() {
+  if (g_up) g_up.close();
+  if (g_up_buf) {
+    heap_caps_free(g_up_buf);
+    g_up_buf = nullptr;
+  }
+  g_up_cap = g_up_len = 0;
+  g_up_streaming = false;
+}
+
+// Writes what has been staged so far to the temporary file, in pieces, so a
+// multi-megabyte write does not lock the console up in one go.
+bool flushStaged() {
+  if (!g_up_fs) return false;
+  if (!g_up) {
+    g_up = g_up_fs->open(g_up_tmp.c_str(), g_up_len ? "a" : "w");
+    if (!g_up) return false;
+  }
+  size_t at = 0;
+  while (at < g_up_len) {
+    const size_t n = g_up_len - at < kWriteChunk ? g_up_len - at : kWriteChunk;
+    if (g_up.write(g_up_buf + at, n) != n) return false;
+    at += n;
+    delay(0);  // let the rest of the console run between pieces
+  }
+  g_up_len = 0;
+  return true;
+}
 
 void handleUploadData() {
   HTTPUpload &up = g_server->upload();
   if (up.status == UPLOAD_FILE_START) {
+    uploadCleanup();
     g_up_ok = false;
     g_up_error = "";
+    g_up_started = millis();
     const std::string vol = g_server->arg("vol").c_str();
     const std::string path = g_server->arg("path").c_str();
-    fs::FS *fs = volumeFs(vol);
+    g_up_fs = volumeFs(vol);
     std::string name = up.filename.c_str();
     const size_t slash = name.find_last_of("/\\");
     if (slash != std::string::npos) name = name.substr(slash + 1);
-    if (!fs || !safePath(path) || !safeName(name)) {
+    if (!g_up_fs || !safePath(path) || !safeName(name)) {
       g_up_error = "bad volume, folder or name";
       return;
     }
     g_up_tmp = join(path, ".upload.tmp");
     g_up_final = join(path, name);
-    fs->remove(g_up_tmp.c_str());
-    g_up = fs->open(g_up_tmp.c_str(), "w");
-    if (!g_up) g_up_error = "could not create the file";
-    g_up_bytes = 0;
-    g_up_started = millis();
-    Serial.printf("upload: start %s\n", g_up_final.c_str());
+    g_up_fs->remove(g_up_tmp.c_str());
+
+    // A byte that arrives late is not a reason to throw away a whole ROM.
+    g_server->client().setTimeout(15000);
+
+    g_up_buf = (uint8_t *)heap_caps_malloc(kStageStart, MALLOC_CAP_SPIRAM);
+    g_up_cap = g_up_buf ? kStageStart : 0;
+    g_up_streaming = g_up_buf == nullptr;
+    if (g_up_streaming) {
+      g_up = g_up_fs->open(g_up_tmp.c_str(), "w");
+      if (!g_up) g_up_error = "could not create the file";
+    }
   } else if (up.status == UPLOAD_FILE_WRITE) {
-    if (g_up && up.currentSize) {
-      const uint32_t t0 = millis();
-      if (g_up.write(up.buf, up.currentSize) != up.currentSize) {
-        g_up.close();
-        g_up_error = "write failed (out of space?)";
+    if (!up.currentSize || g_up_error[0]) return;
+    if (!g_up_streaming) {
+      if (g_up_len + up.currentSize > g_up_cap) {
+        size_t want = g_up_cap * 2;
+        while (want < g_up_len + up.currentSize) want *= 2;
+        uint8_t *grown = want <= kStageMax
+                             ? (uint8_t *)heap_caps_realloc(g_up_buf, want, MALLOC_CAP_SPIRAM)
+                             : nullptr;
+        if (grown) {
+          g_up_buf = grown;
+          g_up_cap = want;
+        } else if (flushStaged()) {
+          // Out of staging room: keep what is written and stream the rest.
+          g_up_streaming = true;
+        } else {
+          g_up_error = "write failed (out of space?)";
+          return;
+        }
       }
-      (void)t0;
-      g_up_bytes += up.currentSize;
+      if (!g_up_streaming) {
+        memcpy(g_up_buf + g_up_len, up.buf, up.currentSize);
+        g_up_len += up.currentSize;
+        return;
+      }
+    }
+    if (g_up && g_up.write(up.buf, up.currentSize) != up.currentSize) {
+      g_up.close();
+      g_up_error = "write failed (out of space?)";
     }
   } else if (up.status == UPLOAD_FILE_END) {
-    Serial.printf("upload: end after %u bytes in %lums\n", (unsigned)g_up_bytes,
-                  (unsigned long)(millis() - g_up_started));
-    if (g_up) {
-      g_up.close();
-      fs::FS *fs = volumeFs(g_server->arg("vol").c_str());
-      if (fs) {
-        fs->remove(g_up_final.c_str());
-        g_up_ok = fs->rename(g_up_tmp.c_str(), g_up_final.c_str());
+    const uint32_t received = millis() - g_up_started;
+    if (!g_up_error[0] && (g_up_streaming ? true : flushStaged())) {
+      if (g_up) g_up.close();
+      if (g_up_fs) {
+        g_up_fs->remove(g_up_final.c_str());
+        g_up_ok = g_up_fs->rename(g_up_tmp.c_str(), g_up_final.c_str());
         if (!g_up_ok) g_up_error = "could not move the upload into place";
       }
+    } else if (!g_up_error[0]) {
+      g_up_error = "write failed (out of space?)";
     }
+    Serial.printf("upload: %s %u bytes, received in %lums, stored in %lums\n",
+                  g_up_ok ? "ok" : "FAILED", (unsigned)up.totalSize,
+                  (unsigned long)received, (unsigned long)(millis() - g_up_started - received));
+    uploadCleanup();
   } else if (up.status == UPLOAD_FILE_ABORTED) {
-    Serial.printf("upload: ABORTED after %u bytes in %lums\n", (unsigned)g_up_bytes,
+    Serial.printf("upload: ABORTED after %u bytes in %lums\n", (unsigned)up.totalSize,
                   (unsigned long)(millis() - g_up_started));
-    if (g_up) g_up.close();
-    fs::FS *fs = volumeFs(g_server->arg("vol").c_str());
-    if (fs && !g_up_tmp.empty()) fs->remove(g_up_tmp.c_str());
+    uploadCleanup();
+    if (g_up_fs && !g_up_tmp.empty()) g_up_fs->remove(g_up_tmp.c_str());
     g_up_error = "upload aborted";
   }
 }
