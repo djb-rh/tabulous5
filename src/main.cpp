@@ -167,22 +167,27 @@ void dumpPanel() {
     return;
   }
 
-  Serial.printf("SHOT %d %d\n", theme::kW, theme::kH);
-  static uint16_t row[theme::kW];
-  for (int y = 0; y < theme::kH; y++) {
-    for (int x = 0; x < theme::kW; x++) {
+  // The screen turns for some games, so the shape of the dump follows it
+  // rather than being assumed.
+  const int pw = panel->config().panel_width;    // 720
+  const int ph = panel->config().panel_height;   // 1280
+  const int w = (rot & 1) ? ph : pw;
+  const int h = (rot & 1) ? pw : ph;
+  Serial.printf("SHOT %d %d\n", w, h);
+  static uint16_t row[1280];
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
       // Same mapping as Panel_FrameBufferBase::drawPixelPreclipped.
       size_t prow, pcol;
-      if (rot == 1) {
-        prow = (size_t)x;
-        pcol = (size_t)(theme::kH - 1 - y);
-      } else {
-        prow = (size_t)(theme::kW - 1 - x);
-        pcol = (size_t)y;
+      switch (rot) {
+        case 0:  prow = (size_t)y;          pcol = (size_t)x;          break;
+        case 1:  prow = (size_t)x;          pcol = (size_t)(pw - 1 - y); break;
+        case 2:  prow = (size_t)(ph - 1 - y); pcol = (size_t)(pw - 1 - x); break;
+        default: prow = (size_t)(ph - 1 - x); pcol = (size_t)y;         break;
       }
       row[x] = *(const uint16_t *)(fb + prow * stride + pcol * 2);
     }
-    Serial.write((const uint8_t *)row, sizeof(row));
+    Serial.write((const uint8_t *)row, (size_t)w * 2);
   }
   Serial.flush();
   Serial.println("ENDSHOT");

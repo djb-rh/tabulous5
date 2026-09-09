@@ -24,6 +24,10 @@ struct Geometry {
 // Safe to call repeatedly; false means neither is available.
 bool begin();
 
+// Moves the picture, for a layout that does not want it centred — turned
+// upright, the game goes at the top and the controls underneath.
+void placeAt(int x, int y);
+
 // Sets the source size and magnification, and allocates the frames. The
 // magnification may be fractional — the hardware scaler takes it either way,
 // and 2.5x is what makes a 288-line arcade picture exactly fill the panel.

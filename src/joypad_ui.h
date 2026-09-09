@@ -27,6 +27,16 @@ uint8_t state();
 // drawn in; pass 0xFF to force every one of them to paint.
 void drawControls(uint8_t state, uint8_t prev, bool full);
 
+// Turns the screen for play and places the picture and controls on it. Upright
+// the game sits at the top with everything else underneath, which is how a
+// cabinet stands and how this sits in a controller mount; sideways it is
+// centred with the pad either side, held in two hands. False if the picture
+// would not fit.
+bool beginPlay(bool portrait, int src_w, int src_h, float scale);
+
+// Puts the screen back the way the rest of the console expects it.
+void endPlay();
+
 // Every current contact, OR-ed into one bitfield. `menu_held` reports whether
 // any of them is on the MENU button.
 uint8_t pollPad(bool *menu_held);

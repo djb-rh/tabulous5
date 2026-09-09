@@ -29,8 +29,11 @@ uint32_t g_scanned_rev = 0;  // filemanager::revision() at the last scan
 bool g_dirty = true;
 const char *g_error = "";
 uint8_t g_scale = 0;
+bool g_portrait = false;
 
-enum class Action : uint8_t { None, Pick, Back, PageUp, PageDown, Group, ToggleFav, Scale };
+enum class Action : uint8_t {
+  None, Pick, Back, PageUp, PageDown, Group, ToggleFav, Scale, Orient
+};
 
 // A page is fourteen rows, which is as many as read comfortably at this size;
 // a group like S holds several hundred, so paging is by whole screens and the
@@ -214,7 +217,8 @@ void drawRail() {
 
 }  // namespace
 
-void begin(const Config &config, uint8_t scale) {
+void begin(const Config &config, uint8_t scale, bool portrait) {
+  g_portrait = portrait;
   g_cfg = config;
   g_scale = scale == config.scale_value[1] ? config.scale_value[1] : config.scale_value[0];
   if (!g_lib) g_lib = new rom_index::Index(config.extension);
@@ -243,6 +247,7 @@ void invalidate() { g_dirty = true; }
 int size() { return g_lib ? g_lib->size() : 0; }
 const rom_index::Item &item(int i) { return g_lib->at(i); }
 uint8_t scale() { return g_scale; }
+bool portrait() { return g_portrait; }
 void setError(const char *message) {
   g_error = message ? message : "";
   g_dirty = true;
@@ -276,6 +281,15 @@ void draw() {
   uikit::drawButton(size_btn, g_cfg.scale_label[second ? 1 : 0], kSurfaceLift, kText,
                     &fonts::FreeSansBold12pt7b);
   addAction(size_btn, Action::Scale);
+
+  // Which way the picture goes. Upright is how the cabinet's monitor stood;
+  // sideways lays it down and fills more of this screen.
+  if (g_cfg.orientable) {
+    const Rect orient{size_btn.x - 12 - 170, 18, 170, 62};
+    uikit::drawButton(orient, g_portrait ? "UPRIGHT" : "SIDEWAYS", kSurfaceLift, kText,
+                      &fonts::FreeSansBold12pt7b);
+    addAction(orient, Action::Orient);
+  }
 
   if (g_lib->size() == 0) {
     uikit::drawLabel("No ROMs found", kW / 2, 300, kMuted, &fonts::FreeSansBold18pt7b,
@@ -378,6 +392,11 @@ Result handleTap(int x, int y, int *index) {
       saveFavourites();
       g_dirty = true;
       break;
+    case Action::Orient:
+      audio::select();
+      g_portrait = !g_portrait;
+      g_dirty = true;
+      return Result::OrientationChanged;
     case Action::Scale:
       audio::select();
       g_scale = (g_scale == g_cfg.scale_value[1]) ? g_cfg.scale_value[0]

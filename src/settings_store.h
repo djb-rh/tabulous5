@@ -84,7 +84,8 @@ void saveSnes(const SnesSettings &settings);
 // The arcade picture: 2x with the on-screen pad, or 2.5x — stored as 5 — which
 // is exactly the panel's height for a 288-line cabinet.
 struct ArcadeSettings {
-  uint8_t scale = 2;  // 2 or 5
+  uint8_t scale = 2;      // 2 = with the on-screen pad, 5 = as big as it goes
+  bool portrait = true;   // the cabinet's monitor stood on its side
 };
 void loadArcade(ArcadeSettings *out);
 void saveArcade(const ArcadeSettings &settings);

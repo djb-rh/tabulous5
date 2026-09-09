@@ -69,10 +69,19 @@ constexpr int kVideoY = (kPanelH - kVideoH) / 2;
 // The D-pad is a 3x3 grid inside one square: corners give diagonals, which
 // several NES games need and which four separate rectangles cannot produce —
 // a touch between two of them would land on neither.
+// The sideways layout: the picture in the middle, the pad down the left and
+// the buttons down the right, which is how it is held in two hands.
 constexpr int kDpadSize = 360;
 constexpr int kDpadCell = kDpadSize / 3;
 constexpr int kDpadX = 12;
 constexpr int kDpadY = 220;
+
+// Turned upright the picture sits at the top and everything else goes
+// underneath it, in whatever height is left. setLayout() decides which
+// arrangement every function below returns; it starts out sideways.
+void setLayout(bool portrait, int screen_w = 0, int screen_h = 0,
+               int controls_top = 0);
+bool portrait();
 
 Rect dpadArea();
 Rect dpadCell(int col, int row);  // 0..2 each; the centre cell is neutral

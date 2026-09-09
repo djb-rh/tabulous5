@@ -45,10 +45,15 @@ using uikit::gfx;
 
 constexpr const char *kRomDir = "/arcade";
 
-// The board draws a 288x224 raster, but the cabinet's monitor is on its side:
-// the picture is 224 across and 288 down. It is turned upright here, while the
-// palette is being applied, which costs nothing extra — something has to walk
-// every pixel either way.
+// The board draws a 288x224 raster and the cabinet's monitor stood on its
+// side, so the picture is really 224 across and 288 down. It is turned upright
+// while the palette is applied, which costs nothing extra — something has to
+// walk every pixel either way.
+//
+// Which way the SCREEN goes is a separate choice. Held sideways the picture is
+// a tall rectangle with the pad either side of it; turned upright it is far
+// bigger, with the controls underneath, which is how a cabinet stands and how
+// this sits in a controller mount.
 constexpr int kRasterW = NAMCO_DISPLAY_WIDTH;   // 288
 constexpr int kRasterH = NAMCO_DISPLAY_HEIGHT;  // 224
 constexpr int kShownW = kRasterH;               // 224
@@ -62,6 +67,7 @@ settings_store::ArcadeSettings g_settings;
 padmap::Map g_padmap;
 int g_quit_hold = 0;
 float g_scale = 2.0f;
+bool g_portrait = true;
 
 namco_t *g_sys = nullptr;
 // The CPU lives beside the board rather than inside it: chips' own Z80 is
@@ -109,7 +115,7 @@ void onAudio(const float *samples, int num_samples, void *) {
 // ---- play ----------------------------------------------------------------
 
 void releaseCore() {
-  emu_video::waitIdle();
+  joypad_ui::endPlay();
   M5.Speaker.stop();
   if (g_sys) {
     heap_caps_free(g_sys);
@@ -219,8 +225,13 @@ bool load(int index) {
     g_palette[i] = rgb(((c & 0xFF) << 16) | (((c >> 8) & 0xFF) << 8) | ((c >> 16) & 0xFF));
   }
 
-  g_scale = g_settings.scale == 5 ? 2.5f : 2.0f;
-  if (!emu_video::begin() || !emu_video::configure(kShownW, kShownH, g_scale)) {
+  // Sideways, 2.5x fills the panel's height exactly and 2x leaves room for the
+  // pad either side. Turned upright there is far more height to play with, and
+  // 3x is as wide as 720 pixels will take.
+  g_portrait = g_settings.portrait;
+  const bool big = g_settings.scale == 5;
+  g_scale = g_portrait ? (big ? 3.0f : 2.5f) : (big ? 2.5f : 2.0f);
+  if (!joypad_ui::beginPlay(g_portrait, kShownW, kShownH, g_scale)) {
     rom_browser::setError("no room for the picture");
     releaseCore();
     return false;
@@ -238,10 +249,10 @@ bool load(int index) {
   return true;
 }
 
-// The raster comes out lying on its side, so it is stood up here: a source row
-// becomes a destination column. Reading the source in order is what matters —
-// it lives in PSRAM, and walking it down a column instead would cost far more
-// than the strided writes do.
+// Palette indices to colour, standing the raster up on the way: a source row
+// becomes a destination column. The source is read in order, which is what
+// matters — it lives in PSRAM, and walking it down a column instead would cost
+// far more than the strided writes do.
 void convert() {
   uint16_t *dst = emu_video::frame();
   if (!dst) return;
@@ -260,7 +271,7 @@ void drawPlayChrome(bool full) {
     gfx().fillScreen(kBg);
     g_pad_drawn = 0xFF;
   }
-  if (g_scale > 2.0f) {
+  if (g_settings.scale == 5) {
     if (full) {
       const joypad::Rect m = joypad::menuButton();
       uikit::drawButton(Rect{m.x, m.y, m.w, m.h}, "MENU", kSurfaceLift, kText,
@@ -289,7 +300,7 @@ uint32_t toCabinet(uint8_t pad) {
 void runFrame(uint32_t now_ms) {
   bool menu_held = false;
   g_pad = joypad_ui::pollPad(&menu_held);
-  if (g_scale > 2.0f) g_pad = 0;
+  if (g_settings.scale == 5) g_pad = 0;
   {
     const usbpad::State u = usbpad::state();
     if (u.connected) g_pad |= padmap::toNes(u.down, u.x, u.y, g_padmap);
@@ -363,10 +374,11 @@ void begin() {
   cfg.scale_label[0] = "2x  TOUCH";
   cfg.scale_label[1] = "FULL  GAMEPAD";
   cfg.scale_value[0] = 2;
-  cfg.scale_value[1] = 5;  // 2.5x, written as a whole number for storage
+  cfg.scale_value[1] = 5;  // the larger size, whichever way up it is
+  cfg.orientable = true;
   cfg.probe = probeRom;
   cfg.empty_hint = "Make .arc files with tools/mkarcade.py and put them in /arcade on the card";
-  rom_browser::begin(cfg, g_settings.scale);
+  rom_browser::begin(cfg, g_settings.scale, g_settings.portrait);
   rom_browser::ensureScanned();
   g_dirty = true;
 }
@@ -421,6 +433,10 @@ void handleTap(int x, int y, uint32_t) {
       break;
     case rom_browser::Result::ScaleChanged:
       g_settings.scale = rom_browser::scale();
+      settings_store::saveArcade(g_settings);
+      break;
+    case rom_browser::Result::OrientationChanged:
+      g_settings.portrait = rom_browser::portrait();
       settings_store::saveArcade(g_settings);
       break;
     case rom_browser::Result::Back:

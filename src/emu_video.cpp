@@ -9,7 +9,6 @@
 #include <cmath>
 #include <cstring>
 
-#include "theme.h"
 
 namespace tabulous {
 namespace emu_video {
@@ -24,6 +23,11 @@ namespace {
 uint8_t *g_fb = nullptr;
 size_t g_fb_stride = 0;
 uint8_t g_fb_rot = 1;
+// The panel's own dimensions, which never change: 720 across, 1280 down. The
+// logical screen is those two swapped when the display is turned on its side.
+int g_panel_w = 0, g_panel_h = 0;
+int logicalW() { return (g_fb_rot & 1) ? g_panel_h : g_panel_w; }
+int logicalH() { return (g_fb_rot & 1) ? g_panel_w : g_panel_h; }
 
 // The P4's Pixel Processing Accelerator scales, rotates and copies in
 // hardware, which is the difference between 9.6 ms a frame and 1.5.
@@ -58,18 +62,34 @@ bool blitPpa(const uint16_t *src) {
   op.in.block_h = g_src_h;
   op.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
   op.out.buffer = g_fb;
-  op.out.buffer_size = g_fb_stride * theme::kW;
-  op.out.pic_w = theme::kH;  // 720: the panel's own width
-  op.out.pic_h = theme::kW;  // 1280
+  op.out.buffer_size = g_fb_stride * g_panel_h;
+  op.out.pic_w = g_panel_w;
+  op.out.pic_h = g_panel_h;
   op.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
-  if (g_fb_rot == 1) {
-    op.out.block_offset_x = theme::kH - g_geom.y - g_geom.h;
-    op.out.block_offset_y = g_geom.x;
-    op.rotation_angle = PPA_SRM_ROTATION_ANGLE_270;
-  } else {
-    op.out.block_offset_x = g_geom.y;
-    op.out.block_offset_y = theme::kW - g_geom.x - g_geom.w;
-    op.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
+  // Where the picture lands in the panel's own coordinates, and how far it has
+  // to be turned to get there. Upright the two agree and nothing is rotated;
+  // on its side a logical row runs down a panel column.
+  switch (g_fb_rot) {
+    case 0:
+      op.out.block_offset_x = g_geom.x;
+      op.out.block_offset_y = g_geom.y;
+      op.rotation_angle = PPA_SRM_ROTATION_ANGLE_0;
+      break;
+    case 2:
+      op.out.block_offset_x = g_panel_w - g_geom.x - g_geom.w;
+      op.out.block_offset_y = g_panel_h - g_geom.y - g_geom.h;
+      op.rotation_angle = PPA_SRM_ROTATION_ANGLE_180;
+      break;
+    case 1:
+      op.out.block_offset_x = g_panel_w - g_geom.y - g_geom.h;
+      op.out.block_offset_y = g_geom.x;
+      op.rotation_angle = PPA_SRM_ROTATION_ANGLE_270;
+      break;
+    default:  // 3
+      op.out.block_offset_x = g_geom.y;
+      op.out.block_offset_y = g_panel_h - g_geom.x - g_geom.w;
+      op.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
+      break;
   }
   op.scale_x = g_scale;
   op.scale_y = g_scale;
@@ -100,6 +120,22 @@ void blitCpu(const uint16_t *src) {
   // resamples. A fractional magnification never reaches here — configure()
   // refuses it when there is no scaler.
   const int scale = (int)g_scale;
+  if (g_fb_rot == 0) {
+    // Upright: a logical row is a panel row, so this is a plain copy.
+    for (int sy = 0; sy < g_src_h; sy++) {
+      for (int k = 0; k < scale; k++) {
+        uint16_t *dst =
+            (uint16_t *)(g_fb + (size_t)(g_geom.y + sy * scale + k) * g_fb_stride) + g_geom.x;
+        for (int sx = 0; sx < g_src_w; sx++) {
+          const uint16_t v = src[(size_t)sy * g_src_w + sx];
+          for (int j = 0; j < scale; j++) *dst++ = v;
+        }
+      }
+    }
+    esp_cache_msync(g_fb + (size_t)g_geom.y * g_fb_stride, (size_t)g_geom.h * g_fb_stride,
+                    ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+    return;
+  }
   for (int sx = 0; sx < g_src_w; sx++) {
     for (int k = 0; k < scale; k++) {
       const int lx = g_geom.x + sx * scale + k;
@@ -107,9 +143,9 @@ void blitCpu(const uint16_t *src) {
       if (g_fb_rot == 1) {
         // row = lx, column = (kH - 1) - y: ascending address, descending y.
         dst = (uint16_t *)(g_fb + (size_t)lx * g_fb_stride) +
-              (theme::kH - g_geom.y - g_geom.h);
+              (g_panel_w - g_geom.y - g_geom.h);
       } else {
-        dst = (uint16_t *)(g_fb + (size_t)(theme::kW - 1 - lx) * g_fb_stride) + g_geom.y;
+        dst = (uint16_t *)(g_fb + (size_t)(logicalW() - 1 - lx) * g_fb_stride) + g_geom.y;
       }
       for (int i = 0; i < g_src_h; i++) {
         const int sy = (g_fb_rot == 1) ? (g_src_h - 1 - i) : i;
@@ -122,7 +158,7 @@ void blitCpu(const uint16_t *src) {
   // to be pushed out or the panel shows stale pixels. One flush over the whole
   // touched span rather than hundreds of small ones.
   const size_t first_row =
-      (g_fb_rot == 1) ? g_geom.x : (theme::kW - (g_geom.x + g_geom.w));
+      (g_fb_rot == 1) ? g_geom.x : (logicalW() - (g_geom.x + g_geom.w));
   esp_cache_msync(g_fb + first_row * g_fb_stride, (size_t)g_geom.w * g_fb_stride,
                   ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
 }
@@ -135,7 +171,9 @@ bool begin() {
     auto *panel = (lgfx::Panel_DSI *)M5.Display.getPanel();
     if (!panel) return false;
     g_fb = (uint8_t *)panel->config_detail().buffer;
-    g_fb_stride = ((size_t)panel->config().panel_width * 2 + 3) & ~(size_t)3;
+    g_panel_w = panel->config().panel_width;
+    g_panel_h = panel->config().panel_height;
+    g_fb_stride = ((size_t)g_panel_w * 2 + 3) & ~(size_t)3;
   }
   g_fb_rot = (uint8_t)M5.Display.getRotation();
   if (!g_ppa) {
@@ -164,8 +202,8 @@ bool configure(int src_w, int src_h, float scale) {
   g_frame_bytes = bytes;
   g_geom.w = (int)lroundf(src_w * scale);
   g_geom.h = (int)lroundf(src_h * scale);
-  g_geom.x = (theme::kW - g_geom.w) / 2;
-  g_geom.y = (theme::kH - g_geom.h) / 2;
+  g_geom.x = (logicalW() - g_geom.w) / 2;
+  g_geom.y = (logicalH() - g_geom.h) / 2;
 
   // Cache-line aligned: the scaler reads these by DMA, and it reads PSRAM as
   // happily as internal RAM. Internal is still tried first, because the CPU
@@ -225,6 +263,12 @@ void present() {
   }
   blitCpu(src);
   g_last_us = micros() - t0;
+}
+
+void placeAt(int x, int y) {
+  waitIdle();
+  g_geom.x = x;
+  g_geom.y = y;
 }
 
 Geometry geometry() { return g_geom; }

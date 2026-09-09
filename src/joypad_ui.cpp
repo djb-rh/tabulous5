@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "app.h"
+#include "emu_video.h"
 #include "joypad.h"
 #include "padmap.h"
 #include "settings_store.h"
@@ -270,6 +271,31 @@ void drawControls(uint8_t state, uint8_t prev, bool full) {
 
 namespace {
 }  // namespace
+
+bool beginPlay(bool portrait, int src_w, int src_h, float scale) {
+  M5.Display.setRotation(portrait ? 0 : 1);
+  if (!emu_video::begin() || !emu_video::configure(src_w, src_h, scale)) {
+    M5.Display.setRotation(1);
+    joypad::setLayout(false);
+    return false;
+  }
+  const int w = M5.Display.width(), h = M5.Display.height();
+  if (portrait) {
+    // Below the MENU button, with everything left over given to the controls.
+    const emu_video::Geometry g = emu_video::geometry();
+    emu_video::placeAt((w - g.w) / 2, 100);
+    joypad::setLayout(true, w, h, 100 + g.h + 12);
+  } else {
+    joypad::setLayout(false, w, h, 0);
+  }
+  return true;
+}
+
+void endPlay() {
+  emu_video::waitIdle();
+  joypad::setLayout(false);
+  M5.Display.setRotation(1);
+}
 
 void begin() {
   g_state = 0;

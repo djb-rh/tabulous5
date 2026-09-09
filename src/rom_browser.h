@@ -29,13 +29,17 @@ struct Config {
   // on a card holding thousands, an open is expensive.
   void (*probe)(fs::FS &fs, rom_index::Item *item) = nullptr;
   const char *empty_hint = "";
+  // Whether this system can be played with its picture turned. Only an
+  // arcade cabinet has an opinion: its monitor stood on its side, and the
+  // choice is whether to honour that or fill more of a screen that does not.
+  bool orientable = false;
 };
 
-enum class Result : uint8_t { None, Back, Launch, ScaleChanged };
+enum class Result : uint8_t { None, Back, Launch, ScaleChanged, OrientationChanged };
 
 // `scale` is the caller's saved preference; it must be one of the two in the
 // config, and is returned by scale() from then on.
-void begin(const Config &config, uint8_t scale);
+void begin(const Config &config, uint8_t scale, bool portrait = false);
 
 // Walk the filesystems again next time the screen is entered.
 void rescan();
@@ -60,6 +64,8 @@ fs::FS &fsFor(const rom_index::Item &it);
 void probeItem(int i);
 
 uint8_t scale();
+// Whether this system should be played with the screen turned upright.
+bool portrait();
 // Shown under the title until the next pick; for "that ROM would not load".
 void setError(const char *message);
 
