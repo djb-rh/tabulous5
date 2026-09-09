@@ -112,6 +112,8 @@ TaskHandle_t g_apu_task = nullptr;
 volatile bool g_apu_run = false;
 
 uint8_t g_pad = 0, g_pad_drawn = 0xFF;
+// How many frames since the last stats line saw a finger on the panel.
+uint32_t g_touch_seen = 0;
 bool g_menu_down = false;
 uint32_t g_frames = 0, g_fps_at = 0, g_fps = 0;
 
@@ -350,6 +352,7 @@ void drawPlayChrome(bool full) {
 void runFrame(uint32_t now_ms) {
   bool menu_held = false;
   g_pad = joypad_ui::pollPad(&menu_held);
+  if (M5.Touch.getCount() > 0) g_touch_seen++;
   if (g_scale == 3) g_pad = 0;  // no on-screen controls to hit
 
   // A USB pad, if there is one, on top of the touch controls.
@@ -436,10 +439,17 @@ void runFrame(uint32_t now_ms) {
     // above means the APU is outrunning its pacing. Two frame rates now:
     // emulated frames a second (60 = correct game speed) and drawn frames a
     // second, which is deliberately half of it.
-    Serial.printf("nes %lu emu/s %lu drawn/s  emulate=%luus push=%luus  audio made=%lu/s dropped=%lu\n",
+    // pad is the byte handed to the controller port, and touch is whether the
+    // panel saw a finger since the last line. A game that ignores everything
+    // looks the same from the outside whether nothing is arriving or nothing
+    // is being acted on; these two say which.
+    Serial.printf("nes %lu emu/s %lu drawn/s  emulate=%luus push=%luus  "
+                  "audio made=%lu/s dropped=%lu  pad=%02X touched=%lu\n",
                   (unsigned long)g_fps, (unsigned long)g_drawn_frames,
                   (unsigned long)(g_us_emu / n), (unsigned long)(g_us_push / n),
-                  (unsigned long)g_audio_made, (unsigned long)g_audio_dropped);
+                  (unsigned long)g_audio_made, (unsigned long)g_audio_dropped,
+                  g_pad, (unsigned long)g_touch_seen);
+    g_touch_seen = 0;
     g_drawn_frames = 0;
     g_audio_made = 0;
     g_us_emu = g_us_conv = g_us_push = g_us_sync = 0;

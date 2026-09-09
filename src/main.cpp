@@ -292,12 +292,36 @@ void reportPad() {
   }
 }
 
+// The same for the touch screen, and for the same reason: during a game the
+// panel is the emulator's, so a press that does nothing could be a dead touch
+// controller, a press landing outside every target, or a game that is not
+// listening. This says which. Prints only on a change, like the pad.
+void reportTouch() {
+  static int last_count = -1;
+  static int last_x = -1, last_y = -1;
+  const int count = M5.Touch.getCount();
+  int x = -1, y = -1;
+  for (int i = 0; i < count; i++) {
+    const auto t = M5.Touch.getDetail(i);
+    if (!t.isPressed()) continue;
+    x = t.x;
+    y = t.y;
+    break;
+  }
+  if (count == last_count && x == last_x && y == last_y) return;
+  last_count = count;
+  last_x = x;
+  last_y = y;
+  Serial.printf("touch: count=%d at %d,%d\n", count, x, y);
+}
+
 void loop() {
   const uint32_t loop_start = micros();
   M5.update();
 
   // Screenshot request. Cheap to poll and inert unless a host asks.
   reportPad();
+  reportTouch();
   if (Serial.available()) {
     const int cmd = Serial.read();
     if (cmd == 's') dumpScreen();
