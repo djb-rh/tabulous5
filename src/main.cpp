@@ -18,6 +18,7 @@
 #include "battery.h"
 #include "content.h"
 #include "contentserver.h"
+#include "filemanager.h"
 #include "app.h"
 #include "nes_ui.h"
 #include "phrase_game.h"
@@ -104,6 +105,7 @@ void setup() {
   // Registering roots here, not inside the server, is what keeps the editor
   // generic: a future game adds its own line and gets an editor for free.
   contentserver::addRoot("/packs", "Word packs", ".txt");
+  filemanager::begin();
 
   app::begin(&g_packs, report);
 

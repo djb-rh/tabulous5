@@ -20,6 +20,7 @@ constexpr uint8_t kDnsPort = 53;
 
 std::vector<Root> g_roots;
 WebServer *g_server = nullptr;
+std::vector<RouteHook> g_hooks;
 State g_state = State::Off;
 uint32_t g_started_ms = 0;
 uint32_t g_revision = 0;
@@ -101,6 +102,7 @@ select,button,input{font:inherit;background:#252c37;color:#f5f7fa;border:1px sol
 button{cursor:pointer}
 button.primary{background:#30a46c;border-color:#30a46c}
 button.danger{background:#e5484d;border-color:#e5484d}
+#files{background:#252c37;border:1px solid #39404d;border-radius:8px;padding:8px 12px;color:#f5f7fa;text-decoration:none}
 ul{list-style:none;margin:8px 0 0;padding:0;max-height:60vh;overflow:auto}
 li{padding:9px 11px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
 li:hover{background:#1a1f27}
@@ -132,6 +134,7 @@ textarea{width:100%;height:58vh;box-sizing:border-box;background:#12161d;color:#
   <select id=root></select>
   <button id=new>New file</button>
   <button id=help>Help</button>
+  <a id=files href="/files">Files</a>
   <span id=msg></span>
 </header>
 
@@ -388,6 +391,7 @@ void beginServer() {
   g_server->on("/api/roots", HTTP_GET, handleRoots);
   g_server->on("/api/list", HTTP_GET, handleList);
   g_server->on("/api/file", routeFile);
+  for (RouteHook h : g_hooks) h(*g_server);
   g_server->onNotFound([]() {
     // Phones probe a known URL to decide whether a network is "captive".
     // Redirecting anything we don't serve is what makes the sign-in sheet
@@ -424,6 +428,10 @@ void startHotspot() {
 }
 
 }  // namespace
+
+void addRouteHook(RouteHook hook) {
+  if (hook) g_hooks.push_back(hook);
+}
 
 void addRoot(const char *path, const char *label, const char *extension) {
   for (Root &r : g_roots) {

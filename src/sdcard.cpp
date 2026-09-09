@@ -52,6 +52,9 @@ const char *mountPoint() { return kMount; }
 uint64_t cardMB() {
   return g_mounted ? SD_MMC.cardSize() / (1024ULL * 1024ULL) : 0;
 }
+uint64_t freeBytes() {
+  return g_mounted ? SD_MMC.totalBytes() - SD_MMC.usedBytes() : 0;
+}
 const char *busWidth() { return g_width; }
 
 }  // namespace sdcard

@@ -15,6 +15,7 @@
 
 #include "app.h"
 #include "audio.h"
+#include "filemanager.h"
 #include "../third_party/anemoia/core/cartridge.h"
 #include "../third_party/anemoia/core/cpu6502.h"
 #include "joypad.h"
@@ -44,6 +45,7 @@ constexpr const char *kFavFile = "/nes_favs.txt";
 // change while the console is running.
 nes_index::Index g_lib;
 bool g_scanned = false;
+uint32_t g_scanned_rev = 0;  // filemanager::revision() at the last scan
 
 enum class Mode : uint8_t { Picking, Playing };
 
@@ -235,11 +237,31 @@ void saveFavourites() {
 // index needs. One level of subdirectories is included, so a card laid out as
 // /roms/A, /roms/B ... (which keeps those opens fast) works the same as a
 // flat /roms.
+// The names in a directory's .hidden file, as written by the web file
+// manager: those titles stay on the card but out of the list.
+std::string readHidden(fs::FS &fs, const char *dir) {
+  char path[300];
+  snprintf(path, sizeof(path), "%s/.hidden", dir);
+  File f = fs.open(path, "r");
+  if (!f) return "";
+  String s = f.readString();
+  f.close();
+  return std::string("\n") + s.c_str() + "\n";
+}
+
+bool isHidden(const std::string &hidden, const char *name) {
+  if (hidden.empty()) return false;
+  return hidden.find("\n" + std::string(name) + "\n") != std::string::npos ||
+         hidden.find("\n" + std::string(name) + "\r\n") != std::string::npos;
+}
+
 void scanCardDir(const char *vfs_dir, const char *lib_dir, bool recurse) {
   DIR *d = opendir(vfs_dir);
   if (!d) return;
+  const std::string hidden = readHidden(sdcard::fs(), lib_dir);
   for (struct dirent *e = readdir(d); e; e = readdir(d)) {
     if (e->d_name[0] == '.') continue;
+    if (isHidden(hidden, e->d_name)) continue;
     if (e->d_type == DT_DIR) {
       if (!recurse) continue;
       char sub_vfs[300], sub_lib[160];
@@ -259,8 +281,10 @@ void scan() {
 
   File dir = LittleFS.open(kRomDir);
   if (dir && dir.isDirectory()) {
+    const std::string hidden = readHidden(LittleFS, kRomDir);
     for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
-      if (!f.isDirectory()) g_lib.add(kRomDir, f.name(), nes_index::kFlash);
+      if (f.isDirectory() || isHidden(hidden, f.name())) continue;
+      g_lib.add(kRomDir, f.name(), nes_index::kFlash);
     }
   }
   const int flash_n = g_lib.size();
@@ -273,6 +297,7 @@ void scan() {
   g_lib.finish();
   loadFavourites();
   g_scanned = true;
+  g_scanned_rev = filemanager::revision();
   Serial.printf("nes: %d ROMs (%d built in, %d on card) in %lu ms\n",
                 g_lib.size(), flash_n, g_lib.size() - flash_n,
                 (unsigned long)(millis() - t0));
@@ -955,6 +980,7 @@ void begin() {
   settings_store::loadNes(&g_settings);
   settings_store::loadPadMap(&g_padmap);
   g_quit_hold = 0;
+  if (g_scanned && filemanager::revision() != g_scanned_rev) g_scanned = false;
   if (!g_scanned) {
     // A card of thousands takes a moment to walk; say so rather than sit on
     // the previous screen.

@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+class WebServer;
+
 namespace tabulous {
 namespace contentserver {
 
@@ -44,6 +46,11 @@ struct Root {
 // path twice replaces the previous entry.
 void addRoot(const char *path, const char *label, const char *extension);
 const std::vector<Root> &roots();
+
+// Other modules add their own routes to the same server through this: it is
+// called each time the server is (re)created, before it starts listening.
+using RouteHook = void (*)(WebServer &server);
+void addRouteHook(RouteHook hook);
 
 // Brings up WiFi (via the ESP32-C6 co-processor) and starts the HTTP server.
 // Non-blocking: poll state() and call loop() every tick.

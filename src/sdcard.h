@@ -23,6 +23,7 @@ fs::FS &fs();
 const char *mountPoint();
 
 uint64_t cardMB();
+uint64_t freeBytes();
 // "4-bit" or "1-bit" once mounted; "" before.
 const char *busWidth();
 
