@@ -74,5 +74,8 @@ bool portrait();
 // Shown under the title until the next pick; for "that ROM would not load".
 void setError(const char *message);
 
+// Renames the extra button, for one that shows what it is set to.
+void setExtraLabel(const char *label);
+
 }  // namespace rom_browser
 }  // namespace tabulous

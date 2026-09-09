@@ -270,6 +270,7 @@ void loadGb(GbSettings *out) {
   if (!out) return;
   if (!g_prefs.begin(kNamespace, true)) return;
   const uint8_t scale = g_prefs.getUChar("gb_scale", out->scale);
+  out->palette = g_prefs.getUChar("gb_palette", out->palette);
   g_prefs.end();
   if (scale == 3 || scale == 5) out->scale = scale;
 }
@@ -277,6 +278,7 @@ void loadGb(GbSettings *out) {
 void saveGb(const GbSettings &settings) {
   if (!g_prefs.begin(kNamespace, false)) return;
   g_prefs.putUChar("gb_scale", settings.scale);
+  g_prefs.putUChar("gb_palette", settings.palette);
   g_prefs.end();
 }
 

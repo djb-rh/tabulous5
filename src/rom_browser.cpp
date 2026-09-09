@@ -248,6 +248,11 @@ int size() { return g_lib ? g_lib->size() : 0; }
 const rom_index::Item &item(int i) { return g_lib->at(i); }
 uint8_t scale() { return g_scale; }
 bool portrait() { return g_portrait; }
+void setExtraLabel(const char *label) {
+  g_cfg.extra_label = label;
+  g_dirty = true;
+}
+
 void setError(const char *message) {
   g_error = message ? message : "";
   g_dirty = true;

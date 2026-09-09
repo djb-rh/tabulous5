@@ -71,11 +71,22 @@ char g_save_path[200] = "";
 bool g_ram_dirty = false;
 uint32_t g_saved_at = 0;
 
-// The four shades of a Game Boy screen. Not grey: the original's LCD was
-// green, and a Game Boy rendered in grey looks like a Game Boy Pocket, which
-// is a different machine.
-constexpr uint16_t kPalette[4] = {rgb(0x9BBC0F), rgb(0x8BAC0F), rgb(0x306230),
-                                  rgb(0x0F380F)};
+// The four shades, lightest first. Which machine you remember decides which
+// of these looks right: the original's LCD was green, the Pocket's was grey,
+// and the Light was backlit and much more vivid. The core only ever produces
+// an index from 0 to 3, so this is the whole of the difference.
+struct Shades {
+  const char *name;
+  uint16_t colour[4];
+};
+constexpr Shades kPalettes[] = {
+    {"GREEN", {rgb(0x9BBC0F), rgb(0x8BAC0F), rgb(0x306230), rgb(0x0F380F)}},
+    {"POCKET", {rgb(0xE0DBCD), rgb(0xA89F94), rgb(0x706B66), rgb(0x2B2B26)}},
+    {"LIGHT", {rgb(0x00B581), rgb(0x009A71), rgb(0x00694A), rgb(0x004F3B)}},
+    {"GREY", {rgb(0xFFFFFF), rgb(0xA9A9A9), rgb(0x545454), rgb(0x000000)}},
+};
+constexpr int kPaletteCount = (int)(sizeof(kPalettes) / sizeof(kPalettes[0]));
+const uint16_t *g_palette = kPalettes[0].colour;
 
 // The Game Boy's frame is 59.7275 Hz, not 60 — a fifth of a second an hour,
 // which matters here because the APU's clock IS this loop: it hands over
@@ -124,7 +135,7 @@ void lcdLine(struct gb_s *, const uint8_t *pixels, const uint_fast8_t line) {
   uint16_t *fb = emu_video::frame();
   if (!fb || line >= LCD_HEIGHT) return;
   uint16_t *dst = fb + (size_t)line * LCD_WIDTH;
-  for (int x = 0; x < LCD_WIDTH; x++) dst[x] = kPalette[pixels[x] & LCD_COLOUR];
+  for (int x = 0; x < LCD_WIDTH; x++) dst[x] = g_palette[pixels[x] & LCD_COLOUR];
 }
 
 // ---- battery saves --------------------------------------------------------
@@ -426,6 +437,9 @@ void begin() {
   cfg.scale_value[0] = 3;
   cfg.scale_value[1] = 5;
   cfg.probe = probeRom;
+  if (g_settings.palette >= kPaletteCount) g_settings.palette = 0;
+  g_palette = kPalettes[g_settings.palette].colour;
+  cfg.extra_label = kPalettes[g_settings.palette].name;
   cfg.empty_hint = "Put .gb files in /gb on the card, or in data/gb and run: pio run -t uploadfs";
   rom_browser::begin(cfg, g_settings.scale);
   rom_browser::ensureScanned();
@@ -486,6 +500,13 @@ void handleTap(int x, int y, uint32_t) {
       break;
     case rom_browser::Result::ScaleChanged:
       g_settings.scale = rom_browser::scale();
+      settings_store::saveGb(g_settings);
+      break;
+    case rom_browser::Result::Extra:
+      // The button says which set is in use, and steps to the next one.
+      g_settings.palette = (uint8_t)((g_settings.palette + 1) % kPaletteCount);
+      g_palette = kPalettes[g_settings.palette].colour;
+      rom_browser::setExtraLabel(kPalettes[g_settings.palette].name);
       settings_store::saveGb(g_settings);
       break;
     case rom_browser::Result::Back:
