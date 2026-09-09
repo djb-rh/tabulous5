@@ -86,6 +86,10 @@ void saveSnes(const SnesSettings &settings);
 struct ArcadeSettings {
   uint8_t scale = 2;      // 2 = with the on-screen pad, 5 = as big as it goes
   bool portrait = true;   // the cabinet's monitor stood on its side
+  // The board's DIP switches, as one byte, exactly as the hardware reads
+  // them. 0xD9 is how a Pac-Man left the factory: one coin a game, three
+  // lives, a bonus at 15,000, normal difficulty and the usual ghost names.
+  uint8_t dsw1 = 0xD9;
 };
 void loadArcade(ArcadeSettings *out);
 void saveArcade(const ArcadeSettings &settings);

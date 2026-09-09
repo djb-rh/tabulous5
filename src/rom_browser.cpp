@@ -32,7 +32,7 @@ uint8_t g_scale = 0;
 bool g_portrait = false;
 
 enum class Action : uint8_t {
-  None, Pick, Back, PageUp, PageDown, Group, ToggleFav, Scale, Orient
+  None, Pick, Back, PageUp, PageDown, Group, ToggleFav, Scale, Orient, Extra
 };
 
 // A page is fourteen rows, which is as many as read comfortably at this size;
@@ -284,11 +284,19 @@ void draw() {
 
   // Which way the picture goes. Upright is how the cabinet's monitor stood;
   // sideways lays it down and fills more of this screen.
+  int next_x = size_btn.x;
   if (g_cfg.orientable) {
-    const Rect orient{size_btn.x - 12 - 170, 18, 170, 62};
+    const Rect orient{next_x - 12 - 170, 18, 170, 62};
     uikit::drawButton(orient, g_portrait ? "UPRIGHT" : "SIDEWAYS", kSurfaceLift, kText,
                       &fonts::FreeSansBold12pt7b);
     addAction(orient, Action::Orient);
+    next_x = orient.x;
+  }
+  if (g_cfg.extra_label) {
+    const Rect extra{next_x - 12 - 150, 18, 150, 62};
+    uikit::drawButton(extra, g_cfg.extra_label, kSurfaceLift, kText,
+                      &fonts::FreeSansBold12pt7b);
+    addAction(extra, Action::Extra);
   }
 
   if (g_lib->size() == 0) {
@@ -392,6 +400,9 @@ Result handleTap(int x, int y, int *index) {
       saveFavourites();
       g_dirty = true;
       break;
+    case Action::Extra:
+      audio::select();
+      return Result::Extra;
     case Action::Orient:
       audio::select();
       g_portrait = !g_portrait;

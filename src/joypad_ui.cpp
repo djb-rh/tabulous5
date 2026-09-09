@@ -20,6 +20,8 @@ namespace {
 using namespace theme;
 using uikit::gfx;
 
+const char *g_select_label = "SELECT";
+const char *g_start_label = "START";
 uint8_t g_state = 0;
 uint8_t g_drawn = 0xFF;  // forces the first pass to paint every control
 bool g_full = true;
@@ -112,8 +114,8 @@ void drawFace(uint8_t state, uint8_t prev, bool full) {
 
   struct Pill { joypad::Rect r; uint8_t bit; const char *label; };
   const Pill pills[] = {
-      {joypad::buttonSelect(), joypad::kSelect, "SELECT"},
-      {joypad::buttonStart(), joypad::kStart, "START"},
+      {joypad::buttonSelect(), joypad::kSelect, g_select_label},
+      {joypad::buttonStart(), joypad::kStart, g_start_label},
   };
   for (const Pill &p : pills) {
     const bool on = (state & p.bit) != 0;
@@ -291,7 +293,13 @@ bool beginPlay(bool portrait, int src_w, int src_h, float scale) {
   return true;
 }
 
+void setLabels(const char *select_label, const char *start_label) {
+  g_select_label = select_label ? select_label : "SELECT";
+  g_start_label = start_label ? start_label : "START";
+}
+
 void endPlay() {
+  setLabels();
   emu_video::waitIdle();
   joypad::setLayout(false);
   M5.Display.setRotation(1);

@@ -33,9 +33,14 @@ struct Config {
   // arcade cabinet has an opinion: its monitor stood on its side, and the
   // choice is whether to honour that or fill more of a screen that does not.
   bool orientable = false;
+  // One more button in the header, for something only this system has. Null
+  // for a system with nothing to put there.
+  const char *extra_label = nullptr;
 };
 
-enum class Result : uint8_t { None, Back, Launch, ScaleChanged, OrientationChanged };
+enum class Result : uint8_t {
+  None, Back, Launch, ScaleChanged, OrientationChanged, Extra
+};
 
 // `scale` is the caller's saved preference; it must be one of the two in the
 // config, and is returned by scale() from then on.

@@ -59,7 +59,26 @@ constexpr int kRasterH = NAMCO_DISPLAY_HEIGHT;  // 224
 constexpr int kShownW = kRasterH;               // 224
 constexpr int kShownH = kRasterW;               // 288
 
-enum class Mode : uint8_t { Picking, Playing };
+enum class Mode : uint8_t { Picking, Dips, Playing };
+
+// The board's DIP switches. These are real switches on a real board: the
+// machine reads them when a game starts, so changing one takes effect at the
+// next credit rather than immediately.
+struct Dip {
+  const char *name;
+  uint8_t mask;
+  uint8_t shift;
+  uint8_t count;
+  const char *values[4];
+};
+constexpr Dip kDips[] = {
+    {"Coins", 0x03, 0, 4, {"Free play", "1 coin, 1 game", "1 coin, 2 games", "2 coins, 1 game"}},
+    {"Lives", 0x0C, 2, 4, {"1", "2", "3", "5"}},
+    {"Bonus life", 0x30, 4, 4, {"10,000", "15,000", "20,000", "None"}},
+    {"Difficulty", 0x40, 6, 2, {"Hard", "Normal", "", ""}},
+    {"Ghost names", 0x80, 7, 2, {"Alternate", "Normal", "", ""}},
+};
+constexpr int kDipCount = (int)(sizeof(kDips) / sizeof(kDips[0]));
 Mode g_mode = Mode::Picking;
 bool g_dirty = true;
 
@@ -216,6 +235,7 @@ bool load(int index) {
   desc.roms.pacman.prom_0020_011F = {rom + info.colour, arcrom::kColourBytes};
   namco_init(g_sys, &desc);
   namco_fast_init(g_sys, &g_cpu);
+  g_sys->dsw1 = g_settings.dsw1;
   // namco_init copies every ROM into the machine, so the file goes now.
   heap_caps_free(rom);
 
@@ -231,6 +251,7 @@ bool load(int index) {
   g_portrait = g_settings.portrait;
   const bool big = g_settings.scale == 5;
   g_scale = g_portrait ? (big ? 3.0f : 2.5f) : (big ? 2.5f : 2.0f);
+  joypad_ui::setLabels("COIN", "1P START");
   if (!joypad_ui::beginPlay(g_portrait, kShownW, kShownH, g_scale)) {
     rom_browser::setError("no room for the picture");
     releaseCore();
@@ -263,6 +284,36 @@ void convert() {
       *out = g_palette[src[col] & 31];
       out += kShownW;
     }
+  }
+}
+
+// The switch panel. One row each, tapped to step through the settings the
+// board offers — no more and no less than the real thing has.
+void drawDips() {
+  auto &g = gfx();
+  g.fillScreen(kBg);
+  uikit::drawLabel("DIP SWITCHES", kMargin, 46, kText, &fonts::FreeSansBold24pt7b,
+                   middle_left);
+  // ASCII only: these fonts have no dash of any width, and anything else
+  // comes out as an empty box.
+  uikit::drawLabel("as on the board. Read when a game starts.", kMargin, 84, kMuted,
+                   &fonts::FreeSans12pt7b, middle_left);
+
+  const Rect done{kW - kMargin - 190, 18, 190, 62};
+  uikit::drawButton(done, "DONE", kGood, kOnFill, &fonts::FreeSansBold12pt7b);
+  uikit::addTarget(done, 100, 0);
+
+  const int row_h = 92, gap = 10, top = 118;
+  for (int i = 0; i < kDipCount; i++) {
+    const Dip &d = kDips[i];
+    const Rect row{kMargin, top + i * (row_h + gap), kW - 2 * kMargin, row_h};
+    uikit::fillRoundRectFast(row.x, row.y, row.w, row.h, 12, kSurfaceLift);
+    uikit::drawLabel(d.name, row.x + 28, row.y + row_h / 2, kText,
+                     &fonts::FreeSansBold18pt7b, middle_left);
+    const int v = (g_settings.dsw1 & d.mask) >> d.shift;
+    uikit::drawLabel(d.values[v], row.x + row.w - 32, row.y + row_h / 2, kAccent,
+                     &fonts::FreeSansBold18pt7b, middle_right);
+    uikit::addTarget(row, 200 + i, 0);
   }
 }
 
@@ -376,6 +427,7 @@ void begin() {
   cfg.scale_value[0] = 2;
   cfg.scale_value[1] = 5;  // the larger size, whichever way up it is
   cfg.orientable = true;
+  cfg.extra_label = "DIPS";
   cfg.probe = probeRom;
   cfg.empty_hint = "Make .arc files with tools/mkarcade.py and put them in /arcade on the card";
   rom_browser::begin(cfg, g_settings.scale, g_settings.portrait);
@@ -394,6 +446,16 @@ void invalidate() {
 bool playing() { return g_mode == Mode::Playing; }
 
 void tick(uint32_t now_ms) {
+  if (g_mode == Mode::Dips) {
+    if (!g_dirty) return;
+    g_dirty = false;
+    const uint32_t t0 = micros();
+    uikit::clearTargets();
+    drawDips();
+    uikit::present();
+    uikit::noteRepaint(micros() - t0, 75);
+    return;
+  }
   if (g_mode == Mode::Playing && g_sys) {
     if (g_dirty) {
       g_dirty = false;
@@ -420,6 +482,26 @@ void tick(uint32_t now_ms) {
 
 void handleTap(int x, int y, uint32_t) {
   if (g_mode == Mode::Playing) return;
+  if (g_mode == Mode::Dips) {
+    int action = 0, param = 0;
+    if (!uikit::findTarget(x, y, &action, &param)) return;
+    if (action == 100) {  // DONE
+      audio::select();
+      settings_store::saveArcade(g_settings);
+      g_mode = Mode::Picking;
+      rom_browser::invalidate();
+      return;
+    }
+    const int i = action - 200;
+    if (i >= 0 && i < kDipCount) {
+      audio::select();
+      const Dip &d = kDips[i];
+      const int next = (((g_settings.dsw1 & d.mask) >> d.shift) + 1) % d.count;
+      g_settings.dsw1 = (uint8_t)((g_settings.dsw1 & ~d.mask) | (next << d.shift));
+      g_dirty = true;
+    }
+    return;
+  }
   int index = 0;
   switch (rom_browser::handleTap(x, y, &index)) {
     case rom_browser::Result::Launch:
@@ -434,6 +516,10 @@ void handleTap(int x, int y, uint32_t) {
     case rom_browser::Result::ScaleChanged:
       g_settings.scale = rom_browser::scale();
       settings_store::saveArcade(g_settings);
+      break;
+    case rom_browser::Result::Extra:
+      g_mode = Mode::Dips;
+      g_dirty = true;
       break;
     case rom_browser::Result::OrientationChanged:
       g_settings.portrait = rom_browser::portrait();
