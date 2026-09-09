@@ -172,6 +172,13 @@ void probeRom(fs::FS &fs, rom_index::Item *it) {
 // for when someone is watching.
 void releaseCore() {
   Serial.println("nes: leaving, waiting for the scaler");
+  // Hand the panel back. The emulator writes straight into the panel's own
+  // framebuffer, so until this runs the screen keeps showing the last frame of
+  // the game no matter what the rest of the console draws: the list comes back,
+  // its buttons are live, and none of it is visible. From the outside that is
+  // a console that has locked up. Arcade has always done this; NES and Game Boy
+  // did not, which is why only they did it.
+  joypad_ui::endPlay();
   emu_video::waitIdle();
   // Stop the APU task BEFORE the APU it points at is destroyed.
   Serial.println("nes: leaving, stopping the audio task");
@@ -392,7 +399,14 @@ void runFrame(uint32_t now_ms) {
     g_menu_down = true;
     releaseCore();
     g_mode = Mode::Picking;
-    g_dirty = true;
+    // Repaint the list, not just this screen. The emulator draws straight into
+    // the panel's framebuffer, so nothing the console does afterwards is seen
+    // until something paints over it -- and the browser only paints when it is
+    // told to. Setting this screen's own flag was not telling it: the list came
+    // back with its buttons live and completely invisible, under the last frame
+    // of the game. Which is a console that has locked up, as far as anyone
+    // holding it can tell. Arcade always did this; these two did not.
+    invalidate();
     return;
   }
   if (!menu_held) g_menu_down = false;

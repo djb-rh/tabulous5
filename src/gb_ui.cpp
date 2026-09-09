@@ -171,6 +171,13 @@ void writeSave() {
 
 void releaseCore() {
   writeSave();
+  // Hand the panel back. The emulator writes straight into the panel's own
+  // framebuffer, so until this runs the screen keeps showing the last frame of
+  // the game no matter what the rest of the console draws: the list comes back,
+  // its buttons are live, and none of it is visible. From the outside that is
+  // a console that has locked up. Arcade has always done this; NES and Game Boy
+  // did not, which is why only they did it.
+  joypad_ui::endPlay();
   emu_video::waitIdle();
   M5.Speaker.stop();
   if (g_gb) {
