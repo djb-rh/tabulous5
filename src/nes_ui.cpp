@@ -3,10 +3,7 @@
 #include <LittleFS.h>
 #include <M5Unified.h>
 #include <dirent.h>
-#include <driver/ppa.h>
-#include <esp_cache.h>
 #include <esp_heap_caps.h>
-#include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
 
 #include <cstdio>
 #include <algorithm>
@@ -15,6 +12,7 @@
 
 #include "app.h"
 #include "audio.h"
+#include "emu_video.h"
 #include "filemanager.h"
 #include "../third_party/anemoia/core/cartridge.h"
 #include "../third_party/anemoia/core/cpu6502.h"
@@ -61,58 +59,9 @@ int g_playing = -1;
 volatile int g_chunk_row = 0;
 const char *g_error = "";
 
-// One NES frame of RGB565: the buffer the emulator is drawing into right now.
-//
-// There are two. While the PPA is still copying frame N out of one, the
-// emulator draws frame N+1 into the other, so the blit and the emulation
-// overlap instead of adding up. The first lives in internal RAM (the CPU
-// fallback transposes it with a stride, which PSRAM would punish); the second
-// goes wherever there is room.
-uint16_t *g_nes = nullptr;
-uint16_t *g_nes_buf[2] = {nullptr, nullptr};
-int g_nes_cur = 0;
-
-// The panel's own framebuffer, written directly. See blit() for why.
-uint8_t *g_fb = nullptr;
-size_t g_fb_stride = 0;
-uint8_t g_fb_rot = 1;
-
-// The P4's Pixel Processing Accelerator does scale + rotate + copy in
-// hardware. When it registers, blit() hands the whole transposed write to it;
-// the CPU loop below stays as the fallback.
-ppa_client_handle_t g_ppa = nullptr;
-volatile bool g_ppa_busy = false;
-
-// From the PPA's interrupt: the transfer is done, its source buffer is free.
-bool IRAM_ATTR onPpaDone(ppa_client_handle_t, ppa_event_data_t *, void *) {
-  g_ppa_busy = false;
-  return false;
-}
-
-// Waits for an in-flight transfer, with a bound so a wedged PPA cannot hang
-// the console. Returns false if it never finished.
-bool ppaWait() {
-  const uint32_t t0 = micros();
-  while (g_ppa_busy) {
-    if (micros() - t0 > 40000) return false;
-    taskYIELD();
-  }
-  return true;
-}
-
-// Picture geometry, decided per session: 2x (512x480, room for the on-screen
-// pad either side) or 3x (768x720, the full height, for a real gamepad).
+// How much the picture is magnified, which decides whether there is room for
+// the on-screen pad beside it. The panel work itself is emu_video's.
 int g_scale = joypad::kScale;
-int g_vx = joypad::kVideoX, g_vy = joypad::kVideoY;
-int g_vw = joypad::kVideoW, g_vh = joypad::kVideoH;
-
-void setScale(int scale) {
-  g_scale = scale;
-  g_vw = joypad::kNesW * scale;
-  g_vh = joypad::kNesH * scale;
-  g_vx = (joypad::kPanelW - g_vw) / 2;
-  g_vy = (joypad::kPanelH - g_vh) / 2;
-}
 
 // ---- audio -------------------------------------------------------------
 //
@@ -500,7 +449,7 @@ void drawPicker() {
 // --------------------------------------------------------------------- play
 
 void releaseCore() {
-  ppaWait();
+  emu_video::waitIdle();
   // Stop the APU task BEFORE the APU it points at is destroyed.
   g_apu_run = false;
   for (int i = 0; i < 200 && g_apu_task; i++) delay(1);
@@ -575,12 +524,13 @@ void apuTask(void *) {
 
 // Called by the PPU every SCANLINES_PER_BUFFER finished lines, with RGB565
 // pixels — no palette conversion needed. Just accumulated; the scaling and the
-// transpose happen once per frame in blit().
+// transpose happen once per frame, in emu_video.
 IRAM_ATTR void drawChunk(uint8_t *buffer, uint32_t size) {
-  if (!g_nes) return;
+  uint16_t *fb = emu_video::frame();
+  if (!fb) return;
   const int rows = (int)(size / sizeof(uint16_t)) / joypad::kNesW;
   if (g_chunk_row + rows > joypad::kNesH) return;
-  memcpy(g_nes + (size_t)g_chunk_row * joypad::kNesW, buffer, size);
+  memcpy(fb + (size_t)g_chunk_row * joypad::kNesW, buffer, size);
   g_chunk_row += rows;
 }
 
@@ -607,7 +557,7 @@ bool load(int index) {
     return false;
   }
 
-  setScale(g_settings.scale);
+  g_scale = g_settings.scale;
   g_cpu = new Cpu6502();
   if (!g_cpu) { g_error = "out of memory for core"; releaseCore(); return false; }
   g_cpu->bus.insertCartridge(g_cart);
@@ -652,198 +602,18 @@ bool load(int index) {
   xTaskCreatePinnedToCore(apuTask, "nes_apu", 4096, nullptr, 1, &g_apu_task, 0);
   g_cpu->reset();
 
-  const size_t frame_bytes = (size_t)joypad::kNesW * joypad::kNesH * 2;
-  if (!g_nes_buf[0]) {
-    // Cache-line aligned: the PPA reads it by DMA.
-    g_nes_buf[0] = (uint16_t *)heap_caps_aligned_alloc(
-        128, frame_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  }
-  if (!g_nes_buf[1]) {
-    g_nes_buf[1] = (uint16_t *)heap_caps_aligned_alloc(
-        128, frame_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (!g_nes_buf[1]) {
-      g_nes_buf[1] = (uint16_t *)heap_caps_aligned_alloc(128, frame_bytes,
-                                                         MALLOC_CAP_SPIRAM);
-    }
-  }
-  if (!g_nes_buf[0]) { g_error = "out of memory for framebuffer"; releaseCore(); return false; }
-  for (uint16_t *b : g_nes_buf) {
-    if (b) memset(b, 0, frame_bytes);
-  }
-  g_nes_cur = 0;
-  g_nes = g_nes_buf[0];
-
-  // Resolve the panel's framebuffer once. config_detail() is public, so this
-  // needs no games with protected members.
-  auto *panel = (lgfx::Panel_DSI *)M5.Display.getPanel();
-  g_fb = (uint8_t *)panel->config_detail().buffer;
-  g_fb_stride = ((size_t)panel->config().panel_width * 2 + 3) & ~(size_t)3;
-  g_fb_rot = (uint8_t)M5.Display.getRotation();
-  if (!g_ppa) {
-    ppa_client_config_t cfg = {};
-    cfg.oper_type = PPA_OPERATION_SRM;
-    cfg.max_pending_trans_num = 2;
-    if (ppa_register_client(&cfg, &g_ppa) != ESP_OK) {
-      g_ppa = nullptr;
-      g_draw_every = 2;
-      Serial.println("nes: PPA unavailable, CPU blit");
-    } else {
-      ppa_event_callbacks_t cbs = {};
-      cbs.on_trans_done = onPpaDone;
-      ppa_client_register_event_callbacks(g_ppa, &cbs);
-    }
-  }
-  if (!g_fb || (g_fb_rot != 1 && g_fb_rot != 3)) {
-    g_error = "unexpected panel orientation";
+  if (!emu_video::begin() ||
+      !emu_video::configure(joypad::kNesW, joypad::kNesH, g_scale)) {
+    g_error = "no room for the picture";
     releaseCore();
     return false;
   }
+  if (!emu_video::hardware()) g_draw_every = 2;
 
-  g_playing = index;
-  g_error = "";
-  g_frames = 0;
-  g_fps = 0;
-  g_fps_at = millis();
   g_next_frame_us = micros();
   g_frame_seq = 0;
   g_drawn_frames = 0;
   return true;
-}
-
-// Writes the picture straight into the panel's framebuffer, transposed.
-//
-// The panel is natively 720x1280 PORTRAIT and the UI runs 1280x720 landscape,
-// so LovyanGFX's rotation maps a landscape scanline onto a COLUMN of the
-// framebuffer — every pixel of a horizontal run lands 1440 bytes from the last.
-// That is what made pushImage cost 29 ms: it is not the copy, it is the stride.
-//
-// The 2x scale has to touch every destination pixel anyway, so the transpose
-// rides along for free: iterating DOWN a landscape column walks the framebuffer
-// sequentially. The strided access moves to the source, which is 120 KB in
-// internal RAM where stride costs almost nothing.
-//
-// Mapping is taken from Panel_FrameBufferBase::drawPixelPreclipped rather than
-// guessed. For rotation 1: panel row = logical x, panel column = 719 - y.
-// For rotation 3 it is the other diagonal.
-// The hardware path. The framebuffer is described to the PPA in the panel's
-// own portrait terms (720 wide, 1280 tall), and the NES picture is rotated
-// into it: for rotation 1, logical x runs down the panel's rows and logical y
-// runs backwards along its columns, which is a 90-degree clockwise turn — 270
-// counter-clockwise in the driver's vocabulary. Rotation 3 is the other way.
-bool blitPpa() {
-  const int H = g_vh, W = g_vw;
-  ppa_srm_oper_config_t op = {};
-  op.in.buffer = g_nes;
-  op.in.pic_w = joypad::kNesW;
-  op.in.pic_h = joypad::kNesH;
-  op.in.block_w = joypad::kNesW;
-  op.in.block_h = joypad::kNesH;
-  op.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
-  op.out.buffer = g_fb;
-  op.out.buffer_size = g_fb_stride * joypad::kPanelW;
-  op.out.pic_w = joypad::kPanelH;   // 720: the panel's own width
-  op.out.pic_h = joypad::kPanelW;   // 1280
-  op.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
-  if (g_fb_rot == 1) {
-    op.out.block_offset_x = joypad::kPanelH - g_vy - H;
-    op.out.block_offset_y = g_vx;
-    op.rotation_angle = PPA_SRM_ROTATION_ANGLE_270;
-  } else {
-    op.out.block_offset_x = g_vy;
-    op.out.block_offset_y = joypad::kPanelW - g_vx - W;
-    op.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
-  }
-  op.scale_x = (float)g_scale;
-  op.scale_y = (float)g_scale;
-  // Non-blocking when there is a second buffer to draw the next frame into;
-  // the wait happens up front, for the transfer before this one.
-  const bool overlap = g_nes_buf[1] != nullptr;
-  op.mode = overlap ? PPA_TRANS_MODE_NON_BLOCKING : PPA_TRANS_MODE_BLOCKING;
-  if (!ppaWait()) return false;
-  // The source was just written by the CPU; make sure the DMA sees it.
-  esp_cache_msync(g_nes, (size_t)joypad::kNesW * joypad::kNesH * 2,
-                  ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA |
-                      ESP_CACHE_MSYNC_FLAG_UNALIGNED);
-  g_ppa_busy = overlap;
-  if (ppa_do_scale_rotate_mirror(g_ppa, &op) != ESP_OK) {
-    g_ppa_busy = false;
-    return false;
-  }
-  if (overlap) {
-    g_nes_cur ^= 1;
-    g_nes = g_nes_buf[g_nes_cur];
-  }
-  return true;
-}
-
-IRAM_ATTR void blit() {
-  if (!g_fb || !g_nes) return;
-  const uint32_t t1 = micros();
-
-  if (g_ppa) {
-    if (blitPpa()) {
-      g_us_push += micros() - t1;
-      return;
-    }
-    g_ppa = nullptr;  // once is enough; fall through to the CPU for good
-    g_draw_every = 2;
-  }
-  if (g_scale != 2) return;  // the CPU loop below only knows 2x
-
-  const int vx = g_vx, vy = g_vy;
-  const int logical_h = joypad::kPanelH, logical_w = joypad::kPanelW;
-
-  for (int sx = 0; sx < joypad::kNesW; sx++) {
-    const uint16_t *src = g_nes + sx;  // walk this source column
-    for (int k = 0; k < 2; k++) {      // each source column is two output ones
-      const int lx = vx + sx * 2 + k;
-      uint16_t *dst;
-      int step;
-      if (g_fb_rot == 1) {
-        // row = lx, column = 719 - y; ascending address = descending y.
-        dst = (uint16_t *)(g_fb + (size_t)lx * g_fb_stride) +
-              (logical_h - 1 - (vy + g_vh - 1));
-        step = 1;
-      } else {
-        // rotation 3: row = 1279 - lx, column = y; ascending address = ascending y.
-        dst = (uint16_t *)(g_fb + (size_t)(logical_w - 1 - lx) * g_fb_stride) + vy;
-        step = 1;
-      }
-      // The two output pixels are adjacent and the run always starts 4-byte
-      // aligned, so each pair goes out as one 32-bit store. Measured: no
-      // faster than two 16-bit stores — this is bound by PSRAM write
-      // bandwidth (492 KB a frame at ~57 MB/s), not by instruction count.
-      uint32_t *pair = (uint32_t *)dst;
-      if (g_fb_rot == 1) {
-        for (int sy = joypad::kNesH - 1; sy >= 0; sy--) {
-          const uint32_t v = src[(size_t)sy * joypad::kNesW];
-          *pair++ = v | (v << 16);
-        }
-      } else {
-        for (int sy = 0; sy < joypad::kNesH; sy++) {
-          const uint32_t v = src[(size_t)sy * joypad::kNesW];
-          *pair++ = v | (v << 16);
-        }
-      }
-      (void)step;
-    }
-  }
-
-  // The framebuffer is cached and the DSI scans it by DMA, so the writes have
-  // to be pushed out or the panel shows stale pixels. One flush over the whole
-  // touched span rather than 512 small ones.
-  //
-  // Splitting this loop across both cores was tried and gained 6% (9.6 -> 9.1
-  // ms) for a task and a semaphore: the writes are bound by PSRAM bandwidth,
-  // and two cores cannot push memory faster than one. Not worth the machinery.
-  const size_t first_row = (g_fb_rot == 1) ? vx : (logical_w - (vx + g_vw));
-  const uint32_t t_sync = micros();
-  esp_cache_msync(g_fb + first_row * g_fb_stride,
-                  (size_t)g_vw * g_fb_stride,
-                  ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
-  g_us_sync += micros() - t_sync;
-
-  g_us_push += micros() - t1;
 }
 
 void drawPlayChrome(bool full) {
@@ -908,7 +678,8 @@ void runFrame(uint32_t now_ms) {
 
   // Draw every g_draw_every-th frame; emulate all of them.
   if ((g_frame_seq % g_draw_every) == 0) {
-    blit();
+    emu_video::present();
+    g_us_push += emu_video::lastUs();
     g_drawn_frames++;
   }
   g_frame_seq++;
