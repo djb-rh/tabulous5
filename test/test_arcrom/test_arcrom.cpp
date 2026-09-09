@@ -10,9 +10,10 @@ using namespace tabulous::arcrom;
 void setUp() {}
 void tearDown() {}
 
-static std::vector<uint8_t> file(uint8_t system = 0, uint8_t version = 1,
-                                 uint32_t payload = kPayloadBytes) {
-  std::vector<uint8_t> f(kFileBytes, 0);
+// A version 1 file: no upper program ROM, no vector fixups, 16-byte header.
+static std::vector<uint8_t> v1(uint8_t system = 0, uint8_t version = 1,
+                               uint32_t payload = kBasePayloadBytes) {
+  std::vector<uint8_t> f(kV1FileBytes, 0);
   memcpy(f.data(), "TAB5ARC1", 8);
   f[8] = system;
   f[9] = version;
@@ -20,53 +21,121 @@ static std::vector<uint8_t> file(uint8_t system = 0, uint8_t version = 1,
   return f;
 }
 
+static std::vector<uint8_t> v2(uint8_t high_banks, uint8_t fixups) {
+  const uint32_t payload = kBasePayloadBytes + high_banks * kCpuHighBank;
+  std::vector<uint8_t> f(kHeaderBytes + payload, 0);
+  memcpy(f.data(), "TAB5ARC1", 8);
+  f[9] = 2;
+  f[10] = high_banks;
+  f[11] = fixups;
+  memcpy(f.data() + 12, &payload, sizeof(payload));
+  for (uint8_t i = 0; i < fixups; i++) {
+    f[16 + 2 * i] = 0xF0 + i;
+    f[17 + 2 * i] = 0x10 + i;
+  }
+  return f;
+}
+
 void test_regions_follow_each_other() {
-  auto f = file();
+  auto f = v1();
   Info info;
   const char *why = "x";
   TEST_ASSERT_TRUE(parse(f.data(), f.size(), &info, &why));
   TEST_ASSERT_EQUAL_STRING("", why);
   TEST_ASSERT_EQUAL_size_t(16, info.cpu);
+  TEST_ASSERT_EQUAL_size_t(0, info.cpu_high_bytes);
   TEST_ASSERT_EQUAL_size_t(16 + 16384, info.gfx);
   TEST_ASSERT_EQUAL_size_t(16 + 16384 + 8192, info.palette);
   TEST_ASSERT_EQUAL_size_t(info.palette + 32, info.colour);
   TEST_ASSERT_EQUAL_size_t(info.colour + 256, info.sound1);
   TEST_ASSERT_EQUAL_size_t(info.sound1 + 256, info.sound2);
-  TEST_ASSERT_EQUAL_size_t(kFileBytes, info.sound2 + 256);
+  TEST_ASSERT_EQUAL_size_t(kV1FileBytes, info.sound2 + 256);
+}
+
+void test_upper_program_rom_pushes_the_later_regions_along() {
+  auto f = v2(2, 0);
+  Info info;
+  const char *why = "x";
+  TEST_ASSERT_TRUE(parse(f.data(), f.size(), &info, &why));
+  TEST_ASSERT_EQUAL_UINT8(2, info.version);
+  TEST_ASSERT_EQUAL_size_t(32, info.cpu);
+  TEST_ASSERT_EQUAL_size_t(32 + 16384, info.cpu_high);
+  TEST_ASSERT_EQUAL_size_t(8192, info.cpu_high_bytes);
+  TEST_ASSERT_EQUAL_size_t(info.cpu_high + 8192, info.gfx);
+  TEST_ASSERT_EQUAL_size_t(f.size(), info.sound2 + 256);
+  TEST_ASSERT_EQUAL_size_t(f.size(), info.file_bytes);
+}
+
+void test_vector_fixups_are_read_back() {
+  auto f = v2(0, 3);
+  Info info;
+  TEST_ASSERT_TRUE(parse(f.data(), f.size(), &info));
+  TEST_ASSERT_EQUAL_UINT8(3, info.vector_fixups);
+  TEST_ASSERT_EQUAL_HEX8(0xF0, info.vector_from[0]);
+  TEST_ASSERT_EQUAL_HEX8(0x10, info.vector_to[0]);
+  TEST_ASSERT_EQUAL_HEX8(0xF2, info.vector_from[2]);
+  TEST_ASSERT_EQUAL_HEX8(0x12, info.vector_to[2]);
+}
+
+void test_the_header_alone_says_how_long_the_file_is() {
+  auto one = v1();
+  TEST_ASSERT_EQUAL_size_t(kV1FileBytes, fileBytes(one.data(), kV1HeaderBytes));
+  auto two = v2(4, 0);
+  TEST_ASSERT_EQUAL_size_t(two.size(), fileBytes(two.data(), kHeaderBytes));
+  std::vector<uint8_t> junk(kHeaderBytes, 0);
+  TEST_ASSERT_EQUAL_size_t(0, fileBytes(junk.data(), junk.size()));
 }
 
 void test_malformed_files_are_refused_with_a_reason() {
   Info info;
   const char *why = "";
 
-  std::vector<uint8_t> tiny(32, 0);
+  std::vector<uint8_t> tiny(8, 0);
   TEST_ASSERT_FALSE(parse(tiny.data(), tiny.size(), &info, &why));
   TEST_ASSERT_EQUAL_STRING("too short", why);
 
-  auto bad_magic = file();
+  auto bad_magic = v1();
   bad_magic[0] = 'X';
   TEST_ASSERT_FALSE(parse(bad_magic.data(), bad_magic.size(), &info, &why));
   TEST_ASSERT_EQUAL_STRING("not an .arc file", why);
 
-  auto bad_system = file(9);
+  auto bad_system = v1(9);
   TEST_ASSERT_FALSE(parse(bad_system.data(), bad_system.size(), &info, &why));
   TEST_ASSERT_EQUAL_STRING("unknown arcade board", why);
 
-  auto bad_version = file(0, 2);
+  auto bad_version = v1(0, 7);
   TEST_ASSERT_FALSE(parse(bad_version.data(), bad_version.size(), &info, &why));
   TEST_ASSERT_EQUAL_STRING("made by a different version of mkarcade", why);
 
-  auto bad_len = file(0, 1, 1234);
+  auto bad_len = v1(0, 1, 1234);
   TEST_ASSERT_FALSE(parse(bad_len.data(), bad_len.size(), &info, &why));
   TEST_ASSERT_EQUAL_STRING("wrong amount of ROM in it", why);
 
-  TEST_ASSERT_FALSE(parse(nullptr, kFileBytes, &info, &why));
+  auto too_much_rom = v2(0, 0);
+  too_much_rom[10] = 9;
+  TEST_ASSERT_FALSE(parse(too_much_rom.data(), too_much_rom.size(), &info, &why));
+  TEST_ASSERT_EQUAL_STRING("too much program ROM", why);
+
+  auto too_many_fixups = v2(0, 0);
+  too_many_fixups[11] = 5;
+  TEST_ASSERT_FALSE(parse(too_many_fixups.data(), too_many_fixups.size(), &info, &why));
+  TEST_ASSERT_EQUAL_STRING("too many vector fixups", why);
+
+  auto truncated = v2(2, 0);
+  truncated.resize(truncated.size() - 1);
+  TEST_ASSERT_FALSE(parse(truncated.data(), truncated.size(), &info, &why));
+  TEST_ASSERT_EQUAL_STRING("too short", why);
+
+  TEST_ASSERT_FALSE(parse(nullptr, kV1FileBytes, &info, &why));
   TEST_ASSERT_EQUAL_STRING("no data", why);
 }
 
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_regions_follow_each_other);
+  RUN_TEST(test_upper_program_rom_pushes_the_later_regions_along);
+  RUN_TEST(test_vector_fixups_are_read_back);
+  RUN_TEST(test_the_header_alone_says_how_long_the_file_is);
   RUN_TEST(test_malformed_files_are_refused_with_a_reason);
   return UNITY_END();
 }

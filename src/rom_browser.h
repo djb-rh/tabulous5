@@ -21,6 +21,12 @@ struct Config {
   const char *dir = "";              // "/nes" — the same on both volumes
   const char *extension = "";        // ".nes"
   const char *favourites_file = "";  // on the built-in filesystem
+
+  // Starred the first time a system is opened, before anyone has starred
+  // anything: one file name per line. A library of hundreds of near-identical
+  // bootlegs is unusable without a shortlist, and this is that shortlist.
+  // Ignored once the favourites file exists, so it never overrides a choice.
+  const char *default_favourites = nullptr;
   // The two picture sizes offered, as a label and a magnification.
   const char *scale_label[2] = {"", ""};
   uint8_t scale_value[2] = {0, 0};

@@ -54,7 +54,13 @@ void addAction(const Rect &r, Action a, int param = 0) {
 
 void loadFavourites() {
   File f = LittleFS.open(g_cfg.favourites_file, "r");
-  if (!f) return;
+  if (!f) {
+    // Nobody has starred anything yet, so start from the shortlist if this
+    // system has one. It is not written out until something is starred or
+    // unstarred, so an empty file is never mistaken for a considered choice.
+    if (g_cfg.default_favourites) g_lib->applyFavourites(g_cfg.default_favourites);
+    return;
+  }
   String text = f.readString();
   f.close();
   g_lib->applyFavourites(text.c_str());
@@ -275,6 +281,7 @@ void draw() {
   uikit::drawLabel(g_cfg.title, kMargin, 46, kText, &fonts::FreeSansBold24pt7b,
                    middle_left);
 
+
   const Rect back{kW - kMargin - 190, 18, 190, 62};
   uikit::drawButton(back, "MENU", kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
   addAction(back, Action::Back);
@@ -327,10 +334,11 @@ void draw() {
     snprintf(where, sizeof(where), "%s  %d of %d", rom_index::groupLabel(g_group), total,
              g_lib->size());
   }
-  uikit::drawLabel(where, kMargin + 120, 46, kMuted, &fonts::FreeSansBold18pt7b, middle_left);
-  if (g_error[0]) {
-    uikit::drawLabel(g_error, kMargin + 120, 78, kDanger, &fonts::FreeSans12pt7b, middle_left);
-  }
+  // Under the name rather than beside it. Beside it, a fixed offset that
+  // suited "NES" had "GAME BOY" written through it, and measuring the name
+  // only moved the collision along to the buttons. There is a whole row here.
+  uikit::drawLabel(g_error[0] ? g_error : where, kMargin, 82,
+                   g_error[0] ? kDanger : kMuted, &fonts::FreeSans12pt7b, middle_left);
 
   const int list_w = kW - kMargin - kListX;
   if (total == 0) {

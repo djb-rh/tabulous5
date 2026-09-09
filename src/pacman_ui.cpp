@@ -45,6 +45,31 @@ using uikit::gfx;
 
 constexpr const char *kRomDir = "/arcade";
 
+// Hundreds of games shipped on this one board, and MAME's driver lists sixty
+// or so that run on it unmodified -- but most of those are bootleg reskins of
+// Puck Man with the ghosts redrawn, and a list of them all is a wall of
+// near-identical rows. These are the distinct games in it: one per title,
+// best-dumped set of each. Starred the first time the Arcade list is opened,
+// and never again, so unstarring one sticks.
+constexpr const char *kDefaultFavourites =
+    "Pac-Man (Midway).arc\n"
+    "Ms. Pac-Man (bootleg, set 1).arc\n"
+    "Puck Man (Japan, set 1).arc\n"
+    "Crush Roller (set 2).arc\n"
+    "Ponpoko.arc\n"
+    "Eyes (US, set 1).arc\n"
+    "Piranha.arc\n"
+    "Mr. TNT.arc\n"
+    "Naughty Mouse (set 1).arc\n"
+    "Jump Shot.arc\n"
+    "Pac-Man Plus.arc\n"
+    "Ms. Pac-Man Plus.arc\n"
+    "Lizard Wizard.arc\n"
+    "The Glob (Pac-Man hardware, Magic Electronics).arc\n"
+    "Shoot the Bull.arc\n"
+    "Eggor.arc\n"
+    "Gorkans.arc\n";
+
 // The board draws a 288x224 raster and the cabinet's monitor stood on its
 // side, so the picture is really 224 across and 288 down. It is turned upright
 // while the palette is applied, which costs nothing extra — something has to
@@ -150,12 +175,13 @@ void probeRom(fs::FS &fs, rom_index::Item *it) {
   if (h) h.close();
 
   // parse() wants the whole file's length to check it, but only reads the
-  // header, so a short read of the head is enough to judge it by.
+  // header, so a short read of the head is enough to judge it by -- as long as
+  // the length it is told is the real one when the file is short.
+  const size_t claimed = arcrom::fileBytes(head, got);
   arcrom::Info info;
   const char *why = "";
-  if (got != sizeof(head) ||
-      !arcrom::parse(head, it->bytes < arcrom::kFileBytes ? it->bytes : arcrom::kFileBytes,
-                     &info, &why)) {
+  if (got < arcrom::kV1HeaderBytes ||
+      !arcrom::parse(head, it->bytes < claimed ? it->bytes : claimed, &info, &why)) {
     it->status = 1;
     it->problem = why[0] ? why : "unreadable";
   } else {
@@ -173,15 +199,17 @@ bool load(int index) {
     return false;
   }
 
-  uint8_t *rom = (uint8_t *)heap_caps_malloc(arcrom::kFileBytes, MALLOC_CAP_SPIRAM);
+  // Games differ in size -- a board with a second set of program ROMs carries
+  // up to 16K more -- so read whatever is there, up to the largest we take.
+  uint8_t *rom = (uint8_t *)heap_caps_malloc(arcrom::kMaxFileBytes, MALLOC_CAP_SPIRAM);
   if (!rom) {
     rom_browser::setError("out of memory");
     return false;
   }
   File f = rom_browser::fsFor(e).open(e.path, "r");
   size_t got = 0;
-  while (f && got < arcrom::kFileBytes) {
-    const size_t n = f.read(rom + got, arcrom::kFileBytes - got);
+  while (f && got < arcrom::kMaxFileBytes) {
+    const size_t n = f.read(rom + got, arcrom::kMaxFileBytes - got);
     if (!n) break;
     got += n;
   }
@@ -189,7 +217,7 @@ bool load(int index) {
 
   arcrom::Info info;
   const char *why = "";
-  if (got != arcrom::kFileBytes || !arcrom::parse(rom, got, &info, &why)) {
+  if (!arcrom::parse(rom, got, &info, &why)) {
     heap_caps_free(rom);
     rom_browser::setError(why[0] ? why : "could not read it");
     return false;
@@ -234,7 +262,22 @@ bool load(int index) {
   desc.roms.pacman.gfx_1000_1FFF = {rom + info.gfx + 0x1000, 0x1000};
   desc.roms.pacman.prom_0020_011F = {rom + info.colour, arcrom::kColourBytes};
   namco_init(g_sys, &desc);
-  namco_fast_init(g_sys, &g_cpu);
+
+  // A 48K board answers at 0x8000 as well. namco_init leaves the upper half of
+  // its program ROM alone on this board, which is exactly the room needed, so
+  // the extra chips go there and survive the file being freed below.
+  namco_fast_desc_t board = {};
+  if (info.cpu_high_bytes) {
+    memcpy(&g_sys->rom_cpu[0x4000], rom + info.cpu_high, info.cpu_high_bytes);
+    board.rom_high = &g_sys->rom_cpu[0x4000];
+    board.rom_high_bytes = (uint32_t)info.cpu_high_bytes;
+  }
+  board.vector_count = info.vector_fixups;
+  for (size_t i = 0; i < info.vector_fixups; i++) {
+    board.vector_from[i] = info.vector_from[i];
+    board.vector_to[i] = info.vector_to[i];
+  }
+  namco_fast_init(g_sys, &g_cpu, &board);
   g_sys->dsw1 = g_settings.dsw1;
   // namco_init copies every ROM into the machine, so the file goes now.
   heap_caps_free(rom);
@@ -422,6 +465,7 @@ void begin() {
   cfg.dir = kRomDir;
   cfg.extension = ".arc";
   cfg.favourites_file = kFavouritesFile;
+  cfg.default_favourites = kDefaultFavourites;
   cfg.scale_label[0] = "2x  TOUCH";
   cfg.scale_label[1] = "FULL  GAMEPAD";
   cfg.scale_value[0] = 2;

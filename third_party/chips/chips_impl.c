@@ -35,15 +35,39 @@
  * below is namco.h's, rewritten against plain read/write callbacks instead of
  * a pin mask.
  * ------------------------------------------------------------------------ */
+#include <string.h>
+
 #include "namco_fast.h"
 
+/* Everything the bus callbacks need. The console plays one game at a time, so
+ * there is one of these, and the CPU is handed a pointer to it. */
+typedef struct {
+    namco_t* sys;
+    namco_fast_desc_t desc;
+} _fast_board_t;
+
+static _fast_board_t _fast_board;
+
+/* The plain board decodes 15 address lines, so the top half of the address
+ * space mirrors the bottom. A board with ROM at 0x8000 decodes all 16, and
+ * answers there instead of mirroring. */
 static uint8_t _fast_rd(void* ud, uint16_t addr) {
-    namco_t* sys = (namco_t*)ud;
+    _fast_board_t* board = (_fast_board_t*)ud;
+    namco_t* sys = board->sys;
+    if (board->desc.rom_high_bytes != 0 && addr >= 0x8000) {
+        const uint32_t high = (uint32_t)addr - 0x8000u;
+        return high < board->desc.rom_high_bytes ? board->desc.rom_high[high] : 0xFF;
+    }
     addr &= NAMCO_ADDR_MASK;
     if (addr < NAMCO_IOMAP_BASE) {
         return mem_rd(&sys->mem, addr);
     }
-    switch (addr) {
+    /* The board decodes six address lines here, so each port answers over a
+     * 64-byte span rather than at one address. Several games read them at the
+     * mirrors -- Paint Roller reads its DIP switches high in the range, and
+     * with only the base address answering it saw every switch set and sat in
+     * its power-on test for ever. */
+    switch (addr & ~0x3F) {
         case NAMCO_ADDR_IN0: return ~sys->in0;
         case NAMCO_ADDR_IN1: return ~sys->in1;
         case NAMCO_ADDR_DSW1: return sys->dsw1;
@@ -52,7 +76,11 @@ static uint8_t _fast_rd(void* ud, uint16_t addr) {
 }
 
 static void _fast_wr(void* ud, uint16_t addr, uint8_t data) {
-    namco_t* sys = (namco_t*)ud;
+    _fast_board_t* board = (_fast_board_t*)ud;
+    namco_t* sys = board->sys;
+    if (board->desc.rom_high_bytes != 0 && addr >= 0x8000) {
+        return;  /* ROM up there, and nothing else is decoded */
+    }
     addr &= NAMCO_ADDR_MASK;
     if (addr < NAMCO_IOMAP_BASE) {
         mem_wr(&sys->mem, addr, data);
@@ -77,17 +105,37 @@ static uint8_t _fast_in(sz80* cpu, uint8_t port) {
 }
 
 /* The interrupt vector is latched by an OUT to port 0, and handed to the CPU
- * when the frame interrupt fires. */
+ * when the frame interrupt fires. On a few boards a PAL sits in between and
+ * rewrites some of the values on their way through. */
 static void _fast_out(sz80* cpu, uint8_t port, uint8_t data) {
-    namco_t* sys = (namco_t*)cpu->userdata;
-    if (port == 0) {
-        sys->int_vector = data;
+    _fast_board_t* board = (_fast_board_t*)cpu->userdata;
+    if (port != 0) {
+        return;
     }
+    for (uint8_t i = 0; i < board->desc.vector_count; i++) {
+        if (board->desc.vector_from[i] == data) {
+            data = board->desc.vector_to[i];
+            break;
+        }
+    }
+    board->sys->int_vector = data;
 }
 
-void namco_fast_init(namco_t* sys, sz80* cpu) {
+void namco_fast_init(namco_t* sys, sz80* cpu, const namco_fast_desc_t* desc) {
+    _fast_board.sys = sys;
+    if (desc != 0) {
+        _fast_board.desc = *desc;
+    } else {
+        memset(&_fast_board.desc, 0, sizeof(_fast_board.desc));
+    }
+    if (_fast_board.desc.rom_high == 0) {
+        _fast_board.desc.rom_high_bytes = 0;
+    }
+    if (_fast_board.desc.vector_count > NAMCO_FAST_MAX_VECTOR_FIXUPS) {
+        _fast_board.desc.vector_count = NAMCO_FAST_MAX_VECTOR_FIXUPS;
+    }
     sz80_init(cpu);
-    cpu->userdata = sys;
+    cpu->userdata = &_fast_board;
     cpu->read_byte = _fast_rd;
     cpu->write_byte = _fast_wr;
     cpu->port_in = _fast_in;

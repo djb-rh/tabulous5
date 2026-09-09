@@ -241,23 +241,50 @@ scan, so the scan uses `readdir` and reads no file headers until you pick.
 
 ## Arcade
 
-Menu → **Arcade**. Pac-Man hardware: Pac-Man itself, and the Ms. Pac-Man
-bootleg that ran on an unmodified board — so no daughterboard is emulated and
-both are ordinary six-ROM sets.
+Menu → **Arcade**. One board is emulated, the 1980 Namco Pac-Man board, and a
+great many games shipped on it — so the library is not two games but sixty-odd:
+Pac-Man and Puck Man, the Ms. Pac-Man bootlegs that ran on an unmodified board,
+Crush Roller, Ponpoko, Eyes, Piranha, Mr. TNT, Naughty Mouse, Lizard Wizard,
+Jump Shot, Pac-Man Plus and a long tail of bootleg reskins. No daughterboard is
+emulated; every set here is one the plain board ran.
+
+Which sets those are is not a list anyone typed. `tools/mamescan.py` reads
+MAME's own Pac-Man driver and keeps the sets whose hardware is the plain board:
+the right ROMs in the right places, no protection chip, and an init routine
+that only rearranges ROM data. Its output is checked in as
+`tools/arcade_games.json`, so building a game needs the romset and nothing else.
 
 An arcade board's ROMs are several separate chips, and the game list is one row
 per file, so the chips are packed on the machine that has the romset:
 
 ```bash
-tools/mkarcade.py pacman   ~/Downloads/MAME*/puckman.zip  data/arcade
-tools/mkarcade.py mspacman ~/Downloads/MAME*/mspacman.zip data/arcade
+tools/mkarcade.py --all ~/Downloads/MAME*/ /Volumes/CARD/arcade
 ```
 
-That writes a `.arc` file per game. Put them in `/arcade` on the card, or in
-`data/arcade` and flash them with `pio run -t uploadfs` — they are only 25 KB
-each. **No ROMs come with this project.** Merged romsets keep clones in
-subfolders and store each file once, so the packer matches on file name
-wherever in the zip it sits.
+That writes a `.arc` file per game, skipping any whose romset is not there;
+`--set NAME` builds one, `--list` shows what it knows. Put the files in
+`/arcade` on the card, or in `data/arcade` and flash them with
+`pio run -t uploadfs` — they are 25 to 42 KB each. **No ROMs come with this
+project.**
+
+A chip is found in the zip by its checksum, not its name: merged romsets store
+each distinct file once, under whichever game named it first, so a clone's
+folder holds only the files that differ and the rest sit elsewhere under other
+names.
+
+Some of these games need their ROMs rearranged before the board can run them —
+the data lines are crossed on the Eyes boards, Pac-Man Plus and Jump Shot are
+lightly encrypted, Ponpoko stores its tiles the other way round. All of that is
+a fixed transformation of the bytes, so the packer does it and the firmware
+stays ignorant of it. Two things the firmware does carry, because they are
+board wiring rather than data: the 48K memory map, where a second set of
+program ROMs answers at 0x8000 (Ms. Pac-Man and Ponpoko need it), and the PAL
+that rewrites a couple of interrupt vectors on the Piranha and Naughty Mouse
+boards. Both are declared in the `.arc` header.
+
+Sixty-odd rows of mostly-bootlegs is a wall of near-identical names, so the
+distinct games — one per title, best set of each — are starred the first time
+the list is opened. Unstarring one sticks; the shortlist is never applied twice.
 
 The cabinet's monitor stands on its side, so the picture does too: it is turned
 upright while the palette is applied, which costs nothing extra. **FULL** is
