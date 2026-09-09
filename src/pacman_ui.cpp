@@ -79,10 +79,12 @@ constexpr const char *kDefaultFavourites =
 // a tall rectangle with the pad either side of it; turned upright it is far
 // bigger, with the controls underneath, which is how a cabinet stands and how
 // this sits in a controller mount.
+//
+// Ponpoko and its bootlegs are the exception: they ran on the same board with
+// the monitor the usual way round, so for those the raster is the picture and
+// turning it would be the bug. The .arc file says which.
 constexpr int kRasterW = NAMCO_DISPLAY_WIDTH;   // 288
 constexpr int kRasterH = NAMCO_DISPLAY_HEIGHT;  // 224
-constexpr int kShownW = kRasterH;               // 224
-constexpr int kShownH = kRasterW;               // 288
 
 enum class Mode : uint8_t { Picking, Dips, Playing };
 
@@ -112,6 +114,9 @@ padmap::Map g_padmap;
 int g_quit_hold = 0;
 float g_scale = 2.0f;
 bool g_portrait = true;
+bool g_stand_up = true;  // the board's monitor was on its side
+int g_shown_w = kRasterH;
+int g_shown_h = kRasterW;
 
 namco_t *g_sys = nullptr;
 // The CPU lives beside the board rather than inside it: chips' own Z80 is
@@ -288,14 +293,25 @@ bool load(int index) {
     g_palette[i] = rgb(((c & 0xFF) << 16) | (((c >> 8) & 0xFF) << 8) | ((c >> 16) & 0xFF));
   }
 
-  // Sideways, 2.5x fills the panel's height exactly and 2x leaves room for the
-  // pad either side. Turned upright there is far more height to play with, and
-  // 3x is as wide as 720 pixels will take.
+  g_stand_up = info.upright_monitor;
+  g_shown_w = g_stand_up ? kRasterH : kRasterW;
+  g_shown_h = g_stand_up ? kRasterW : kRasterH;
   g_portrait = g_settings.portrait;
   const bool big = g_settings.scale == 5;
-  g_scale = g_portrait ? (big ? 3.0f : 2.5f) : (big ? 2.5f : 2.0f);
+  if (g_stand_up) {
+    // A standing raster is 224 across. Sideways, 2.5x fills the panel's height
+    // exactly and 2x leaves room for the pad either side. Turned upright there
+    // is far more height to play with, and 3x is as wide as 720 will take.
+    g_scale = g_portrait ? (big ? 3.0f : 2.5f) : (big ? 2.5f : 2.0f);
+  } else {
+    // Ponpoko's picture is 288 across instead, so the same numbers overrun.
+    // Sideways with the on-screen pad there are 553 pixels between the pad and
+    // the buttons, and 1.75x is the largest that clears both; a gamepad frees
+    // the whole width. Upright, 2.5x is exactly the panel's 720.
+    g_scale = g_portrait ? (big ? 2.5f : 2.0f) : (big ? 2.5f : 1.75f);
+  }
   joypad_ui::setLabels("COIN", "1P START");
-  if (!joypad_ui::beginPlay(g_portrait, kShownW, kShownH, g_scale)) {
+  if (!joypad_ui::beginPlay(g_portrait, g_shown_w, g_shown_h, g_scale)) {
     rom_browser::setError("no room for the picture");
     releaseCore();
     return false;
@@ -320,12 +336,21 @@ bool load(int index) {
 void convert() {
   uint16_t *dst = emu_video::frame();
   if (!dst) return;
+  if (!g_stand_up) {
+    // Ponpoko's monitor stood the usual way round: straight through.
+    for (int row = 0; row < kRasterH; row++) {
+      const uint8_t *src = g_sys->fb + (size_t)row * NAMCO_FRAMEBUFFER_WIDTH;
+      uint16_t *out = dst + (size_t)row * kRasterW;
+      for (int col = 0; col < kRasterW; col++) out[col] = g_palette[src[col] & 31];
+    }
+    return;
+  }
   for (int row = 0; row < kRasterH; row++) {
     const uint8_t *src = g_sys->fb + (size_t)row * NAMCO_FRAMEBUFFER_WIDTH;
-    uint16_t *out = dst + (kShownW - 1 - row);
+    uint16_t *out = dst + (kRasterH - 1 - row);
     for (int col = 0; col < kRasterW; col++) {
       *out = g_palette[src[col] & 31];
-      out += kShownW;
+      out += kRasterH;
     }
   }
 }

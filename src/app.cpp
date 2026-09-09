@@ -231,13 +231,18 @@ const Entry kEntries[] = {
      "file beside the ROM, written ten seconds after the game last wrote to it\n"
      "and again on the way out."},
 
-    {"Arcade", "Pac-Man and Ms. Pac-Man, off the board.", 0x1F3A93,
+    {"Arcade", "One 1980 board, and everything that ran on it.", 0x1F3A93,
      glyphs::Glyph::None, GameId::Arcade,
-     "Runs Pac-Man hardware: Pac-Man itself, and the Ms. Pac-Man bootleg that\n"
-     "ran on an unmodified board, so no daughterboard is emulated.\n"
+     "Runs the Namco Pac-Man board, and a great many games shipped on it:\n"
+     "Pac-Man and Puck Man, the Ms. Pac-Man bootlegs that ran on an\n"
+     "unmodified board, Crush Roller, Ponpoko, Eyes, Piranha, Mr. TNT,\n"
+     "Jump Shot and a long tail of bootleg reskins. No daughterboard is\n"
+     "emulated; every game here is one the plain board ran.\n"
      "\n"
-     "An arcade machine's ROMs are several separate chips. tools/mkarcade.py\n"
-     "packs a romset you already have into one .arc file; put those in\n"
+     "The distinct games are starred, because most of the list is reskins.\n"
+     "\n"
+     "An arcade machine's ROMs are several separate chips. mkarcade.py --all\n"
+     "packs every romset you already have into .arc files; put those in\n"
      "/arcade on the card. No ROMs come with this device.\n"
      "\n"
      "The cabinet's monitor stands on its side, so the picture does too. FULL\n"

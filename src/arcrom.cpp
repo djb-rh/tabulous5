@@ -53,6 +53,9 @@ bool parse(const uint8_t *data, size_t len, Info *out, const char **why) {
       info.vector_from[i] = data[16 + 2 * i];
       info.vector_to[i] = data[17 + 2 * i];
     }
+    // Zero, which is what every file written before this byte meant anything
+    // has here, is the common case: the monitor stood on its side.
+    info.upright_monitor = data[24] == 0;
   } else {
     return fail(why, "made by a different version of mkarcade");
   }

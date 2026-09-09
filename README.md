@@ -287,8 +287,12 @@ distinct games — one per title, best set of each — are starred the first tim
 the list is opened. Unstarring one sticks; the shortlist is never applied twice.
 
 The cabinet's monitor stands on its side, so the picture does too: it is turned
-upright while the palette is applied, which costs nothing extra. **FULL** is
-2.5x, exactly the panel's height. SELECT puts a coin in, START begins a game.
+upright while the palette is applied, which costs nothing extra. Ponpoko and
+its bootlegs are the exception — the same board, the monitor the usual way
+round — and turning those would be the bug, so MAME's orientation for each game
+travels in the `.arc` header and a horizontal picture is left alone. **FULL**
+is 2.5x, exactly the panel's height. SELECT puts a coin in, START begins a
+game.
 
 It runs at **60 frames a second**, which took replacing the CPU. chips' own Z80
 is stepped one clock at a time — exact, and about 30 ms of work for each 16.7

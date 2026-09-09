@@ -66,6 +66,23 @@ void test_upper_program_rom_pushes_the_later_regions_along() {
   TEST_ASSERT_EQUAL_size_t(f.size(), info.file_bytes);
 }
 
+void test_the_monitor_is_sideways_unless_the_file_says_otherwise() {
+  auto sideways = v2(0, 0);
+  Info info;
+  TEST_ASSERT_TRUE(parse(sideways.data(), sideways.size(), &info));
+  TEST_ASSERT_TRUE(info.upright_monitor);
+
+  auto flat = v2(0, 0);
+  flat[24] = 1;
+  TEST_ASSERT_TRUE(parse(flat.data(), flat.size(), &info));
+  TEST_ASSERT_FALSE(info.upright_monitor);
+
+  // Files made before the byte meant anything are sideways, as they were.
+  auto old = v1();
+  TEST_ASSERT_TRUE(parse(old.data(), old.size(), &info));
+  TEST_ASSERT_TRUE(info.upright_monitor);
+}
+
 void test_vector_fixups_are_read_back() {
   auto f = v2(0, 3);
   Info info;
@@ -134,6 +151,7 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(test_regions_follow_each_other);
   RUN_TEST(test_upper_program_rom_pushes_the_later_regions_along);
+  RUN_TEST(test_the_monitor_is_sideways_unless_the_file_says_otherwise);
   RUN_TEST(test_vector_fixups_are_read_back);
   RUN_TEST(test_the_header_alone_says_how_long_the_file_is);
   RUN_TEST(test_malformed_files_are_refused_with_a_reason);

@@ -50,6 +50,12 @@ struct Info {
   size_t cpu = 0, cpu_high = 0, gfx = 0, palette = 0, colour = 0;
   size_t sound1 = 0, sound2 = 0;
   size_t cpu_high_bytes = 0;  // ROM at 0x8000 upwards; usually none
+
+  // Nearly every game on this board ran with the monitor stood on its side,
+  // and the picture has to be turned upright to be read. A few -- Ponpoko and
+  // its bootlegs -- ran with the monitor the usual way round, and turning
+  // those would be the bug. False means leave the raster alone.
+  bool upright_monitor = true;
   uint8_t vector_fixups = 0;
   uint8_t vector_from[kMaxVectorFixups] = {0, 0, 0, 0};
   uint8_t vector_to[kMaxVectorFixups] = {0, 0, 0, 0};

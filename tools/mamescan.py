@@ -124,7 +124,7 @@ def read_driver(path):
         if len(a) < 11:
             continue
         games[a[1]] = {"parent": a[2], "machine": a[3], "init": a[6],
-                       "title": a[9].strip('"'), "flags": a[10]}
+                       "rot": a[7], "title": a[9].strip('"'), "flags": a[10]}
     return sets, games
 
 
@@ -211,6 +211,10 @@ def main():
         out.append({
             "set": name,
             "title": game["title"],
+            # Nearly every game on this board ran with the monitor on its side.
+            # Ponpoko and its bootlegs did not, and turning those would be the
+            # bug rather than the fix.
+            "upright_monitor": game["rot"] != "ROT0",
             # Merged romsets store each file once, in the parent's zip.
             "zip": game["parent"] if game["parent"] != "0" else name,
             "transforms": TRANSFORMS[game["init"]],

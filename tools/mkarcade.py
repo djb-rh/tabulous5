@@ -206,6 +206,9 @@ def build(game, zip_path):
     header[9] = VERSION
     header[10] = banks
     header[11] = len(fixups)
+    # Byte 24 is zero for the usual sideways monitor, which is also what every
+    # file written before this byte meant anything says.
+    header[24] = 0 if game.get("upright_monitor", True) else 1
     header[12:16] = struct.pack("<I", len(payload))
     for i, (frm, to) in enumerate(fixups):
         header[16 + 2 * i] = frm

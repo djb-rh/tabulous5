@@ -112,6 +112,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [
     [
      250,
@@ -205,6 +206,7 @@
    ],
    "title": "Barracuda",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -317,6 +319,7 @@
    ],
    "title": "Buccaneer (set 1)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -429,6 +432,7 @@
    ],
    "title": "Buccaneer (set 2)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -532,6 +536,7 @@
    "transforms": [
     "gfx_ponpoko"
    ],
+   "upright_monitor": false,
    "vector_fixups": [],
    "zip": "ponpoko"
   },
@@ -644,6 +649,7 @@
    ],
    "title": "Crock-Man",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -756,6 +762,7 @@
    ],
    "title": "Crock-Man (Marti Colls bootleg of Rene Pierre Crock-Man)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -868,6 +875,7 @@
    ],
    "title": "Crush Roller (set 2)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "crush"
   },
@@ -983,6 +991,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "crush"
   },
@@ -1059,6 +1068,7 @@
    ],
    "title": "Crush Roller (bootleg, set 1)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "crush"
   },
@@ -1171,6 +1181,7 @@
    ],
    "title": "Caterpillar Pacman Hack",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -1286,6 +1297,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "eggor"
   },
@@ -1365,6 +1377,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "eyes"
   },
@@ -1444,6 +1457,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "eyes"
   },
@@ -1559,6 +1573,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "eyes"
   },
@@ -1638,6 +1653,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "eyes"
   },
@@ -1750,6 +1766,7 @@
    ],
    "title": "Gorkans",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "mrtnt"
   },
@@ -1826,6 +1843,7 @@
    ],
    "title": "Hangly-Man (set 1)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -1914,6 +1932,7 @@
    ],
    "title": "Hangly-Man (set 2)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -2026,6 +2045,7 @@
    ],
    "title": "Hangly-Man (set 3)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -2138,6 +2158,7 @@
    ],
    "title": "Joyman",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -2216,6 +2237,7 @@
    "transforms": [
     "cpu_jumpshot"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "jumpshot"
   },
@@ -2294,6 +2316,7 @@
    "transforms": [
     "cpu_jumpshot"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "jumpshot"
   },
@@ -2383,6 +2406,7 @@
    ],
    "title": "Lizard Wizard",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "lizwiz"
   },
@@ -2462,6 +2486,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "mrtnt"
   },
@@ -2551,6 +2576,7 @@
    ],
    "title": "Ms. Pac-Man (bootleg, set 1)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "mspacman"
   },
@@ -2622,6 +2648,7 @@
    ],
    "title": "Ms. Pac-Man (bootleg, set 2)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "mspacman"
   },
@@ -2693,6 +2720,7 @@
    ],
    "title": "Ms. Pac-Man (bootleg, set 4)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "mspacman"
   },
@@ -2794,6 +2822,7 @@
    ],
    "title": "Ms. Pac-Man (Elmac bootleg, later)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "mspacman"
   },
@@ -2883,6 +2912,7 @@
    ],
    "title": "Ms. Pac-Man (Marti Colls bootleg)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "mspacman"
   },
@@ -2972,6 +3002,7 @@
    ],
    "title": "Ms. Pac-Man Plus",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "mspacman"
   },
@@ -3084,6 +3115,7 @@
    ],
    "title": "Newpuc2 (set 1)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -3196,6 +3228,7 @@
    ],
    "title": "Newpuc2 (set 2)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -3272,6 +3305,7 @@
    ],
    "title": "New Puck-X",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -3387,6 +3421,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [
     [
      191,
@@ -3511,6 +3546,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [
     [
      191,
@@ -3615,6 +3651,7 @@
    ],
    "title": "Pac-Gal (set 1)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "mspacman"
   },
@@ -3727,6 +3764,7 @@
    ],
    "title": "Pac-Man (Hearts)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -3803,6 +3841,7 @@
    ],
    "title": "Pac-Man (Midway)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -3879,6 +3918,7 @@
    ],
    "title": "Pac-Man (Midway, speedup hack)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -3991,6 +4031,7 @@
    ],
    "title": "Pac Man (FAMARE S.A. bootleg of Puck Man)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -4103,6 +4144,7 @@
    ],
    "title": "Pac-Man (JPM bootleg)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -4215,6 +4257,7 @@
    ],
    "title": "Pac-Man (Model Racing bootleg)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -4327,6 +4370,7 @@
    ],
    "title": "Come Come (Petaco SA bootleg of Puck Man)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -4439,6 +4483,7 @@
    ],
    "title": "Pac-Man (SegaSA / Sonic)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -4551,6 +4596,7 @@
    ],
    "title": "Pac Man (U.Games bootleg of Puck Man)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -4663,6 +4709,7 @@
    ],
    "title": "Pac-Man (Video Game SA bootleg)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -4739,6 +4786,7 @@
    ],
    "title": "Pac-Man (Midway, harder)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -4817,6 +4865,7 @@
    "transforms": [
     "cpu_pacplus"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "pacplus"
   },
@@ -4929,6 +4978,7 @@
    ],
    "title": "Pacu-Man (Spanish bootleg of Puck Man)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -5005,6 +5055,7 @@
    ],
    "title": "Painter (hack of Crush Roller)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "crush"
   },
@@ -5120,6 +5171,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [
     [
      250,
@@ -5213,6 +5265,7 @@
    ],
    "title": "Piranha (hack)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -5328,6 +5381,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [
     [
      250,
@@ -5436,6 +5490,7 @@
    "transforms": [
     "gfx_ponpoko"
    ],
+   "upright_monitor": false,
    "vector_fixups": [],
    "zip": "ponpoko"
   },
@@ -5539,6 +5594,7 @@
    "transforms": [
     "gfx_ponpoko"
    ],
+   "upright_monitor": false,
    "vector_fixups": [],
    "zip": "ponpoko"
   },
@@ -5651,6 +5707,7 @@
    ],
    "title": "Popeye-Man",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -5763,6 +5820,7 @@
    ],
    "title": "Puck Man (Japan, set 1)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -5875,6 +5933,7 @@
    ],
    "title": "Puck Man (Alca bootleg)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -5951,6 +6010,7 @@
    ],
    "title": "Puck Man (bootleg, set 1)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -6063,6 +6123,7 @@
    ],
    "title": "Puck Man (bootleg, set 3)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -6139,6 +6200,7 @@
    ],
    "title": "Puck Man (speedup hack)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -6227,6 +6289,7 @@
    ],
    "title": "Puck Man (bootleg, set 2)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -6303,6 +6366,7 @@
    ],
    "title": "Puck Man (Japan, set 2)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "puckman"
   },
@@ -6381,6 +6445,7 @@
    "transforms": [
     "cpu_jumpshot"
    ],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "shootbul"
   },
@@ -6451,6 +6516,7 @@
    ],
    "title": "Super Glob (Pac-Man hardware, German bootleg)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "suprglob"
   },
@@ -6521,6 +6587,7 @@
    ],
    "title": "The Glob (Pac-Man hardware, Magic Electronics)",
    "transforms": [],
+   "upright_monitor": true,
    "vector_fixups": [],
    "zip": "suprglob"
   },
@@ -6636,6 +6703,7 @@
     "cpu_d3d5",
     "gfx_eyes"
    ],
+   "upright_monitor": true,
    "vector_fixups": [
     [
      250,
