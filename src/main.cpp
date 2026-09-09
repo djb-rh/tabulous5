@@ -298,6 +298,14 @@ void loop() {
     if (cmd == 'f') dumpFontSpecimen();
     if (cmd == 'p') dumpPanel();
     if (cmd == 'd') probeSd();
+    // Deliberately crash, to prove the core dump partition is working. The
+    // dump survives the reboot; tools/coredump reads it back. Nothing but a
+    // typed serial character can reach this.
+    if (cmd == 'C') {
+      Serial.println("crashing on purpose");
+      Serial.flush();
+      *(volatile int *)0 = 1;
+    }
     if (cmd == 'a') nes_ui::startAudioCapture(4);
     // "j<hex>,<frames>": hold NES buttons, e.g. j08,20 holds START 20 frames.
     if (cmd == 'j') {

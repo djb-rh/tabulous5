@@ -301,7 +301,33 @@ body, and writing that truncated the file to zero *while reporting success* —
 silently emptying a pack. Writes without a body-bearing content type are now
 refused with a 415. Don't "simplify" that check away.
 
+## When it crashes
+
+The firmware writes an ELF core file into a 64 KB `coredump` partition when it
+panics, and it survives the reboot — so a crash that happens while nobody is
+watching the serial port can still be read afterwards:
+
+```bash
+tools/coredump
+```
+
+That prints the function and line the crash happened in, and where every other
+thread was. Nothing extra needs installing: the core file is a normal ELF and
+the addresses are resolved with `addr2line` from the toolchain that built the
+firmware. To check the path still works, send `C` on the serial port and the
+firmware will crash on purpose.
+
 ## Troubleshooting
+
+**The device boot-loops with `assert failed: lfs_fs_grow_`.** The LittleFS
+partition got smaller than the filesystem already written to it — which is what
+happens if you change a size in `partitions.csv` above the `spiffs` line, or
+shrink `spiffs` itself. LittleFS mounts, finds it has been formatted for more
+blocks than the partition now holds, and asserts. Fix it with
+`pio run -t uploadfs`, which rewrites the filesystem at the new size; the crash
+loop makes the USB port come and go, so the upload may need a couple of
+attempts. Everything in `data/` comes back; anything edited on the device does
+not.
 
 **No sound anywhere after a crash.** A reset that lands mid-transaction on
 the internal I2C bus can leave the ES8388 codec or the I/O expander that

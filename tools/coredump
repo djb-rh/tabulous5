@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Reads back the core dump left by the last crash and says where it happened.
+#
+# The firmware writes an ELF core file into the "coredump" partition when it
+# panics, and it survives the reboot — so a crash that happens while nobody is
+# watching the serial port is still recoverable afterwards.
+#
+#   tools/coredump          # what crashed, and where
+#   tools/coredump --raw    # just save the core file and say where it is
+#
+# Nothing extra needs installing: the core file is a normal ELF, and the
+# addresses in it are resolved with addr2line from the same toolchain that
+# built the firmware. There is nothing to read until something has crashed —
+# send "C" on the serial port and the firmware will crash on purpose, which is
+# how to check this whole path still works.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+proj="$(dirname "$here")"
+
+# Keep these in step with partitions.csv.
+offset=0xFF0000
+size=0x10000
+
+# esptool lives in PlatformIO's own environment, not necessarily the project's.
+python=""
+for candidate in "$HOME/.platformio/penv/bin/python" "$proj/.venv/bin/python" python3; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import esptool" 2>/dev/null; then
+    python="$candidate"; break
+  fi
+done
+[ -n "$python" ] || { echo "no python with esptool found" >&2; exit 1; }
+
+elf="$proj/.pio/build/tab5/firmware.elf"
+[ -f "$elf" ] || { echo "build it first: no $elf" >&2; exit 1; }
+
+addr2line="$(ls "$HOME"/.platformio/packages/toolchain-riscv32-esp/bin/*addr2line 2>/dev/null | head -1 || true)"
+
+out="${TMPDIR:-/tmp}/tab5-coredump"
+mkdir -p "$out"
+raw="$out/partition.bin"
+core="$out/core.elf"
+
+port="$(ls /dev/cu.usbmodem* 2>/dev/null | head -1 || true)"
+[ -n "$port" ] || { echo "no /dev/cu.usbmodem* found" >&2; exit 1; }
+
+echo "reading the core dump partition from $port..."
+"$python" -m esptool --port "$port" --baud 921600 read_flash "$offset" "$size" "$raw" >/dev/null
+
+"$python" - "$raw" "$core" "$elf" "${addr2line:-}" "${1:-}" <<'PY'
+import struct, subprocess, sys
+
+raw_path, core_path, elf, addr2line, arg = sys.argv[1:6]
+data = open(raw_path, "rb").read()
+
+# The partition holds a small header and then the core file itself, which
+# starts at the ELF magic. All-ones means the partition has never been written.
+at = data.find(b"\x7fELF")
+if at < 0:
+    sys.exit("no core dump stored — nothing has crashed since this partition was erased")
+core = data[at:]
+open(core_path, "wb").write(core)
+print("core file: %s (%d bytes)" % (core_path, len(core)))
+if arg == "--raw":
+    sys.exit(0)
+
+def notes(d):
+    """Every PT_NOTE entry in the core, as (type, descriptor)."""
+    phoff, = struct.unpack_from("<I", d, 28)
+    phentsize, phnum = struct.unpack_from("<HH", d, 42)
+    for i in range(phnum):
+        p = phoff + i * phentsize
+        typ, off, _v, _pa, filesz, _m = struct.unpack_from("<IIIIII", d, p)
+        if typ != 4:
+            continue
+        cur, end = off, off + filesz
+        while cur + 12 <= end:
+            namesz, descsz, ntype = struct.unpack_from("<III", d, cur)
+            desc = cur + 12 + ((namesz + 3) // 4) * 4
+            yield ntype, d[desc:desc + descsz]
+            cur = desc + ((descsz + 3) // 4) * 4
+
+def resolve(addrs):
+    """Addresses to function and line, via the toolchain's addr2line."""
+    if not addrs or not addrs[0] or not addr2line:
+        return {}
+    args = [addr2line, "-f", "-C", "-p", "-e", elf] + ["0x%08x" % a for a in addrs]
+    try:
+        out = subprocess.run(args, capture_output=True, text=True, check=False).stdout
+    except OSError:
+        return {}
+    return dict(zip(addrs, [l.strip() for l in out.splitlines()]))
+
+# A PRSTATUS descriptor is a fixed prologue then the register file; on this
+# target the first two registers are the program counter and the return
+# address, which is all that is needed to say where a thread was.
+threads = []
+for ntype, desc in notes(core):
+    if ntype == 1 and len(desc) >= 72 + 8:
+        pc, ra = struct.unpack_from("<II", desc, 72)
+        threads.append((pc, ra))
+
+if not threads:
+    sys.exit("core file has no thread state in it")
+
+where = resolve([t[0] for t in threads] + [t[1] for t in threads])
+
+# The crashing thread is written first.
+pc, ra = threads[0]
+print("\n--- crashed here ---")
+print("  pc  0x%08x  %s" % (pc, where.get(pc, "")))
+print("  ra  0x%08x  %s" % (ra, where.get(ra, "")))
+if len(threads) > 1:
+    print("\n--- other threads ---")
+    for pc, ra in threads[1:]:
+        print("  pc  0x%08x  %s" % (pc, where.get(pc, "")))
+if not addr2line:
+    print("\n(toolchain addr2line not found, so only addresses are shown)")
+PY
