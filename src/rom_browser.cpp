@@ -45,6 +45,14 @@ constexpr int kRailX = kMargin, kRailCellW = 60, kRailCols = 2;
 constexpr int kListX = kMargin + kRailCols * (kRailCellW + 4) + 16;
 int g_group = 2;  // 'A'
 int g_page = 0;
+// Whether the letter on the rail is the owner's choice or ours. Until they
+// pick one, a system opens on its starred games: that is the shortlist, and on
+// a card of thousands it is the only page anyone wants first.
+bool g_group_chosen = false;
+
+// Defined with the other list geometry, below; the scan needs it to decide
+// which group to open on.
+int groupTotal(int group);
 
 void addAction(const Rect &r, Action a, int param = 0) {
   uikit::addTarget(r, (int)a, param);
@@ -157,6 +165,12 @@ void scan() {
   }
   g_lib->finish();
   loadFavourites();
+  // Open on the starred games, unless a letter has been picked since this
+  // system was opened, or nothing is starred to show.
+  if (!g_group_chosen) {
+    g_group = groupTotal(rom_index::kFavourites) > 0 ? rom_index::kFavourites : 2;
+    g_page = 0;
+  }
   g_scanned = true;
   g_scanned_rev = filemanager::revision();
   Serial.printf("%s: %d ROMs (%d built in, %d on card) in %lu ms\n", g_cfg.title,
@@ -239,9 +253,11 @@ void begin(const Config &config, uint8_t scale, bool portrait) {
     delete g_lib;
     g_lib = new rom_index::Index(config.extension);
     g_scanned = false;
-    // Page eleven of the NES list is nowhere in a list of seventy.
+    // Page eleven of the NES list is nowhere in a list of seventy, and the
+    // next system opens on its own starred games rather than this one's letter.
     g_group = 2;  // 'A'
     g_page = 0;
+    g_group_chosen = false;
   }
   g_error = "";
   g_dirty = true;
@@ -420,6 +436,7 @@ Result handleTap(int x, int y, int *index) {
       audio::select();
       if (param != g_group) g_page = 0;
       g_group = param;
+      g_group_chosen = true;
       g_dirty = true;
       break;
     case Action::ToggleFav:
