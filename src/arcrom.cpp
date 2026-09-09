@@ -56,19 +56,25 @@ bool parse(const uint8_t *data, size_t len, Info *out, const char **why) {
     // Zero, which is what every file written before this byte meant anything
     // has here, is the common case: the monitor stood on its side.
     info.upright_monitor = data[24] == 0;
+    info.daughtercard = data[25] == 1;
+    if (data[25] > 1) return fail(why, "unknown add-on board");
   } else {
     return fail(why, "made by a different version of mkarcade");
   }
 
   info.cpu_high_bytes = high_banks * kCpuHighBank;
-  const size_t payload = kBasePayloadBytes + info.cpu_high_bytes;
+  const size_t program = kCpuBytes + info.cpu_high_bytes;
+  const size_t payload =
+      kBasePayloadBytes + info.cpu_high_bytes + (info.daughtercard ? program : 0);
   if (readU32(data + 12) != payload) return fail(why, "wrong amount of ROM in it");
   if (len < header + payload) return fail(why, "too short");
 
   info.system = System::PacMan;
   info.cpu = header;
   info.cpu_high = info.cpu + kCpuBytes;
-  info.gfx = info.cpu_high + info.cpu_high_bytes;
+  info.alt_cpu = info.cpu_high + info.cpu_high_bytes;
+  info.alt_cpu_high = info.alt_cpu + kCpuBytes;
+  info.gfx = info.alt_cpu + (info.daughtercard ? program : 0);
   info.palette = info.gfx + kGfxBytes;
   info.colour = info.palette + kPaletteBytes;
   info.sound1 = info.colour + kColourBytes;

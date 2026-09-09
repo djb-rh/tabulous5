@@ -253,7 +253,12 @@ const Entry kEntries[] = {
      "\n"
      "2P is the cabinet's second start button. A few of these games read it\n"
      "during play: Ms. Pac-Man Plus keeps its speed-up there, and its\n"
-     "invincibility on the first start button. Neither is a DIP switch."},
+     "invincibility on the first start button. Neither is a DIP switch.\n"
+     "\n"
+     "Ms. Pac-Man was never a board. It was a kit that plugged into a\n"
+     "Pac-Man board and swapped its own encrypted program in and out by\n"
+     "watching the address bus; that kit is emulated, so the real game and\n"
+     "its speedup hack run here rather than only the bootlegs."},
 
 #if defined(HAVE_SNES)
     {"SNES", "Super Nintendo, if you brought the core.", 0x4C3B8F,

@@ -13,6 +13,11 @@
  *     0x8000. Ms. Pac-Man and Ponpoko both need it.
  *   - a PAL between the program and the interrupt vector latch, which rewrites
  *     a couple of the values written to it. Piranha and Naughty Mouse need it.
+ *   - the Ms. Pac-Man kit, an add-on ROM board that sits between the Z80 and
+ *     the program ROMs and swaps the whole program for its own encrypted copy.
+ *     It watches the address bus: touching any of eight small windows in the
+ *     code switches banks, and the byte the CPU gets back is the new bank's.
+ *     That is how Ms. Pac-Man hides from a board that only knows Pac-Man.
  */
 #ifndef TABULOUS_NAMCO_FAST_H_
 #define TABULOUS_NAMCO_FAST_H_
@@ -36,6 +41,12 @@ typedef struct {
     uint8_t vector_count;
     uint8_t vector_from[NAMCO_FAST_MAX_VECTOR_FIXUPS];
     uint8_t vector_to[NAMCO_FAST_MAX_VECTOR_FIXUPS];
+    /* The Ms. Pac-Man kit: a second, encrypted copy of the whole program that
+     * the add-on board swaps in and out by watching the address bus. Both
+     * copies are 16K at 0x0000 and 16K at 0x8000; rom_alt_low being non-NULL
+     * is what turns the board on. */
+    const uint8_t* rom_alt_low;
+    const uint8_t* rom_alt_high;
 } namco_fast_desc_t;
 
 /* Call after namco_init(). Attaches the CPU to the board's bus. desc may be

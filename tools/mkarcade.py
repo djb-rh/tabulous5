@@ -129,6 +129,78 @@ CPU_TRANSFORMS = {"cpu_d3d5": cpu_d3d5, "cpu_pacplus": cpu_pacplus,
 GFX_TRANSFORMS = {"gfx_eyes": gfx_eyes, "gfx_ponpoko": gfx_ponpoko}
 
 
+# ---------------------------------------------------------------- Ms. Pac-Man
+
+# Ms. Pac-Man was not a board but a kit: an add-on that plugs into a Pac-Man
+# board between the CPU and its ROMs, carrying the new game as an encrypted
+# copy of the whole program. It watches the address bus, and swaps its own copy
+# in and out as the code runs, so a board that only knows Pac-Man runs a game
+# it has never heard of. The decryption and the patching are fixed, so both
+# copies of the program are built here; only the swapping is left to the
+# firmware.
+
+# Forty eight-byte patches, copied out of the kit's ROMs into Pac-Man's code.
+MSPACMAN_PATCHES = [
+    (0x0410, 0x8008), (0x08E0, 0x81D8), (0x0A30, 0x8118), (0x0BD0, 0x80D8),
+    (0x0C20, 0x8120), (0x0E58, 0x8168), (0x0EA8, 0x8198), (0x1000, 0x8020),
+    (0x1008, 0x8010), (0x1288, 0x8098), (0x1348, 0x8048), (0x1688, 0x8088),
+    (0x16B0, 0x8188), (0x16D8, 0x80C8), (0x16F8, 0x81C8), (0x19A8, 0x80A8),
+    (0x19B8, 0x81A8), (0x2060, 0x8148), (0x2108, 0x8018), (0x21A0, 0x81A0),
+    (0x2298, 0x80A0), (0x23E0, 0x80E8), (0x2418, 0x8000), (0x2448, 0x8058),
+    (0x2470, 0x8140), (0x2488, 0x8080), (0x24B0, 0x8180), (0x24D8, 0x80C0),
+    (0x24F8, 0x81C0), (0x2748, 0x8050), (0x2780, 0x8090), (0x27B8, 0x8190),
+    (0x2800, 0x8028), (0x2B20, 0x8100), (0x2B30, 0x8110), (0x2BF0, 0x81D0),
+    (0x2CC0, 0x80D0), (0x2CD8, 0x80E0), (0x2CF0, 0x81E0), (0x2D60, 0x8160),
+]
+
+
+def bitswap(value, width, *bits):
+    """MAME's bitswap<N>: bits[0] becomes the top bit of the result."""
+    out = 0
+    for i, b in enumerate(bits):
+        out |= ((value >> b) & 1) << (width - 1 - i)
+    return out
+
+
+def _decrypt(byte):
+    return bitswap(byte, 8, 0, 4, 5, 7, 6, 3, 2, 1)
+
+
+def mspacman_banks(rom):
+    """The two 32K programs the kit switches between: 16K at 0, 16K at 0x8000.
+
+    `rom` is the romset laid out as MAME loads it: Pac-Man's four ROMs at
+    0x0000 and the kit's three at 0x8000, 0x9000 and 0xB000.
+    """
+    # The board's own bank is Pac-Man, mirrored into the upper addresses.
+    plain = bytearray(rom[0x0000:0x4000]) * 2
+
+    # The kit's bank: Pac-Man's first three ROMs, its own decrypted fourth,
+    # then its own code up top with more of Pac-Man mirrored after it.
+    kit = bytearray(0x8000)
+    kit[0x0000:0x3000] = rom[0x0000:0x3000]
+    for i in range(0x1000):
+        kit[0x3000 + i] = _decrypt(
+            rom[0xB000 + bitswap(i, 12, 11, 3, 7, 9, 10, 8, 6, 5, 4, 2, 1, 0)])
+    for i in range(0x800):
+        kit[0x4000 + i] = _decrypt(
+            rom[0x8000 + bitswap(i, 11, 8, 7, 5, 9, 10, 6, 3, 4, 2, 1, 0)])
+        kit[0x4800 + i] = _decrypt(
+            rom[0x9800 + bitswap(i, 11, 3, 7, 9, 10, 8, 6, 5, 4, 2, 1, 0)])
+        kit[0x5000 + i] = _decrypt(
+            rom[0x9000 + bitswap(i, 11, 3, 7, 9, 10, 8, 6, 5, 4, 2, 1, 0)])
+        kit[0x5800 + i] = rom[0x1800 + i]
+    kit[0x6000:0x8000] = rom[0x2000:0x4000]
+
+    # The patches live in the kit's upper half, which sits at 0x8000 on the
+    # bus and at 0x4000 in this image.
+    for dst, src in MSPACMAN_PATCHES:
+        at = dst if dst < 0x4000 else dst - 0x4000
+        frm = src - 0x4000
+        kit[at:at + 8] = kit[frm:frm + 8]
+    return bytes(plain), bytes(kit)
+
+
 def load_table():
     with open(TABLE) as f:
         return json.load(f)["games"]
@@ -167,9 +239,46 @@ def safe_title(title):
     return " ".join(out.split()).rstrip(".")
 
 
+def read_sparse(zf, chips, members, size, why):
+    """The chips of a region placed at their own offsets, gaps left as 0xFF."""
+    by_crc, by_name = members
+    out = bytearray(b"\xFF" * size)
+    for name, offset, length, crc in chips:
+        info = by_crc.get((crc, length)) or by_name.get((name.lower(), length))
+        if info is None:
+            why.append("%s (%d bytes) is not in the zip" % (name, length))
+            return None
+        out[offset:offset + length] = zf.read(info)
+    return out
+
+
 def build(game, zip_path):
     """The finished file's bytes, or None and the reason it could not be made."""
     why = []
+    if game.get("daughtercard") == "mspacman":
+        with zipfile.ZipFile(zip_path) as zf:
+            members = index(zf)
+            raw = read_sparse(zf, game["cpu"], members, 0x10000, why)
+            gfx = read_region(zf, game["gfx"], members, why)
+            proms = read_region(zf, game["proms"], members, why)
+            sound = read_region(zf, game["sound"], members, why)
+        if raw is None or gfx is None or proms is None or sound is None:
+            return None, why[0]
+        plain, kit = mspacman_banks(raw)
+        # Both copies are laid out the way the plain container already is:
+        # 16K at 0x0000 then 16K at 0x8000, one after the other.
+        payload = plain + kit + bytes(gfx) + bytes(proms) + bytes(sound)
+        header = bytearray(HEADER_BYTES)
+        header[0:8] = MAGIC
+        header[8] = SYSTEM_PACMAN
+        header[9] = VERSION
+        header[10] = 4  # 16K of program at 0x8000
+        header[11] = 0
+        header[12:16] = struct.pack("<I", len(payload))
+        header[24] = 0 if game.get("upright_monitor", True) else 1
+        header[25] = 1  # the Ms. Pac-Man kit
+        return bytes(header) + payload, None
+
     with zipfile.ZipFile(zip_path) as zf:
         members = index(zf)
         cpu = read_region(zf, game["cpu"], members, why)

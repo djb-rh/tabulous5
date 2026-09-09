@@ -53,7 +53,8 @@ constexpr const char *kRomDir = "/arcade";
 // and never again, so unstarring one sticks.
 constexpr const char *kDefaultFavourites =
     "Pac-Man (Midway).arc\n"
-    "Ms. Pac-Man (bootleg, set 1).arc\n"
+    "Ms. Pac-Man.arc\n"
+    "Ms. Pac-Man (speedup hack).arc\n"
     "Puck Man (Japan, set 1).arc\n"
     "Crush Roller (set 2).arc\n"
     "Ponpoko.arc\n"
@@ -119,6 +120,9 @@ int g_shown_w = kRasterH;
 int g_shown_h = kRasterW;
 
 namco_t *g_sys = nullptr;
+// The Ms. Pac-Man kit's own copy of the program: 16K at 0x0000 and 16K at
+// 0x8000, held apart from the board's so the add-on can swap between them.
+uint8_t *g_alt_rom = nullptr;
 // The CPU lives beside the board rather than inside it: chips' own Z80 is
 // stepped one clock at a time and costs twice the frame budget, so the board
 // is driven by an instruction-stepped one instead. See namco_fast.h.
@@ -272,6 +276,33 @@ bool load(int index) {
   // its program ROM alone on this board, which is exactly the room needed, so
   // the extra chips go there and survive the file being freed below.
   namco_fast_desc_t board = {};
+  if (info.daughtercard) {
+    // Two copies of the program have to be resident at once, and the CPU
+    // fetches from whichever is switched in, so this wants internal memory as
+    // much as the machine itself does.
+    const size_t alt_bytes = arcrom::kCpuBytes + info.cpu_high_bytes;
+    if (!g_alt_rom) {
+      g_alt_rom = (uint8_t *)heap_caps_malloc(
+          arcrom::kCpuBytes + arcrom::kMaxCpuHighBanks * arcrom::kCpuHighBank,
+          MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      if (!g_alt_rom) {
+        g_alt_rom = (uint8_t *)heap_caps_malloc(
+            arcrom::kCpuBytes + arcrom::kMaxCpuHighBanks * arcrom::kCpuHighBank,
+            MALLOC_CAP_SPIRAM);
+      }
+    }
+    if (!g_alt_rom) {
+      heap_caps_free(rom);
+      releaseCore();
+      rom_browser::setError("out of memory for the Ms. Pac-Man board");
+      return false;
+    }
+    memcpy(g_alt_rom, rom + info.alt_cpu, alt_bytes);
+    board.rom_alt_low = g_alt_rom;
+    board.rom_alt_high = g_alt_rom + arcrom::kCpuBytes;
+    Serial.printf("arcade: Ms. Pac-Man kit fitted, second program in %s\n",
+                  esp_ptr_internal(g_alt_rom) ? "internal SRAM" : "PSRAM");
+  }
   if (info.cpu_high_bytes) {
     memcpy(&g_sys->rom_cpu[0x4000], rom + info.cpu_high, info.cpu_high_bytes);
     board.rom_high = &g_sys->rom_cpu[0x4000];

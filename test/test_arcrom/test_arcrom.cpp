@@ -21,13 +21,17 @@ static std::vector<uint8_t> v1(uint8_t system = 0, uint8_t version = 1,
   return f;
 }
 
-static std::vector<uint8_t> v2(uint8_t high_banks, uint8_t fixups) {
-  const uint32_t payload = kBasePayloadBytes + high_banks * kCpuHighBank;
+static std::vector<uint8_t> v2(uint8_t high_banks, uint8_t fixups,
+                               bool daughtercard = false) {
+  const uint32_t program = kCpuBytes + high_banks * kCpuHighBank;
+  const uint32_t payload = kBasePayloadBytes + high_banks * kCpuHighBank +
+                           (daughtercard ? program : 0);
   std::vector<uint8_t> f(kHeaderBytes + payload, 0);
   memcpy(f.data(), "TAB5ARC1", 8);
   f[9] = 2;
   f[10] = high_banks;
   f[11] = fixups;
+  f[25] = daughtercard ? 1 : 0;
   memcpy(f.data() + 12, &payload, sizeof(payload));
   for (uint8_t i = 0; i < fixups; i++) {
     f[16 + 2 * i] = 0xF0 + i;
@@ -81,6 +85,34 @@ void test_the_monitor_is_sideways_unless_the_file_says_otherwise() {
   auto old = v1();
   TEST_ASSERT_TRUE(parse(old.data(), old.size(), &info));
   TEST_ASSERT_TRUE(info.upright_monitor);
+}
+
+void test_the_kit_puts_a_second_program_before_the_tiles() {
+  auto f = v2(4, 0, true);
+  Info info;
+  const char *why = "x";
+  TEST_ASSERT_TRUE(parse(f.data(), f.size(), &info, &why));
+  TEST_ASSERT_EQUAL_STRING("", why);
+  TEST_ASSERT_TRUE(info.daughtercard);
+  TEST_ASSERT_EQUAL_size_t(32, info.cpu);
+  TEST_ASSERT_EQUAL_size_t(32 + 16384, info.cpu_high);
+  TEST_ASSERT_EQUAL_size_t(16384, info.cpu_high_bytes);
+  // The second copy is the same shape as the first, and the tiles follow it.
+  TEST_ASSERT_EQUAL_size_t(32 + 32768, info.alt_cpu);
+  TEST_ASSERT_EQUAL_size_t(32 + 49152, info.alt_cpu_high);
+  TEST_ASSERT_EQUAL_size_t(32 + 65536, info.gfx);
+  TEST_ASSERT_EQUAL_size_t(f.size(), info.sound2 + 256);
+
+  // Without the kit the tiles follow the first copy, as before.
+  auto plain = v2(4, 0);
+  TEST_ASSERT_TRUE(parse(plain.data(), plain.size(), &info));
+  TEST_ASSERT_FALSE(info.daughtercard);
+  TEST_ASSERT_EQUAL_size_t(32 + 32768, info.gfx);
+
+  auto unknown = v2(0, 0);
+  unknown[25] = 7;
+  TEST_ASSERT_FALSE(parse(unknown.data(), unknown.size(), &info, &why));
+  TEST_ASSERT_EQUAL_STRING("unknown add-on board", why);
 }
 
 void test_vector_fixups_are_read_back() {
@@ -152,6 +184,7 @@ int main() {
   RUN_TEST(test_regions_follow_each_other);
   RUN_TEST(test_upper_program_rom_pushes_the_later_regions_along);
   RUN_TEST(test_the_monitor_is_sideways_unless_the_file_says_otherwise);
+  RUN_TEST(test_the_kit_puts_a_second_program_before_the_tiles);
   RUN_TEST(test_vector_fixups_are_read_back);
   RUN_TEST(test_the_header_alone_says_how_long_the_file_is);
   RUN_TEST(test_malformed_files_are_refused_with_a_reason);

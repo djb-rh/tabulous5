@@ -242,7 +242,7 @@ scan, so the scan uses `readdir` and reads no file headers until you pick.
 ## Arcade
 
 Menu → **Arcade**. One board is emulated, the 1980 Namco Pac-Man board, and a
-great many games shipped on it — so the library is not two games but sixty-odd:
+great many games shipped on it — so the library is not two games but seventy:
 Pac-Man and Puck Man, the Ms. Pac-Man bootlegs that ran on an unmodified board,
 Crush Roller, Ponpoko, Eyes, Piranha, Mr. TNT, Naughty Mouse, Lizard Wizard,
 Jump Shot, Pac-Man Plus and a long tail of bootleg reskins. No daughterboard is
@@ -282,7 +282,26 @@ program ROMs answers at 0x8000 (Ms. Pac-Man and Ponpoko need it), and the PAL
 that rewrites a couple of interrupt vectors on the Piranha and Naughty Mouse
 boards. Both are declared in the `.arc` header.
 
-Sixty-odd rows of mostly-bootlegs is a wall of near-identical names, so the
+Ms. Pac-Man is the one game here that was not a board. It was sold as a kit
+that plugged into a Pac-Man board between the CPU and its ROMs, carrying the
+new game as an encrypted copy of the whole program and swapping itself in and
+out by watching the address bus: touch any of eight small windows in the code
+and the program changes under the CPU's feet. That is how it ran on a board
+that had never heard of it, and why the bootlegs exist — they are the kit
+flattened into plain ROMs.
+
+Both copies of the program are built by the packer, since the decryption and
+the forty patches are fixed; the firmware only does the swapping, which is a
+bank pointer and a table of pages to watch. It costs one indexed byte load per
+memory access, and only on the six sets that were sold as the kit: the real
+Ms. Pac-Man, the speedup hack, Ms. Pac Attack, Heart Burn, Pac-Gal and the
+Crush Roller conversion.
+
+The speedup hack really is faster, and by a measurable amount: driven left from
+the same spot with the same input, she covers the same hundred units of the
+maze in 1.5 seconds where the standard game takes 2.5.
+
+Seventy rows of mostly-bootlegs is a wall of near-identical names, so the
 distinct games — one per title, best set of each — are starred the first time
 the list is opened. Unstarring one sticks; the shortlist is never applied twice.
 

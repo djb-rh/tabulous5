@@ -30,6 +30,14 @@ import sys
 #   nmouse   likewise, with three
 MACHINES = {"pacman", "woodpek", "crush2", "piranha", "nmouse"}
 
+# Ms. Pac-Man was a kit that plugged into a Pac-Man board, not a board of its
+# own: an add-on carrying the new game as an encrypted copy of the whole
+# program, swapped in and out by watching the address bus. The decryption is
+# fixed, so mkarcade builds both copies and the firmware only does the
+# swapping. These sets are the ones that shipped that way.
+KIT_MACHINE = "mspacman"
+KIT_INIT = "init_mspacman"
+
 # A PAL on some boards rewrites the byte the program latches as its interrupt
 # vector. MAME models it as a short lookup; so do we, in the file header.
 VECTOR_FIXUPS = {
@@ -168,10 +176,11 @@ def main():
         if name in BROKEN:
             skip(name, "runs in MAME but not on our board")
             continue
-        if game["machine"] not in MACHINES:
+        kit = game["machine"] == KIT_MACHINE and game["init"] == KIT_INIT
+        if not kit and game["machine"] not in MACHINES:
             skip(name, "board is %s, not ours" % game["machine"])
             continue
-        if game["init"] not in TRANSFORMS:
+        if not kit and game["init"] not in TRANSFORMS:
             skip(name, "needs %s" % game["init"])
             continue
 
@@ -183,6 +192,39 @@ def main():
             continue
 
         cpu = sorted(r.get("maincpu", []), key=lambda x: x[1])
+        if kit:
+            # The kit's own ROMs sit at 0x8000, 0x9000 and 0xB000 with gaps
+            # between them, so the region is taken as it is laid out rather
+            # than as a run of chips.
+            if not contiguous([c for c in cpu if c[1] < 0x4000], 0x0000, 0x4000):
+                skip(name, "program ROM is not a full 16K")
+                continue
+            if not contiguous(sorted(r.get("gfx1", []), key=lambda x: x[1]), 0, 0x2000):
+                skip(name, "tile ROM is not 8K")
+                continue
+            proms = sorted(r.get("proms", []), key=lambda x: x[1])
+            sound = sorted(r.get("namco", []), key=lambda x: x[1])
+            if [(o, l) for _n, o, l, _c in proms] != [(0x00, 0x20), (0x20, 0x100)]:
+                skip(name, "colour PROMs are not the pair we expect")
+                continue
+            if [(o, l) for _n, o, l, _c in sound] != [(0x000, 0x100), (0x100, 0x100)]:
+                skip(name, "sound PROMs are not the pair we expect")
+                continue
+            out.append({
+                "set": name,
+                "title": game["title"],
+                "upright_monitor": game["rot"] != "ROT0",
+                "zip": game["parent"] if game["parent"] != "0" else name,
+                "transforms": [],
+                "vector_fixups": [],
+                "daughtercard": "mspacman",
+                "cpu": [[n, o, l, c] for n, o, l, c in cpu],
+                "cpu_high": [],
+                "gfx": [[n, o, l, c] for n, o, l, c in sorted(r["gfx1"], key=lambda x: x[1])],
+                "proms": [[n, o, l, c] for n, o, l, c in proms],
+                "sound": [[n, o, l, c] for n, o, l, c in sound],
+            })
+            continue
         low = [c for c in cpu if c[1] < 0x4000]
         high = [c for c in cpu if c[1] >= 0x8000]
         if len(low) + len(high) != len(cpu):

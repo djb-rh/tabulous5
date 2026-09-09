@@ -28,8 +28,8 @@ constexpr size_t kBasePayloadBytes =
     kCpuBytes + kGfxBytes + kPaletteBytes + kColourBytes + 2 * kSoundBytes;
 
 // The largest a file can be, which is what the loader reserves.
-constexpr size_t kMaxFileBytes =
-    kHeaderBytes + kBasePayloadBytes + kMaxCpuHighBanks * kCpuHighBank;
+constexpr size_t kMaxFileBytes = kHeaderBytes + kBasePayloadBytes +
+                                 2 * kMaxCpuHighBanks * kCpuHighBank + kCpuBytes;
 
 // Kept so files made before the format grew still load.
 constexpr size_t kV1FileBytes = kV1HeaderBytes + kBasePayloadBytes;
@@ -56,6 +56,14 @@ struct Info {
   // its bootlegs -- ran with the monitor the usual way round, and turning
   // those would be the bug. False means leave the raster alone.
   bool upright_monitor = true;
+
+  // Ms. Pac-Man was sold as a kit that plugged into a Pac-Man board: an extra
+  // ROM board that watches the address bus and swaps the whole program between
+  // the original Pac-Man code and its own, encrypted, copy. When this is set
+  // the file carries that second copy after the first, same shape and size,
+  // and the emulation switches between them.
+  bool daughtercard = false;
+  size_t alt_cpu = 0, alt_cpu_high = 0;
   uint8_t vector_fixups = 0;
   uint8_t vector_from[kMaxVectorFixups] = {0, 0, 0, 0};
   uint8_t vector_to[kMaxVectorFixups] = {0, 0, 0, 0};
