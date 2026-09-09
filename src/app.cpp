@@ -197,7 +197,7 @@ const Entry kEntries[] = {
      "Hide it from SETTINGS when it is in the way."},
 
     {"NES", "Every cartridge on the card, with sound.", 0x8B2E3F,
-     glyphs::Glyph::None, GameId::Nes,
+     glyphs::Glyph::Nes, GameId::Nes,
      "Runs NES ROMs from /nes on a FAT32 microSD card. A few can be built in\n"
      "instead: put .nes files in data/nes and flash them with\n"
      "pio run -e tab5 -t uploadfs\n"
@@ -215,7 +215,7 @@ const Entry kEntries[] = {
      "ROMs are yours to supply. None are shipped with this device."},
 
     {"Game Boy", "The 1989 handheld, in its own green.", 0x2E6B4F,
-     glyphs::Glyph::None, GameId::GameBoy,
+     glyphs::Glyph::GameBoy, GameId::GameBoy,
      "Runs Game Boy ROMs from /gb on a FAT32 microSD card. A few can be built\n"
      "in instead: put .gb files in data/gb and flash them with\n"
      "pio run -e tab5 -t uploadfs\n"
@@ -232,7 +232,7 @@ const Entry kEntries[] = {
      "and again on the way out."},
 
     {"Arcade", "One 1980 board, and everything that ran on it.", 0x1F3A93,
-     glyphs::Glyph::None, GameId::Arcade,
+     glyphs::Glyph::Pac, GameId::Arcade,
      "Runs the Namco Pac-Man board, and a great many games shipped on it:\n"
      "Pac-Man and Puck Man, the Ms. Pac-Man bootlegs that ran on an\n"
      "unmodified board, Crush Roller, Ponpoko, Eyes, Piranha, Mr. TNT,\n"
@@ -241,9 +241,9 @@ const Entry kEntries[] = {
      "\n"
      "The distinct games are starred, because most of the list is reskins.\n"
      "\n"
-     "An arcade machine's ROMs are several separate chips. mkarcade.py --all\n"
-     "packs every romset you already have into .arc files; put those in\n"
-     "/arcade on the card. No ROMs come with this device.\n"
+     "An arcade machine's ROMs are several chips. mkarcade.py --all packs the\n"
+     "romsets you have into .arc files for /arcade on the card. No ROMs come\n"
+     "with this device.\n"
      "\n"
      "The cabinet's monitor stands on its side, so the picture does too. FULL\n"
      "fills the panel's height exactly and expects a USB gamepad; 2x leaves\n"
@@ -251,18 +251,16 @@ const Entry kEntries[] = {
      "\n"
      "SELECT puts a coin in. START begins the game. Hold both to come back.\n"
      "\n"
-     "2P is the cabinet's second start button. A few of these games read it\n"
-     "during play: Ms. Pac-Man Plus keeps its speed-up there, and its\n"
-     "invincibility on the first start button. Neither is a DIP switch.\n"
+     "2P is the cabinet's second start button. Ms. Pac-Man Plus keeps its\n"
+     "speed-up there and its invincibility on START. Neither is a DIP switch.\n"
      "\n"
-     "Ms. Pac-Man was never a board. It was a kit that plugged into a\n"
-     "Pac-Man board and swapped its own encrypted program in and out by\n"
-     "watching the address bus; that kit is emulated, so the real game and\n"
-     "its speedup hack run here rather than only the bootlegs."},
+     "Ms. Pac-Man was never a board but a kit that plugged into one, swapping\n"
+     "its own encrypted program in and out. That kit is emulated, so the real\n"
+     "game and its speedup hack run here, not only the bootlegs."},
 
 #if defined(HAVE_SNES)
     {"SNES", "Super Nintendo, if you brought the core.", 0x4C3B8F,
-     glyphs::Glyph::None, GameId::Snes,
+     glyphs::Glyph::Snes, GameId::Snes,
      "Runs SNES ROMs from /snes on a FAT32 microSD card.\n"
      "\n"
      "The emulator core is not part of this project and is not shipped with\n"
@@ -487,23 +485,67 @@ void drawAbout() {
   uikit::drawLabel(e.blurb, kW - kMargin - 30, 58, inkFor(e.color),
                    &fonts::FreeSans12pt7b, middle_right);
 
-  // Manual line breaks: the copy is written to fit, so it needs laying out
-  // rather than wrapping.
-  int y = 124;
-  const char *p = e.about;
-  char line[128];
-  while (*p) {
-    const char *nl = strchr(p, '\n');
-    const size_t len = nl ? (size_t)(nl - p) : strlen(p);
-    const size_t n = len < sizeof(line) - 1 ? len : sizeof(line) - 1;
-    memcpy(line, p, n);
-    line[n] = '\0';
-    if (n) {
-      uikit::drawLabel(line, kMargin, y, kText, &fonts::FreeSans12pt7b);
+  // Wrapped to the screen, not to wherever the copy happens to have newlines.
+  // Written text does not know how wide this panel is, and a hand-broken line
+  // is always either short of the edge or over it; the Arcade page had grown
+  // past the bottom while using barely half the width. A blank line is a
+  // paragraph break and is kept; a single newline is just where the sentence
+  // was typed, and is a space.
+  {
+    auto &g = uikit::gfx();
+    g.setFont(&fonts::FreeSans12pt7b);
+    g.setTextSize(1);
+    const int width = kW - 2 * kMargin;
+    int y = 124;
+    char line[192];
+    int len = 0;          // what is on the line so far
+    int fits = 0;         // ...up to the last word boundary that fit
+    const char *p = e.about;
+
+    // Never write under the buttons. Copy grows; this panel does not.
+    const int bottom = kH - 120;
+    auto flush = [&](bool blank_after) {
+      line[fits > 0 ? fits : len] = '\0';
+      if (line[0] && y <= bottom) {
+        uikit::drawLabel(line, kMargin, y, kText, &fonts::FreeSans12pt7b);
+      }
+      y += blank_after ? 46 : 32;
+      len = 0;
+      fits = 0;
+    };
+
+    while (*p) {
+      // A run of two or more newlines ends the paragraph. Anything else that
+      // is not a letter is a gap between words -- including a single newline,
+      // which is only where the sentence happened to be typed.
+      if (*p == '\n' && p[1] == '\n') {
+        flush(true);
+        while (*p == '\n') p++;
+        continue;
+      }
+      if (*p == ' ' || *p == '\n') {
+        p++;
+        continue;
+      }
+      // One word.
+      const char *w = p;
+      while (*p && *p != ' ' && *p != '\n') p++;
+      const int wlen = (int)(p - w);
+      if (wlen > 0) {
+        const int start = len;
+        if (len > 0 && len < (int)sizeof(line) - 2) line[len++] = ' ';
+        for (int i = 0; i < wlen && len < (int)sizeof(line) - 1; i++) line[len++] = w[i];
+        line[len] = '\0';
+        if (g.textWidth(line) > width && start > 0) {
+          len = start;      // this word does not fit; put it on the next line
+          flush(false);
+          p = w;            // and read it again
+          continue;
+        }
+        fits = len;
+      }
     }
-    y += 32;
-    if (!nl) break;
-    p = nl + 1;
+    flush(false);
   }
 
   // The theme toggle lives here because About is the one screen reachable
