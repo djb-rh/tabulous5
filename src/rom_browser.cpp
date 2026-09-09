@@ -224,10 +224,25 @@ void drawRail() {
 }  // namespace
 
 void begin(const Config &config, uint8_t scale, bool portrait) {
+  // One browser serves every system, so opening a different one has to throw
+  // the last one's library away. Keeping it meant the first system opened
+  // after a boot owned the screen: pick NES, then Arcade, and Arcade showed
+  // the NES cartridges -- an index is built for one file extension and the
+  // scan is remembered by directory.
+  const bool switched = g_lib == nullptr || g_cfg.dir == nullptr ||
+                        strcmp(g_cfg.dir, config.dir) != 0 ||
+                        strcasecmp(g_cfg.extension, config.extension) != 0;
   g_portrait = portrait;
   g_cfg = config;
   g_scale = scale == config.scale_value[1] ? config.scale_value[1] : config.scale_value[0];
-  if (!g_lib) g_lib = new rom_index::Index(config.extension);
+  if (switched) {
+    delete g_lib;
+    g_lib = new rom_index::Index(config.extension);
+    g_scanned = false;
+    // Page eleven of the NES list is nowhere in a list of seventy.
+    g_group = 2;  // 'A'
+    g_page = 0;
+  }
   g_error = "";
   g_dirty = true;
 }
