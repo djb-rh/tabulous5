@@ -56,9 +56,14 @@ void test_mapper_number_spans_two_bytes() {
   TEST_ASSERT_FALSE(info.supported);
 }
 
-void test_supported_set_matches_agnes() {
-  for (uint8_t m : {0, 1, 2, 4}) TEST_ASSERT_TRUE(mapperSupported(m));
-  for (uint8_t m : {3, 5, 7, 9, 64, 255}) TEST_ASSERT_FALSE(mapperSupported(m));
+// The vendored core decides this, not us: Cartridge::createMapper in
+// third_party/anemoia/core/cartridge.cpp dispatches 0, 1, 2, 3, 4 and 69, and
+// its default arm sets is_valid = false. The list below was written against
+// agnes, which handled only 0, 1, 2 and 4 -- if the core is swapped again,
+// this test is the thing that has to move first.
+void test_supported_set_matches_core() {
+  for (uint8_t m : {0, 1, 2, 3, 4, 69}) TEST_ASSERT_TRUE(mapperSupported(m));
+  for (uint8_t m : {5, 7, 9, 64, 68, 70, 255}) TEST_ASSERT_FALSE(mapperSupported(m));
 }
 
 void test_trainer_shifts_the_expected_length() {
@@ -109,6 +114,7 @@ void test_chr_ram_is_legal() {
 void test_names() {
   TEST_ASSERT_EQUAL_STRING("NROM", mapperName(0));
   TEST_ASSERT_EQUAL_STRING("MMC3", mapperName(4));
+  TEST_ASSERT_EQUAL_STRING("FME-7", mapperName(69));
   TEST_ASSERT_EQUAL_STRING("unsupported", mapperName(200));
 }
 
@@ -116,7 +122,7 @@ int main(int, char **) {
   UNITY_BEGIN();
   RUN_TEST(test_parses_nrom);
   RUN_TEST(test_mapper_number_spans_two_bytes);
-  RUN_TEST(test_supported_set_matches_agnes);
+  RUN_TEST(test_supported_set_matches_core);
   RUN_TEST(test_trainer_shifts_the_expected_length);
   RUN_TEST(test_rejects_truncated_file);
   RUN_TEST(test_rejects_non_ines);

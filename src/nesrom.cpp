@@ -26,6 +26,7 @@ const char *mapperName(uint8_t mapper) {
     case 3: return "CNROM";
     case 4: return "MMC3";
     case 7: return "AxROM";
+    case 69: return "FME-7";
     default: return "unsupported";
   }
 }
