@@ -52,6 +52,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "as8.bin",
@@ -149,6 +150,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "bcuda_gfx1.bin",
@@ -262,6 +264,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "buc9.5e",
@@ -375,6 +378,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "9.5e",
@@ -489,6 +493,7 @@
      79052742
     ]
    ],
+   "eight_way": false,
    "gfx": [
     [
      "candory.v2",
@@ -592,6 +597,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "p9.5e",
@@ -705,6 +711,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "crockmc_09.bin",
@@ -818,6 +825,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "tpa",
@@ -931,6 +939,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "unkmol.5e",
@@ -1023,6 +1032,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "maketrax.5e",
@@ -1124,6 +1134,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "c9.bin",
@@ -1237,6 +1248,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "9.bin",
@@ -1329,6 +1341,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "d5",
@@ -1409,6 +1422,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "g38205.5d",
@@ -1513,6 +1527,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "9.bin",
@@ -1605,6 +1620,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "5.5d",
@@ -1709,6 +1725,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "gorkgfx4.rom",
@@ -1798,6 +1815,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacman.5e",
@@ -1887,6 +1905,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacmanh.5e",
@@ -1988,6 +2007,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "hm9.5e",
@@ -2101,6 +2121,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "joy9.5e",
@@ -2190,6 +2211,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": true,
    "gfx": [
     [
      "5e",
@@ -2269,6 +2291,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": true,
    "gfx": [
     [
      "5e",
@@ -2361,6 +2384,7 @@
      4068455848
     ]
    ],
+   "eight_way": true,
    "gfx": [
     [
      "5e.cpu",
@@ -2438,6 +2462,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "tnt.5",
@@ -2537,6 +2562,7 @@
    ],
    "cpu_high": [],
    "daughtercard": "mspacman",
+   "eight_way": false,
    "gfx": [
     [
      "5e",
@@ -2627,6 +2653,7 @@
      915190117
     ]
    ],
+   "eight_way": false,
    "gfx": [
     [
      "5e",
@@ -2699,6 +2726,7 @@
      2569131119
     ]
    ],
+   "eight_way": false,
    "gfx": [
     [
      "2732_e.5e",
@@ -2771,6 +2799,7 @@
      2569131119
     ]
    ],
+   "eight_way": false,
    "gfx": [
     [
      "5e",
@@ -2867,6 +2896,7 @@
    ],
    "cpu_high": [],
    "daughtercard": "mspacman",
+   "eight_way": false,
    "gfx": [
     [
      "5e",
@@ -2963,6 +2993,7 @@
    ],
    "cpu_high": [],
    "daughtercard": "mspacman",
+   "eight_way": false,
    "gfx": [
     [
      "5.5e",
@@ -3053,6 +3084,7 @@
      928974483
     ]
    ],
+   "eight_way": false,
    "gfx": [
     [
      "mpe7.5e",
@@ -3161,6 +3193,7 @@
    ],
    "cpu_high": [],
    "daughtercard": "mspacman",
+   "eight_way": false,
    "gfx": [
     [
      "5e",
@@ -3251,6 +3284,7 @@
      543856163
     ]
    ],
+   "eight_way": false,
    "gfx": [
     [
      "5e",
@@ -3347,6 +3381,7 @@
    ],
    "cpu_high": [],
    "daughtercard": "mspacman",
+   "eight_way": false,
    "gfx": [
     [
      "5e",
@@ -3437,6 +3472,7 @@
      995996424
     ]
    ],
+   "eight_way": false,
    "gfx": [
     [
      "5e",
@@ -3538,6 +3574,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "5e.cpu",
@@ -3651,6 +3688,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "5e.cpu",
@@ -3740,6 +3778,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacman.5e",
@@ -3841,6 +3880,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "naumouse.d5",
@@ -3966,6 +4006,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "naumouse.d5",
@@ -4080,6 +4121,7 @@
      915190117
     ]
    ],
+   "eight_way": false,
    "gfx": [
     [
      "5e",
@@ -4206,6 +4248,7 @@
    ],
    "cpu_high": [],
    "daughtercard": "mspacman",
+   "eight_way": false,
    "gfx": [
     [
      "pmg9.bin",
@@ -4319,6 +4362,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacheart.ch1",
@@ -4408,6 +4452,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacman.5e",
@@ -4485,6 +4530,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacman.5e",
@@ -4586,6 +4632,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacfama_09.bin",
@@ -4699,6 +4746,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "jpm9",
@@ -4812,6 +4860,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacm-0.5e",
@@ -4925,6 +4974,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "come9.5e",
@@ -5038,6 +5088,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pm-9s.5e",
@@ -5151,6 +5202,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "p9bfz.5e",
@@ -5264,6 +5316,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pm-9s.5e",
@@ -5353,6 +5406,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacmanh.5e",
@@ -5430,6 +5484,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacplus.5e",
@@ -5533,6 +5588,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pm1chg1.bin",
@@ -5622,6 +5678,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pain5.5e",
@@ -5723,6 +5780,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pir9.5e",
@@ -5820,6 +5878,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pr5.cpu",
@@ -5933,6 +5992,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "p9.5e",
@@ -6055,6 +6115,7 @@
      79052742
     ]
    ],
+   "eight_way": false,
    "gfx": [
     [
      "ppoko9.bin",
@@ -6159,6 +6220,7 @@
      3013337725
     ]
    ],
+   "eight_way": false,
    "gfx": [
     [
      "ppoko9.bin",
@@ -6262,6 +6324,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pop9.5e",
@@ -6375,6 +6438,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pm1_chg1.5e",
@@ -6488,6 +6552,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "9a.5e",
@@ -6577,6 +6642,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacman.5e",
@@ -6678,6 +6744,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "9.5e",
@@ -6767,6 +6834,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacman.5e",
@@ -6844,6 +6912,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pm9.5e",
@@ -6933,6 +7002,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "pacman.5e",
@@ -7010,6 +7080,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "sb5e.cpu",
@@ -7089,6 +7160,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "ic92.5",
@@ -7142,6 +7214,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "globo-10_b.5e",
@@ -7255,6 +7328,7 @@
     ]
    ],
    "cpu_high": [],
+   "eight_way": false,
    "gfx": [
     [
      "t109.5e",

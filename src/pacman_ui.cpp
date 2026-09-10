@@ -25,6 +25,7 @@ extern "C" {
 #include "arcrom.h"
 #include "audio.h"
 #include "emu_video.h"
+#include "fourway.h"
 #include "joypad.h"
 #include "joypad_ui.h"
 #include "padmap.h"
@@ -112,6 +113,11 @@ bool g_dirty = true;
 
 settings_store::ArcadeSettings g_settings;
 padmap::Map g_padmap;
+// The plate under a four-way stick, which every one of these cabinets but
+// three had. See fourway.h: without it, turning a corner means letting go of
+// the old direction before pressing the new one, exactly, every time.
+fourway::Gate g_gate(joypad::kUp, joypad::kDown, joypad::kLeft, joypad::kRight);
+bool g_eight_way = false;
 int g_quit_hold = 0;
 float g_scale = 2.0f;
 bool g_portrait = true;
@@ -324,6 +330,8 @@ bool load(int index) {
     g_palette[i] = rgb(((c & 0xFF) << 16) | (((c >> 8) & 0xFF) << 8) | ((c >> 16) & 0xFF));
   }
 
+  g_eight_way = info.eight_way;
+  g_gate.reset();
   g_stand_up = info.upright_monitor;
   g_shown_w = g_stand_up ? kRasterH : kRasterW;
   g_shown_h = g_stand_up ? kRasterW : kRasterH;
@@ -474,6 +482,9 @@ void runFrame(uint32_t now_ms) {
   }
   if (!menu_held) g_menu_down = false;
 
+  // Through the plate first, so the board sees what a four-way stick could
+  // actually have sent it.
+  if (!g_eight_way) g_pad = g_gate.filter(g_pad);
   const uint32_t wanted = toCabinet(g_pad);
   namco_input_set(g_sys, wanted);
   namco_input_clear(g_sys, ~wanted & 0x3FFF);

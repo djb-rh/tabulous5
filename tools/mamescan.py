@@ -96,11 +96,31 @@ def split_args(s):
     return out
 
 
+def joystick_ways(text):
+    """How many directions each INPUT_PORTS block's player-one stick had.
+
+    A four-way stick has a plate under it that makes two directions at once
+    impossible, and the games written for one do nothing sensible when it
+    happens. Which is which is recorded per game, so the console can put that
+    plate back for the games that had it and stay out of the way for the rest.
+    """
+    ways = {}
+    for m in re.finditer(r"INPUT_PORTS_START\(\s*(\w+)\s*\)(.*?)INPUT_PORTS_END", text, re.S):
+        name, body = m.group(1), m.group(2)
+        p1 = body.split('PORT_START("IN1")')[0]
+        joy = [l for l in p1.splitlines() if "IPT_JOYSTICK_" in l]
+        if not joy:
+            continue  # inherits another block, via PORT_INCLUDE
+        ways[name] = 8 if any("PORT_8WAY" in l for l in joy) else 4
+    return ways
+
+
 def read_driver(path):
     text = open(path, encoding="utf-8", errors="replace").read()
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
     text = re.sub(r"//[^\n]*", "", text)
 
+    ways = joystick_ways(text)
     sets = {}
     for m in re.finditer(r"ROM_START\(\s*(\w+)\s*\)(.*?)ROM_END", text, re.S):
         name, body = m.group(1), m.group(2)
@@ -131,9 +151,10 @@ def read_driver(path):
         a = split_args(m.group(1).rstrip().rstrip(")"))
         if len(a) < 11:
             continue
-        games[a[1]] = {"parent": a[2], "machine": a[3], "init": a[6],
-                       "rot": a[7], "title": a[9].strip('"'), "flags": a[10]}
-    return sets, games
+        games[a[1]] = {"parent": a[2], "machine": a[3], "input": a[4],
+                       "init": a[6], "rot": a[7], "title": a[9].strip('"'),
+                       "flags": a[10]}
+    return sets, games, ways
 
 
 def contiguous(loads, start, want):
@@ -149,13 +170,14 @@ def contiguous(loads, start, want):
 def main():
     src = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser(
         "~/Developer/mame/src/mame/pacman")
-    sets, games = {}, {}
+    sets, games, ways = {}, {}, {}
     for name in sorted(os.listdir(src)):
         if not name.endswith(".cpp"):
             continue
-        s, g = read_driver(os.path.join(src, name))
+        s, g, w = read_driver(os.path.join(src, name))
         sets.update(s)
         games.update(g)
+        ways.update(w)
 
     out, skipped = [], {}
 
@@ -214,6 +236,9 @@ def main():
                 "set": name,
                 "title": game["title"],
                 "upright_monitor": game["rot"] != "ROT0",
+            # Blocks that list no stick of their own inherit Pac-Man's, which
+            # is four-way -- as is every one of these but three.
+            "eight_way": ways.get(game["input"], 4) == 8,
                 "zip": game["parent"] if game["parent"] != "0" else name,
                 "transforms": [],
                 "vector_fixups": [],
@@ -257,6 +282,9 @@ def main():
             # Ponpoko and its bootlegs did not, and turning those would be the
             # bug rather than the fix.
             "upright_monitor": game["rot"] != "ROT0",
+            # Blocks that list no stick of their own inherit Pac-Man's, which
+            # is four-way -- as is every one of these but three.
+            "eight_way": ways.get(game["input"], 4) == 8,
             # Merged romsets store each file once, in the parent's zip.
             "zip": game["parent"] if game["parent"] != "0" else name,
             "transforms": TRANSFORMS[game["init"]],

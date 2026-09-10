@@ -308,6 +308,21 @@ Seventy rows of mostly-bootlegs is a wall of near-identical names, so the
 distinct games — one per title, best set of each — are starred the first time
 the list is opened. Unstarring one sticks; the shortlist is never applied twice.
 
+These cabinets had a four-way stick: a plate under the handle that makes two
+directions at once physically impossible. The program was written on top of
+that and does nothing sensible when it is broken, and every control we have
+breaks it -- a cross, a thumbstick and four buttons on a screen all let two
+adjacent directions be held together. Hold left and add up and the board keeps
+going left until it hits a wall, so turning a corner means letting go of the
+old direction before pressing the new one, exactly, every time.
+
+So the plate is put back in software, on the sixty-six of these games MAME
+records as four-way. Two directions become one, favouring whichever just
+changed: holding left and adding up is a turn upward, on that frame. The rule
+is MAME's own, which is why no ROM needed patching to get it. Jump Shot and
+Lizard Wizard really were eight-way and are left alone; which is which travels
+in the `.arc` header with everything else about the cabinet.
+
 The cabinet's monitor stands on its side, so the picture does too: it is turned
 upright while the palette is applied, which costs nothing extra. Ponpoko and
 its bootlegs are the exception — the same board, the monitor the usual way

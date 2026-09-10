@@ -62,6 +62,10 @@ struct Info {
   // the original Pac-Man code and its own, encrypted, copy. When this is set
   // the file carries that second copy after the first, same shape and size,
   // and the emulation switches between them.
+  // Nearly every game on this board was played on a four-way stick, which
+  // makes two directions at once physically impossible. Three were not.
+  bool eight_way = false;
+
   bool daughtercard = false;
   size_t alt_cpu = 0, alt_cpu_high = 0;
   uint8_t vector_fixups = 0;

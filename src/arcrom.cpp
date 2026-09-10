@@ -57,6 +57,7 @@ bool parse(const uint8_t *data, size_t len, Info *out, const char **why) {
     // has here, is the common case: the monitor stood on its side.
     info.upright_monitor = data[24] == 0;
     info.daughtercard = data[25] == 1;
+    info.eight_way = data[26] == 1;
     if (data[25] > 1) return fail(why, "unknown add-on board");
   } else {
     return fail(why, "made by a different version of mkarcade");
