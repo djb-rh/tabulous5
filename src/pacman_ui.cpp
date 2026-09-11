@@ -118,6 +118,9 @@ padmap::Map g_padmap;
 // the old direction before pressing the new one, exactly, every time.
 fourway::Gate g_gate(joypad::kUp, joypad::kDown, joypad::kLeft, joypad::kRight);
 bool g_eight_way = false;
+// Whether this cabinet's control panel leaves the gamepad's face buttons with
+// nothing to do. When it does, they become a second stick -- see padmap.h.
+bool g_buttons_as_stick = false;
 int g_quit_hold = 0;
 float g_scale = 2.0f;
 bool g_portrait = true;
@@ -331,6 +334,7 @@ bool load(int index) {
   }
 
   g_eight_way = info.eight_way;
+  g_buttons_as_stick = !info.eight_way && !info.uses_button;
   g_gate.reset();
   g_stand_up = info.upright_monitor;
   g_shown_w = g_stand_up ? kRasterH : kRasterW;
@@ -466,7 +470,19 @@ void runFrame(uint32_t now_ms) {
   if (g_settings.scale == 5) g_pad = 0;
   {
     const usbpad::State u = usbpad::state();
-    if (u.connected) g_pad |= padmap::toNes(u.down, u.x, u.y, g_padmap);
+    if (u.connected) {
+      const uint8_t from_pad = padmap::toNes(u.down, u.x, u.y, g_padmap);
+      if (g_buttons_as_stick) {
+        // They are the stick now, and only that: A is the cabinet's second
+        // start button, and a diamond that also starts a two-player game every
+        // time you turn right would be worse than no diamond at all. It is
+        // still on the screen at the smaller size.
+        g_pad |= (uint8_t)(from_pad & ~(joypad::kA | joypad::kB));
+        g_pad |= padmap::toStick(u.down, g_padmap);
+      } else {
+        g_pad |= from_pad;
+      }
+    }
   }
   if ((g_pad & (joypad::kSelect | joypad::kStart)) == (joypad::kSelect | joypad::kStart)) {
     if (++g_quit_hold >= 40) menu_held = true;

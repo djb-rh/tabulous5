@@ -254,6 +254,10 @@ const Entry kEntries[] = {
      "2P is the cabinet's second start button. Ms. Pac-Man Plus keeps its\n"
      "speed-up there and its invincibility on START. Neither is a DIP switch.\n"
      "\n"
+     "Most of these games have no button at all, and on those a gamepad's\n"
+     "four face buttons are a second stick: X up, B down, Y left, A right.\n"
+     "Either hand will do. The games that do use a button keep it.\n"
+     "\n"
      "Ms. Pac-Man was never a board but a kit that plugged into one, swapping\n"
      "its own encrypted program in and out. That kit is emulated, so the real\n"
      "game and its speedup hack run here, not only the bootlegs."},

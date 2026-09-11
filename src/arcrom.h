@@ -66,6 +66,10 @@ struct Info {
   // makes two directions at once physically impossible. Three were not.
   bool eight_way = false;
 
+  // Whether the cabinet had a fire button. Most of these had none at all,
+  // which is what frees a gamepad's face buttons to be a second stick.
+  bool uses_button = false;
+
   bool daughtercard = false;
   size_t alt_cpu = 0, alt_cpu_high = 0;
   uint8_t vector_fixups = 0;

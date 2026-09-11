@@ -278,6 +278,7 @@ def build(game, zip_path):
         header[24] = 0 if game.get("upright_monitor", True) else 1
         header[25] = 1  # the Ms. Pac-Man kit
         header[26] = 1 if game.get("eight_way") else 0
+        header[27] = 1 if game.get("uses_button") else 0
         return bytes(header) + payload, None
 
     with zipfile.ZipFile(zip_path) as zf:
@@ -322,6 +323,7 @@ def build(game, zip_path):
     # Zero is the four-way stick nearly all of these had, and is what every
     # file written before this byte meant anything already says.
     header[26] = 1 if game.get("eight_way") else 0
+    header[27] = 1 if game.get("uses_button") else 0
     header[12:16] = struct.pack("<I", len(payload))
     for i, (frm, to) in enumerate(fixups):
         header[16 + 2 * i] = frm

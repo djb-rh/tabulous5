@@ -316,6 +316,16 @@ adjacent directions be held together. Hold left and add up and the board keeps
 going left until it hits a wall, so turning a corner means letting go of the
 old direction before pressing the new one, exactly, every time.
 
+Most of these cabinets had no button either: a four-way stick was the entire
+control panel. On a gamepad that leaves the whole right hand idle while the
+left thumb does the only thing the game asks for, so on the fifty-eight games
+with neither a button nor an eight-way stick, the face buttons are a second
+stick. The diamond is already a compass — X above, B below, Y and A either
+side — and the two hands become interchangeable. They are only directions
+there, not buttons, so turning right cannot also start a two-player game; 2P
+is still on screen at the smaller size. Nothing is taken from the sixteen
+games that do use their button.
+
 So the plate is put back in software, on the sixty-six of these games MAME
 records as four-way. Two directions become one, favouring whichever just
 changed: holding left and adding up is a turn upward, on that frame. The rule

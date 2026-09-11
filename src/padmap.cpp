@@ -25,6 +25,17 @@ uint8_t toNes(uint32_t down, int8_t x, int8_t y, const Map &map) {
   return out;
 }
 
+uint8_t toStick(uint32_t down, const Map &map) {
+  uint8_t out = 0;
+  // The diamond read as a compass: the two slots that hold X and Y on an
+  // SNES layout are the ones above and to the left.
+  if (held(down, map.a2)) out |= joypad::kUp;
+  if (held(down, map.b)) out |= joypad::kDown;
+  if (held(down, map.b2)) out |= joypad::kLeft;
+  if (held(down, map.a)) out |= joypad::kRight;
+  return out;
+}
+
 uint8_t newPress(uint32_t down, uint32_t before) {
   const uint32_t fresh = down & ~before;
   if (!fresh) return 0;

@@ -96,6 +96,21 @@ def split_args(s):
     return out
 
 
+def port_blocks(text):
+    """Every INPUT_PORTS block, with PORT_INCLUDE resolved into it."""
+    raw = {m.group(1): m.group(2) for m in
+           re.finditer(r"INPUT_PORTS_START\(\s*(\w+)\s*\)(.*?)INPUT_PORTS_END", text, re.S)}
+
+    def whole(name, seen=()):
+        if name not in raw or name in seen:
+            return ""
+        body = raw[name]
+        inc = re.search(r"PORT_INCLUDE\(\s*(\w+)\s*\)", body)
+        return (whole(inc.group(1), seen + (name,)) + "\n" + body) if inc else body
+
+    return {name: whole(name) for name in raw}
+
+
 def joystick_ways(text):
     """How many directions each INPUT_PORTS block's player-one stick had.
 
@@ -121,6 +136,10 @@ def read_driver(path):
     text = re.sub(r"//[^\n]*", "", text)
 
     ways = joystick_ways(text)
+    # Whether the cabinet had a fire button at all. Most of these did not: a
+    # four-way stick was the whole control panel, which is what lets a gamepad
+    # offer its face buttons as a second stick without taking anything away.
+    buttons = {n: "IPT_BUTTON1" in b for n, b in port_blocks(text).items()}
     sets = {}
     for m in re.finditer(r"ROM_START\(\s*(\w+)\s*\)(.*?)ROM_END", text, re.S):
         name, body = m.group(1), m.group(2)
@@ -154,7 +173,7 @@ def read_driver(path):
         games[a[1]] = {"parent": a[2], "machine": a[3], "input": a[4],
                        "init": a[6], "rot": a[7], "title": a[9].strip('"'),
                        "flags": a[10]}
-    return sets, games, ways
+    return sets, games, ways, buttons
 
 
 def contiguous(loads, start, want):
@@ -170,14 +189,15 @@ def contiguous(loads, start, want):
 def main():
     src = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser(
         "~/Developer/mame/src/mame/pacman")
-    sets, games, ways = {}, {}, {}
+    sets, games, ways, buttons = {}, {}, {}, {}
     for name in sorted(os.listdir(src)):
         if not name.endswith(".cpp"):
             continue
-        s, g, w = read_driver(os.path.join(src, name))
+        s, g, w, b = read_driver(os.path.join(src, name))
         sets.update(s)
         games.update(g)
         ways.update(w)
+        buttons.update(b)
 
     out, skipped = [], {}
 
@@ -239,6 +259,7 @@ def main():
             # Blocks that list no stick of their own inherit Pac-Man's, which
             # is four-way -- as is every one of these but three.
             "eight_way": ways.get(game["input"], 4) == 8,
+            "uses_button": buttons.get(game["input"], False),
                 "zip": game["parent"] if game["parent"] != "0" else name,
                 "transforms": [],
                 "vector_fixups": [],
@@ -285,6 +306,7 @@ def main():
             # Blocks that list no stick of their own inherit Pac-Man's, which
             # is four-way -- as is every one of these but three.
             "eight_way": ways.get(game["input"], 4) == 8,
+            "uses_button": buttons.get(game["input"], False),
             # Merged romsets store each file once, in the parent's zip.
             "zip": game["parent"] if game["parent"] != "0" else name,
             "transforms": TRANSFORMS[game["init"]],

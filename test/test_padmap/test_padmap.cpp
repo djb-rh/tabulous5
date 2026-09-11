@@ -40,8 +40,23 @@ void test_new_press_is_the_lowest_fresh_button() {
   TEST_ASSERT_EQUAL(2, padmap::newPress((1u << 1) | (1u << 9), 1u << 9));
 }
 
+
+void test_the_face_buttons_read_as_a_compass() {
+  tabulous::padmap::Map m;  // the GP100: X=1 A=2 B=3 Y=4
+  const uint32_t x = 1u << 0, a = 1u << 1, b = 1u << 2, y = 1u << 3;
+  TEST_ASSERT_EQUAL_HEX8(joypad::kUp, tabulous::padmap::toStick(x, m));
+  TEST_ASSERT_EQUAL_HEX8(joypad::kDown, tabulous::padmap::toStick(b, m));
+  TEST_ASSERT_EQUAL_HEX8(joypad::kLeft, tabulous::padmap::toStick(y, m));
+  TEST_ASSERT_EQUAL_HEX8(joypad::kRight, tabulous::padmap::toStick(a, m));
+  // Two at once is the four-way gate's problem, not this function's.
+  TEST_ASSERT_EQUAL_HEX8(joypad::kUp | joypad::kLeft,
+                         tabulous::padmap::toStick(x | y, m));
+  TEST_ASSERT_EQUAL_HEX8(0, tabulous::padmap::toStick(0, m));
+}
+
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_the_face_buttons_read_as_a_compass);
   RUN_TEST(test_gp100_default_layout);
   RUN_TEST(test_axes_become_dpad);
   RUN_TEST(test_unassigned_and_out_of_range_are_ignored);
