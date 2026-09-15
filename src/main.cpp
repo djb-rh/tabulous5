@@ -368,9 +368,11 @@ void loop() {
     // monitor says is flowing, which is the ground truth for "charging".
     // 'P' prints; '0' and '1' switch the charger off and on to see what the
     // status bit does in each state while the cable stays in.
-    if (cmd == 'P' || cmd == '0' || cmd == '1') {
+    if (cmd == 'P' || cmd == '0' || cmd == '1' || cmd == 'u' || cmd == 'U') {
       if (cmd == '0') M5.Power.setChargeCurrent(0);
       if (cmd == '1') M5.Power.setChargeCurrent(500);
+      if (cmd == 'u') power::forceUsbRail(false);
+      if (cmd == 'U') power::forceUsbRail(true);
       delay(300);
       const uint8_t in = M5.getIOExpander(1).readRegister8(0x0F);
       Serial.printf("power: ioe1.in=0x%02X chg_stat=%d isCharging=%d batt=%dmV %dmA level=%d%%\n",

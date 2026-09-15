@@ -20,7 +20,8 @@ void apply(const Settings &s) {
   M5.Power.setExtOutput(false, m5::ext_PA);
   g_usb_allowed = s.usb_power;
   g_data_auto = s.usb_data_auto;
-  M5.Power.setUsbOutput(false);
+  // Not setUsbOutput(): that has no Tab5 case and does nothing here.
+  M5.Power.setExtOutput(false, m5::ext_USB);
   g_usb_on = false;
   // 1000 = charge with the Quick Charge handshake enabled, 500 = without.
   M5.Power.setChargeCurrent(s.fast_charge ? 1000 : 500);
@@ -34,7 +35,12 @@ void setPlaying(bool playing) {
   const bool want = g_usb_allowed && playing;
   if (want == g_usb_on) return;
   g_usb_on = want;
-  M5.Power.setUsbOutput(want);
+  M5.Power.setExtOutput(want, m5::ext_USB);
+}
+
+void forceUsbRail(bool on) {   // serial diagnostics only
+  g_usb_on = on;
+  M5.Power.setExtOutput(on, m5::ext_USB);
 }
 
 void tick(uint32_t now_ms) {

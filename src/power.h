@@ -25,6 +25,7 @@ void setPlaying(bool playing);
 // So once no computer has been heard from for a while, the USB pad is
 // switched off, and stays off until the next reset. Call every loop.
 void tick(uint32_t now_ms);
+void forceUsbRail(bool on);   // 'u'/'U' on serial: prove the expander bit moves
 bool usbDataOn();
 
 // Tells the power-management MCU to cut the rails: the same thing as a
