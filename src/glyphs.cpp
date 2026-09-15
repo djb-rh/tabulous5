@@ -160,6 +160,36 @@ void snes(const Box &b, uint16_t ink, uint16_t ground) {
   g.fillRect(b.px(46), b.py(41), b.f(14), b.f(3), ground);
 }
 
+// A hash with a game on it. The marks matter: an empty grid would be Sudoku's
+// cousin, but three Xs down the diagonal with two Os in the way is a finished
+// tic-tac-toe and nothing else.
+void tictactoe(const Box &b, uint16_t ink, uint16_t ground) {
+  auto &g = uikit::gfx();
+  const int t = b.f(5) < 2 ? 2 : b.f(5);
+  g.fillRect(b.px(24) - t / 2, b.py(3), t, b.f(66), ink);
+  g.fillRect(b.px(48) - t / 2, b.py(3), t, b.f(66), ink);
+  g.fillRect(b.px(3), b.py(24) - t / 2, b.f(66), t, ink);
+  g.fillRect(b.px(3), b.py(48) - t / 2, b.f(66), t, ink);
+
+  const int s = b.f(2) < 1 ? 1 : b.f(2);  // half the X stroke
+  const int a = b.f(7);                     // X arm, from the centre
+  auto cross = [&](int cx, int cy) {
+    for (int i = -s; i <= s; i++) {
+      g.drawLine(cx - a + i, cy - a, cx + a + i, cy + a, ink);
+      g.drawLine(cx + a + i, cy - a, cx - a + i, cy + a, ink);
+    }
+  };
+  auto ring = [&](int cx, int cy) {
+    g.fillCircle(cx, cy, b.f(8), ink);
+    g.fillCircle(cx, cy, b.f(8) - t, ground);
+  };
+  cross(b.px(12), b.py(12));
+  cross(b.px(36), b.py(36));
+  cross(b.px(60), b.py(60));
+  ring(b.px(60), b.py(12));
+  ring(b.px(12), b.py(36));
+}
+
 }  // namespace
 
 void draw(Glyph glyph, int x, int y, int size, uint16_t ink, uint16_t ground) {
@@ -174,6 +204,7 @@ void draw(Glyph glyph, int x, int y, int size, uint16_t ink, uint16_t ground) {
     case Glyph::GameBoy: gameboy(b, ink, ground); break;
     case Glyph::Nes: nes(b, ink, ground); break;
     case Glyph::Snes: snes(b, ink, ground); break;
+    case Glyph::TicTacToe: tictactoe(b, ink, ground); break;
     case Glyph::None: break;
   }
 }

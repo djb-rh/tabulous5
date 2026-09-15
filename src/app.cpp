@@ -1,6 +1,7 @@
 #include "app.h"
 
 #include "glyphs.h"
+#include "joshua_ui.h"
 #include "joypad_ui.h"
 #include "gb_ui.h"
 #include "nes_ui.h"
@@ -281,6 +282,25 @@ const Entry kEntries[] = {
      "controller is the better way to play. Hold SELECT and START to come\n"
      "back."},
 #endif
+
+    // Appended, not slotted in beside the puzzles: the saved menu order and
+    // the hidden mask are keyed by entry index, so inserting above anything
+    // would silently rearrange every console that has ever saved them.
+    {"Joshua", "Tic-tac-toe. Would you like to play a game?", 0xD4A017,
+     glyphs::Glyph::TicTacToe, GameId::Joshua,
+     "Tic-tac-toe on WOPR's terminal, as the film played it. Touch\n"
+     "TIC TAC TOE when it is offered, then choose how many players.\n"
+     "\n"
+     "ZERO: the computer plays itself, faster and faster, until it learns\n"
+     "the lesson. ONE: you are X and move first; the computer plays\n"
+     "perfectly, so a draw is the best you can do. TWO: two people take\n"
+     "turns on the one screen.\n"
+     "\n"
+     "X always moves first. Tap a square to play it. A finished game\n"
+     "shows the result and returns to the start on its own.\n"
+     "\n"
+     "MENU and ? sit in the corners of the terminal screens, between\n"
+     "games; the board itself has no controls on it."},
 };
 
 constexpr int kEntryCount = (int)(sizeof(kEntries) / sizeof(kEntries[0]));
@@ -878,6 +898,9 @@ void launch(GameId id) {
   } else if (id == GameId::Joypad) {
     joypad_ui::begin();
     joypad_ui::invalidate();
+  } else if (id == GameId::Joshua) {
+    joshua_ui::begin();
+    joshua_ui::invalidate();
   } else if (id == GameId::Solitaire) {
     solitaire_ui::begin(&g_solitaire);
     solitaire_ui::invalidate();
@@ -921,6 +944,7 @@ bool wantsOrientation() {
     case GameId::Minesweeper:
     case GameId::Sudoku:
     case GameId::Solitaire:
+    case GameId::Joshua:
     // Held in two hands in one orientation, and the IMU shares the bus with
     // the touch controller this screen polls hardest of anything here.
     case GameId::Joypad:
@@ -946,6 +970,7 @@ void invalidate() {
   if (g_current == GameId::Minesweeper) mines_ui::invalidate();
   if (g_current == GameId::Sudoku) sudoku_ui::invalidate();
   if (g_current == GameId::Solitaire) solitaire_ui::invalidate();
+  if (g_current == GameId::Joshua) joshua_ui::invalidate();
 }
 
 void requestExit() {
@@ -1022,6 +1047,7 @@ void tick(uint32_t now_ms) {
   else if (g_current == GameId::Minesweeper) mines_ui::tick(now_ms);
   else if (g_current == GameId::Sudoku) sudoku_ui::tick(now_ms);
   else if (g_current == GameId::Solitaire) solitaire_ui::tick(now_ms);
+  else if (g_current == GameId::Joshua) joshua_ui::tick(now_ms);
   // Joypad polls raw touch itself rather than waiting for tap edges, so it
   // gets no handleTap below.
   else if (g_current == GameId::Joypad) joypad_ui::tick(now_ms);
@@ -1231,6 +1257,8 @@ void handleTap(int x, int y, uint32_t now_ms) {
     sudoku_ui::handleTap(x, y, now_ms);
   else if (g_current == GameId::Solitaire)
     solitaire_ui::handleTap(x, y, now_ms);
+  else if (g_current == GameId::Joshua)
+    joshua_ui::handleTap(x, y, now_ms);
   // Joypad is absent on purpose: it polls raw touch rather than taking edges.
   // NES takes taps only while picking a ROM, and polls once one is running.
   else if (g_current == GameId::Nes)

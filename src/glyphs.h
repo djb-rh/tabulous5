@@ -26,6 +26,7 @@ enum class Glyph : uint8_t {
   GameBoy, // the 1989 handheld
   Nes,     // the front-loader
   Snes,    // the one with the slot on top
+  TicTacToe,  // Joshua -- a won board, X down the diagonal
 };
 
 // Draws into a square of `size` at (x, y). `ink` is the mark, `ground` is the

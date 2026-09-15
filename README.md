@@ -13,6 +13,7 @@ its 1280x720 touch panel.
 | **Minesweeper** | Tap to dig, hold to flag. Four board sizes. |
 | **Sudoku** | Four difficulties, pencil marks, conflict highlighting. |
 | **Solitaire** | Klondike, draw one or three, with undo and an auto-play button. |
+| **Joshua** | Tic-tac-toe on WOPR's terminal. Zero, one or two players; the computer never loses. |
 | **NES** | Cartridges from a microSD card, with sound, on the touch screen or a USB gamepad. |
 
 Word lists are plain text files you edit from a browser over Wi-Fi. Sounds are

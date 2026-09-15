@@ -26,6 +26,7 @@ enum class GameId : uint8_t {
   GameBoy = 8,
   Snes = 9,
   Arcade = 10,
+  Joshua = 11,
 };
 
 void begin(std::vector<Pack> *packs, const content::LoadReport &report);
