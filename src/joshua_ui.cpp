@@ -9,6 +9,7 @@
 
 #include "app.h"
 #include "audio.h"
+#include "font_sharetech54.h"
 #include "theme.h"
 #include "tictactoe.h"
 #include "uikit.h"
@@ -40,10 +41,12 @@ constexpr uint16_t kEntry = rgb(0x7CFFB2);  // phosphor green, the "typed" font
 constexpr uint16_t kBoard = rgb(0xE6E8FF);  // border, grid and marks
 constexpr uint16_t kDim = rgb(0x4A4870);    // the console's own two controls
 
-// The terminal font is a bold mono face; the "typed" font is the 5x7 GLCD
-// glyph set blown up, which is the closest thing to the film's dot matrix
-// that costs nothing.
-const lgfx::IFont *const kFontMain = &fonts::FreeMonoBold24pt7b;
+// The terminal font is Share Tech Mono, the thin rounded monospace the
+// ESPHome build uses for WOPR's own lines, converted at 54 px so it stands a
+// little taller than the typed answers, as in the film. The "typed" font is
+// the 5x7 GLCD glyph set blown up, which is the closest thing to the film's
+// dot matrix that costs nothing.
+const lgfx::IFont *const kFontMain = &fontdata::ShareTechMono54;
 const lgfx::IFont *const kFontEntry = &fonts::Font0;
 constexpr uint8_t kEntrySize = 6;
 
