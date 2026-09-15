@@ -447,19 +447,12 @@ void drawBattery() {
 // every scroll step as well as from the full repaint, so it touches nothing
 // outside the list and re-registers only the list's own targets.
 void drawMenuList() {
-  auto &g = uikit::gfx();
   const Rect vp = g_menu_scroll.viewport();
   uikit::removeTargetsIn(vp);
-  g.setClipRect(vp.x, vp.y, vp.w, vp.h);
-  g.fillRect(vp.x, vp.y, vp.w, vp.h, kBg);
-
-  const int n = visibleCount();
-  for (int slot = 0; slot < n; slot++) {
-    const int y = vp.y + slot * kBlobPitch - g_menu_scroll.offset();
-    if (y + kBlobH <= vp.y) continue;
-    if (y >= vp.y + vp.h) break;
+  scroller::drawRows(g_menu_scroll, kMargin, kListW, kBlobPitch, kBlobH, 16,
+                     visibleCount(), kBg, [&](int slot, int y) {
     const int i = visibleEntry(slot);
-    if (i < 0) break;
+    if (i < 0) return;
     const Entry &e = kEntries[i];
     const Rect blob{kMargin, y, kListW, kBlobH};
 
@@ -496,8 +489,7 @@ void drawMenuList() {
     // row half off the bottom must not take taps from the footer under it.
     uikit::addTarget(blob.clip(vp), (int)Action::Launch, i);
     uikit::addTarget(q.clip(vp), (int)Action::About, i);
-  }
-  g.clearClipRect();
+  });
   g_menu_scroll.drawBar(kSurface, kMuted);
 }
 
@@ -766,16 +758,20 @@ void drawGamesList() {
   auto &g = uikit::gfx();
   const Rect vp = g_games_scroll.viewport();
   uikit::removeTargetsIn(vp);
-  g.setClipRect(vp.x, vp.y, vp.w, vp.h);
-  g.fillRect(vp.x, vp.y, vp.w, vp.h, kBg);
-  for (int i = 0; i < g_menu.count; i++) {
-    if (i == g_drag_i) continue;  // drawn last, under the finger
-    const int y = gamesRowTop(i);
-    if (y + kGamesRowH <= vp.y || y >= vp.y + vp.h) continue;
+  scroller::drawRows(g_games_scroll, kGamesX, kGamesW - 12, kGamesPitch,
+                     kGamesRowH, 14, g_menu.count, kBg, [&](int i, int y) {
+    if (i == g_drag_i) {
+      // Its slot stays empty; the row itself is drawn last, under the finger.
+      g.fillRect(kGamesX, y, kGamesW - 12, kGamesRowH, kBg);
+      return;
+    }
     drawGamesRow(i, y, false);
+  });
+  if (g_drag_i >= 0) {
+    g.setClipRect(vp.x, vp.y, vp.w, vp.h);
+    drawGamesRow(g_drag_i, g_drag_y - g_drag_dy, true);
+    g.clearClipRect();
   }
-  if (g_drag_i >= 0) drawGamesRow(g_drag_i, g_drag_y - g_drag_dy, true);
-  g.clearClipRect();
   g_games_scroll.drawBar(kSurface, kMuted);
 }
 
@@ -893,12 +889,13 @@ void pollLists(uint32_t now_ms) {
       uikit::present();
       return;
     }
+    bool changed = t.y != g_drag_y;
     g_drag_y = t.y;
     // Near either edge the list creeps, so a row can be carried past the
     // rows that are showing.
     const Rect vp = s->viewport();
-    if (t.y < vp.y + 48) s->scrollBy(-6);
-    else if (t.y > vp.y + vp.h - 48) s->scrollBy(6);
+    if (t.y < vp.y + 48) changed |= s->scrollBy(-6);
+    else if (t.y > vp.y + vp.h - 48) changed |= s->scrollBy(6);
     // The slot under the held row's centre is where it now belongs; the rows
     // between shuffle out of its way as it passes them.
     const int centre = g_drag_y - g_drag_dy + kGamesRowH / 2;
@@ -915,9 +912,12 @@ void pollLists(uint32_t now_ms) {
       g_menu.order[slot] = held;
       g_drag_i = slot;
       audio::select();
+      changed = true;
     }
-    drawGamesList();
-    uikit::present();
+    if (changed) {
+      drawGamesList();
+      uikit::present();
+    }
     return;
   }
 

@@ -29,6 +29,14 @@ void Scroller::layout(const Rect &viewport, const Rect &track, int content_h) {
   track_ = track;
   content_h_ = content_h;
   clamp();
+  // A full repaint follows a tap somewhere, and the finger that made it may
+  // still be down over this list now - possibly already noticed as a press,
+  // since the shell dispatches the tap before the list runs. Whatever the
+  // finger was doing belongs to the screen that has just been replaced.
+  mode_ = Mode::Idle;
+  velocity_ = 0;
+  tap_ready_ = false;
+  wait_release_ = true;
 }
 
 int Scroller::maxOffset() const {
@@ -77,6 +85,11 @@ void Scroller::thumbGeometry(int *y, int *h) const {
 
 bool Scroller::update(uint32_t now, bool down, int x, int y) {
   const int before = offset_;
+
+  if (wait_release_) {
+    if (down) return false;
+    wait_release_ = false;
+  }
 
   if (!down) {
     switch (mode_) {
@@ -199,10 +212,48 @@ bool Scroller::takeTap(int *x, int *y) {
 void Scroller::drawBar(uint16_t track_colour, uint16_t thumb_colour) const {
   if (track_.w <= 0 || !scrollable()) return;
   const int x = track_.x + (track_.w - kBarW) / 2;
-  uikit::fillRoundRectFast(x, track_.y, kBarW, track_.h, kBarW / 2, track_colour);
+  const int r = kBarW / 2;
   int ty, th;
   thumbGeometry(&ty, &th);
-  uikit::fillRoundRectFast(x, ty, kBarW, th, kBarW / 2, thumb_colour);
+  // The track in two pieces around the thumb rather than under it, so the
+  // thumb is never blanked and redrawn as it moves.
+  const int top_h = ty - track_.y + r;
+  if (top_h > 0) uikit::fillRoundRectFast(x, track_.y, kBarW, top_h, r, track_colour);
+  const int bot_y = ty + th - r;
+  const int bot_h = track_.y + track_.h - bot_y;
+  if (bot_h > 0) uikit::fillRoundRectFast(x, bot_y, kBarW, bot_h, r, track_colour);
+  uikit::fillRoundRectFast(x, ty, kBarW, th, r, thumb_colour);
+}
+
+void drawRows(const Scroller &s, int row_x, int row_w, int pitch, int row_h,
+              int corner_r, int count, uint16_t bg,
+              const std::function<void(int, int)> &draw_row) {
+  auto &g = uikit::gfx();
+  const Rect vp = s.viewport();
+  if (vp.w <= 0 || vp.h <= 0) return;
+  g.setClipRect(vp.x, vp.y, vp.w, vp.h);
+  if (row_x > vp.x) g.fillRect(vp.x, vp.y, row_x - vp.x, vp.h, bg);
+  const int right = row_x + row_w;
+  if (right < vp.x + vp.w) g.fillRect(right, vp.y, vp.x + vp.w - right, vp.h, bg);
+
+  int first = s.offset() / pitch;
+  if (first < 0) first = 0;
+  int y = vp.y + first * pitch - s.offset();
+  if (y > vp.y) g.fillRect(row_x, vp.y, row_w, y - vp.y, bg);
+  int i = first;
+  for (; i < count && y < vp.y + vp.h; i++, y += pitch) {
+    if (corner_r > 0) {
+      const int r = corner_r;
+      g.fillRect(row_x, y, r, r, bg);
+      g.fillRect(right - r, y, r, r, bg);
+      g.fillRect(row_x, y + row_h - r, r, r, bg);
+      g.fillRect(right - r, y + row_h - r, r, r, bg);
+    }
+    draw_row(i, y);
+    if (pitch > row_h) g.fillRect(row_x, y + row_h, row_w, pitch - row_h, bg);
+  }
+  if (y < vp.y + vp.h) g.fillRect(row_x, y, row_w, vp.y + vp.h - y, bg);
+  g.clearClipRect();
 }
 
 }  // namespace scroller

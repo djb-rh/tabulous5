@@ -320,16 +320,11 @@ void probeItem(int i) {
 // every scroll step as well as from draw(), so it repaints nothing outside
 // the list and re-registers only the list's targets.
 void drawList() {
-  auto &g = gfx();
   const Rect vp = g_scroll.viewport();
   if (vp.w <= 0) return;
   uikit::removeTargetsIn(vp);
-  g.setClipRect(vp.x, vp.y, vp.w, vp.h);
-  g.fillRect(vp.x, vp.y, vp.w, vp.h, kBg);
-  const int total = groupTotal(g_group);
-  for (int n = g_scroll.offset() / kRowPitch; n < total; n++) {
-    const int y = vp.y + n * kRowPitch - g_scroll.offset();
-    if (y >= vp.y + vp.h) break;
+  scroller::drawRows(g_scroll, vp.x, vp.w, kRowPitch, kRowH, 8,
+                     groupTotal(g_group), kBg, [&](int n, int y) {
     const int i = groupItem(g_group, n);
     const rom_index::Item &e = g_lib->at(i);
     const Rect row{vp.x, y, vp.w, kRowH};
@@ -352,8 +347,7 @@ void drawList() {
     const Rect title{row.x, row.y, row.w - 64, row.h};
     if (!bad) addAction(title.clip(vp), Action::Pick, i);
     addAction(star.clip(vp), Action::ToggleFav, i);
-  }
-  g.clearClipRect();
+  });
   g_scroll.drawBar(kSurface, kMuted);
 }
 

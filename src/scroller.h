@@ -15,6 +15,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 
 #include "uikit.h"
 
@@ -24,8 +25,9 @@ namespace scroller {
 class Scroller {
  public:
   // Sets or resets the geometry. The offset is kept, clamped, so a repaint
-  // of the screen around the list does not throw the position away. A track
-  // of zero width means no bar.
+  // of the screen around the list does not throw the position away; any
+  // press in progress is dropped, and a finger still down is ignored until
+  // it lifts. A track of zero width means no bar.
   void layout(const uikit::Rect &viewport, const uikit::Rect &track,
               int content_h);
 
@@ -61,6 +63,12 @@ class Scroller {
   // Nothing is drawn when the content fits.
   void drawBar(uint16_t track_colour, uint16_t thumb_colour) const;
 
+  // A finger already on the panel when the list appears is not a press on
+  // the list: it is the tap that brought the screen here, still in contact.
+  // The list waits for it to lift. layout() calls this; a screen change that
+  // keeps the geometry can call it directly.
+  void ignoreUntilRelease() { wait_release_ = true; }
+
  private:
   enum class Mode : uint8_t { Idle, Pending, Content, Thumb, Yielded, Fling };
 
@@ -80,7 +88,21 @@ class Scroller {
   uint32_t last_ms_ = 0;
   float velocity_ = 0;             // px per ms, positive = content moving up
   bool tap_ready_ = false;
+  bool wait_release_ = false;
 };
+
+// Paints a list's rows at their scrolled positions WITHOUT clearing the
+// viewport first. Each row is drawn straight over whatever was there and only
+// the strips between rows, the margins beside them and the corners a rounded
+// row leaves bare are filled - so every pixel is painted once per frame, and
+// none is blanked and then painted, which is what flickered when the whole
+// region was cleared ahead of the rows.
+//
+// draw_row(i, y) draws row i with its top at y; a row that should show as an
+// empty slot fills its own rectangle with the background.
+void drawRows(const Scroller &s, int row_x, int row_w, int pitch, int row_h,
+              int corner_r, int count, uint16_t bg,
+              const std::function<void(int, int)> &draw_row);
 
 }  // namespace scroller
 }  // namespace tabulous
