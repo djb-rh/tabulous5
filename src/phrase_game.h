@@ -58,9 +58,11 @@ struct Settings {
   // usb_power is the 5 V the console puts OUT on its USB port for a gamepad.
   bool fast_charge = false;
   bool usb_power = false;   // the USB-C OTG 5 V; off, a charger cannot share it
-  // The USB-C data lines: off when no computer is talking, so a charger
-  // never sees the chip's USB pull-up (a brick read it as a voltage request).
-  bool usb_data_auto = true;
+  // The USB-C data lines: optionally off when no computer is talking, so a
+  // charger never sees the chip's USB pull-up (one brick read it as a
+  // voltage request and latched off). Off by default: a computer that
+  // suspends the bus looks the same as no computer, and the port vanishes.
+  bool usb_data_auto = false;
   std::string team_names[2] = {"Team A", "Team B"};
 };
 

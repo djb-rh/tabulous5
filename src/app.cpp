@@ -753,10 +753,10 @@ void drawSettings() {
                     kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
   addAction(usbd, Action::ToggleUsbData);
   y += 60;
-  uikit::drawLabel("A charger cannot share the USB-C 5 V output; leave it off. With data off,", lx, y, kMuted,
+  uikit::drawLabel("Data off: for a charger that latches off when plugged in. Then press the", lx, y, kMuted,
                    &fonts::FreeSans9pt7b);
   y += 20;
-  uikit::drawLabel("press the button once to reset before plugging into a computer.", lx, y, kMuted,
+  uikit::drawLabel("button once to reset before a computer. Leave the 5 V output off.", lx, y, kMuted,
                    &fonts::FreeSans9pt7b);
 
   // ---- right column: which games appear, and in what order
