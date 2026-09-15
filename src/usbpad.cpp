@@ -582,12 +582,16 @@ bool begin() {
   const BaseType_t b = xTaskCreatePinnedToCore(clientTask, "usbpad", 8192, nullptr, 2, nullptr, 0);
   Serial.printf("usbpad: host installed, tasks %d/%d\n", (int)a, (int)b);
   vTaskDelay(pdMS_TO_TICKS(100));
-  // The port's 5 V is NOT switched on here: on the Tab5 that rail also
-  // drives the USB-C VBUS and kills a wall charger, so power::setPlaying
-  // owns it and turns it on only for a game on battery. The root port is
-  // told it may power up; the pad enumerates when the rail arrives.
-  usb_host_lib_set_root_port_power(true);
+  // The root port is left unpowered here. It is powered when a game starts
+  // (portPower), which is also the moment the stack looks for the pad: a
+  // port powered at boot with the pad already attached was seen to sit with
+  // the connection half made, and a pad that arrived later never enumerated.
   return true;
+}
+
+void portPower(bool on) {
+  if (!g_began) return;
+  usb_host_lib_set_root_port_power(on);
 }
 
 State state() {

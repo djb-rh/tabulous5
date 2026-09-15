@@ -32,6 +32,8 @@ struct State {
 // Starts the host stack and powers the port. Safe to call once; does nothing
 // on later calls. Returns false if the host stack would not install.
 bool begin();
+// Power the host stack's root port up or down; a game start powers it up.
+void portPower(bool on);
 // A snapshot of the pad right now. Cheap; call it every frame.
 State state();
 // How many devices the host library currently sees (enumerated or not); -1

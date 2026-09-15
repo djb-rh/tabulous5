@@ -57,7 +57,7 @@ struct Settings {
   // some PD bricks then refuse to charge at all, so it is off by default.
   // usb_power is the 5 V the console puts OUT on its USB port for a gamepad.
   bool fast_charge = false;
-  bool usb_power = true;
+  bool usb_power = false;   // the USB-C OTG 5 V; off, a charger cannot share it
   // The USB-C data lines: off when no computer is talking, so a charger
   // never sees the chip's USB pull-up (a brick read it as a voltage request).
   bool usb_data_auto = true;

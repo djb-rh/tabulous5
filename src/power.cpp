@@ -2,6 +2,7 @@
 
 #include <M5Unified.h>
 #include "hal/usb_serial_jtag_ll.h"
+#include "usbpad.h"
 
 namespace tabulous {
 namespace power {
@@ -28,14 +29,16 @@ void apply(const Settings &s) {
 }
 
 void setPlaying(bool playing) {
-  // On for any game. Whether a charger tolerates the rail on its VBUS is
-  // being tested; if not, add `&& M5.Power.getBatteryCurrent() < -20` here
-  // (discharging reads clearly negative on battery) and the pad is
-  // battery-only.
+  // The host port comes up with the game and goes down with it. The 5 V
+  // rail (USB5V_EN) is the USB-C OTG output, which a charger cannot share;
+  // it is off unless the setting insists, in which case it follows the game.
   const bool want = g_usb_allowed && playing;
-  if (want == g_usb_on) return;
-  g_usb_on = want;
-  M5.Power.setExtOutput(want, m5::ext_USB);
+  if (want != g_usb_on) {
+    g_usb_on = want;
+    M5.Power.setExtOutput(want, m5::ext_USB);
+    if (want) delay(50);
+  }
+  usbpad::portPower(playing);
 }
 
 void forceUsbRail(bool on) {   // serial diagnostics only

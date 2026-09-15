@@ -743,7 +743,7 @@ void drawSettings() {
   const Rect usb{lx + (lw + 16) / 2, y, (lw - 16) / 2, 64};
   uikit::drawButton(qc, g_console.fast_charge ? "FAST CHARGE: ON" : "FAST CHARGE: OFF",
                     kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
-  uikit::drawButton(usb, g_console.usb_power ? "USB PAD POWER: AUTO" : "USB PAD POWER: OFF",
+  uikit::drawButton(usb, g_console.usb_power ? "USB-C 5V OUT: IN GAMES" : "USB-C 5V OUT: OFF",
                     kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
   addAction(qc, Action::ToggleFastCharge);
   addAction(usb, Action::ToggleUsbPower);
@@ -753,10 +753,10 @@ void drawSettings() {
                     kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
   addAction(usbd, Action::ToggleUsbData);
   y += 60;
-  uikit::drawLabel("Pad power: only in a game, on battery. A charger plugged into a live", lx, y, kMuted,
+  uikit::drawLabel("A charger cannot share the USB-C 5 V output; leave it off. With data off,", lx, y, kMuted,
                    &fonts::FreeSans9pt7b);
   y += 20;
-  uikit::drawLabel("USB-C shuts itself off; press the button once to reset before a computer.", lx, y, kMuted,
+  uikit::drawLabel("press the button once to reset before plugging into a computer.", lx, y, kMuted,
                    &fonts::FreeSans9pt7b);
 
   // ---- right column: which games appear, and in what order
