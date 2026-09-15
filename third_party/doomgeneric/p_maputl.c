@@ -558,7 +558,6 @@ static void InterceptsOverrun(int num_intercepts, intercept_t *intercept);
 boolean
 PIT_AddLineIntercepts (line_t* ld)
 {
-    if (!intercepts) intercepts = calloc(MAXINTERCEPTS, sizeof(intercept_t));
     int			s1;
     int			s2;
     fixed_t		frac;
@@ -867,6 +866,7 @@ P_PathTraverse
   int			flags,
   boolean (*trav) (intercept_t *))
 {
+    if (!intercepts) intercepts = calloc(MAXINTERCEPTS, sizeof(intercept_t));
     fixed_t	xt1;
     fixed_t	yt1;
     fixed_t	xt2;

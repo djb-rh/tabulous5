@@ -31,6 +31,9 @@ Everything here is upstream's, apart from:
 - `r_draw.c`: `MAXWIDTH`/`MAXHEIGHT` are the screen's own size, not 1120x832.
 - `statdump.c`: `MAX_CAPTURES` 32 -> 2.
 - `doomgeneric.c`: calls `dg_alloc_tables()` under `DG_TABULOUS`.
+- `r_data.c`: a texture whose patch is missing gets a stand-in patch and a
+  warning instead of `I_Error`, so an add-on made for The Ultimate Doom (SKY4)
+  plays on the registered doom.wad.
 - `dg_sound.c`: added. The sound module (`DG_sound_module`) mixes the WAD's
   DMX sound effects to 11025 Hz mono and hands the console one tic at a time;
   the music module is stubs. Built with `FEATURE_SOUND`.

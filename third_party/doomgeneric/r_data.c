@@ -588,8 +588,15 @@ void R_InitTextures (void)
 	    patch->patch = patchlookup[SHORT(mpatch->patch)];
 	    if (patch->patch == -1)
 	    {
-		I_Error ("R_InitTextures: Missing patch in texture %s",
-			 texture->name);
+		// DG_TABULOUS: a warning and a stand-in rather than the end of
+		// the game. An add-on made for The Ultimate Doom names SKY4's
+		// patch, which the registered doom.wad does not have; the
+		// texture is wrong and everything else plays.
+		int k;
+		for (k = 0; k < nummappatches && patchlookup[k] == -1; k++);
+		patch->patch = k < nummappatches ? patchlookup[k] : 0;
+		printf("R_InitTextures: missing patch in texture %.8s, using a stand-in\n",
+		       texture->name);
 	    }
 	}		
 	texturecolumnlump[i] = Z_Malloc (texture->width*sizeof(**texturecolumnlump), PU_STATIC,0);

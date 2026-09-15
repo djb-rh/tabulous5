@@ -382,7 +382,7 @@ void drawGamepadChrome(bool full) {
                      &fonts::FreeSans12pt7b, middle_left);
     return;
   }
-  uikit::drawLabel("No gamepad", x, y, kDanger, &fonts::FreeSansBold12pt7b,
+  uikit::drawLabel("No gamepad", x, y, kDanger, &fonts::FreeSansBold9pt7b,
                    middle_left);
   const char *lines[] = {"Plug one in, or", "pick the smaller", "size in the list",
                          "for on-screen", "controls."};
