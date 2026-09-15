@@ -58,6 +58,9 @@ struct Settings {
   // usb_power is the 5 V the console puts OUT on its USB port for a gamepad.
   bool fast_charge = false;
   bool usb_power = true;
+  // The USB-C data lines: off when no computer is talking, so a charger
+  // never sees the chip's USB pull-up (a brick read it as a voltage request).
+  bool usb_data_auto = true;
   std::string team_names[2] = {"Team A", "Team B"};
 };
 

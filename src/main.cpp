@@ -350,6 +350,7 @@ void reportTouch() {
 }
 
 void loop() {
+  power::tick(millis());
   const uint32_t loop_start = micros();
   if (g_wdt_on) esp_task_wdt_reset();
   M5.update();

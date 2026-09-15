@@ -19,6 +19,14 @@ void apply(const Settings &s);
 // what is running; it reads the battery monitor once.
 void setPlaying(bool playing);
 
+// The USB-C data lines. The chip's USB device pulls D+ up the moment it
+// boots; a wall brick that reads D+/D- as a Quick Charge request answers
+// by shutting itself off (measured: the brick survives with the chip off).
+// So once no computer has been heard from for a while, the USB pad is
+// switched off, and stays off until the next reset. Call every loop.
+void tick(uint32_t now_ms);
+bool usbDataOn();
+
 // Tells the power-management MCU to cut the rails: the same thing as a
 // double-press of the power button. Holding the button is NOT this; it drops
 // the chip into the download bootloader, screen dark, everything else on.

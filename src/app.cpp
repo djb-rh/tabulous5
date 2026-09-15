@@ -42,7 +42,7 @@ enum class Action : uint8_t {
   OpenEditor, CloseEditor, SwitchWifi, ToggleTheme,
   OpenSettings, CloseSettings, VolumeDown, VolumeUp, ToggleGame,
   MoveGameUp, MoveGameDown, SettingsUp, SettingsDown,
-  ToggleFastCharge, ToggleUsbPower, PowerOff,
+  ToggleFastCharge, ToggleUsbPower, PowerOff, ToggleUsbData,
 };
 
 std::vector<Pack> *g_packs = nullptr;
@@ -748,10 +748,15 @@ void drawSettings() {
   addAction(qc, Action::ToggleFastCharge);
   addAction(usb, Action::ToggleUsbPower);
   y += 72;
-  uikit::drawLabel("Pad power is on only during a game, on battery: a wall", lx, y, kMuted,
+  const Rect usbd{lx, y, lw, 52};
+  uikit::drawButton(usbd, g_console.usb_data_auto ? "USB-C DATA: OFF WHEN NO COMPUTER" : "USB-C DATA: ALWAYS ON",
+                    kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+  addAction(usbd, Action::ToggleUsbData);
+  y += 60;
+  uikit::drawLabel("Pad power: only in a game, on battery. A charger plugged into a live", lx, y, kMuted,
                    &fonts::FreeSans9pt7b);
-  y += 22;
-  uikit::drawLabel("charger meeting it shuts itself off. Plug in from this menu.", lx, y, kMuted,
+  y += 20;
+  uikit::drawLabel("USB-C shuts itself off; press the button once to reset before a computer.", lx, y, kMuted,
                    &fonts::FreeSans9pt7b);
 
   // ---- right column: which games appear, and in what order
@@ -1085,6 +1090,12 @@ void handleTap(int x, int y, uint32_t now_ms) {
         audio::select();
         g_console.usb_power = !g_console.usb_power;
         power::apply(g_console);
+        break;
+
+      case Action::ToggleUsbData:
+        audio::select();
+        g_console.usb_data_auto = !g_console.usb_data_auto;
+        power::apply(g_console);   // takes effect from the next reset
         break;
 
       case Action::PowerOff:
