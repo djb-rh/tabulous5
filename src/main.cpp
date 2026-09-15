@@ -17,6 +17,7 @@
 
 #include "audio.h"
 #include "battery.h"
+#include "power.h"
 #include "content.h"
 #include "contentserver.h"
 #include "filemanager.h"
@@ -51,7 +52,10 @@ bool g_wdt_on = false;
 
 void setup() {
   auto cfg = M5.config();
-  cfg.output_power = true;
+  // Not output_power = true: that switches on every outgoing 5 V rail,
+  // including the M5-Bus, which nothing uses. power::apply() below turns on
+  // just what the settings ask for.
+  cfg.output_power = false;
   M5.begin(cfg);
 
   Serial.begin(115200);
@@ -77,6 +81,7 @@ void setup() {
   settings_store::load(&settings);
   audio::begin(settings.volume);
   audio::setEnabled(settings.sound_enabled);
+  power::apply(settings);
   orientation::setEnabled(settings.auto_rotate);
   orientation::setStableMs(settings.flip_delay_ms);
 

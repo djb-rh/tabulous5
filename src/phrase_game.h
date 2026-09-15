@@ -53,6 +53,11 @@ struct Settings {
   bool sound_enabled = true;
   bool auto_rotate = true;   // flip 180 deg when the device changes hands
   uint16_t flip_delay_ms = 250;  // how long a new orientation must be held
+  // Power. The charger can ask a USB adapter for 9 or 12 V (Quick Charge);
+  // some PD bricks then refuse to charge at all, so it is off by default.
+  // usb_power is the 5 V the console puts OUT on its USB port for a gamepad.
+  bool fast_charge = false;
+  bool usb_power = true;
   std::string team_names[2] = {"Team A", "Team B"};
 };
 

@@ -551,3 +551,20 @@ what that means in practice and which components carry their own terms.
 This was MIT until 2026-09-07. It was relicensed to use the Anemoia-ESP32 NES
 core, which is GPL-3.0. Copies taken under MIT keep their MIT rights; everything
 from that commit onward is GPL-3.0.
+
+## Power
+
+- **Charging bolt.** The battery pill shows a bolt while the charger IC
+  reports charging (`CHG_STAT` on the second I/O expander, read through
+  `M5.Power.isCharging()` every 5 s).
+- **Off is a double-press.** Holding the power button does not turn the Tab5
+  off: per the board's own silkscreen it drops the ESP32-P4 into the download
+  bootloader — screen dark, everything else powered — which drains the
+  battery. A double-press tells the power-management MCU to cut the rails;
+  so does **Settings → POWER OFF** (`M5.Power.powerOff()`).
+- **Wall chargers.** M5Unified leaves the charger's Quick Charge handshake
+  on; some USB-PD bricks answer it by not charging at all, while a laptop
+  port (plain 5 V) is fine. **FAST CHARGE** in Settings is that handshake,
+  default off. **USB 5V OUT** is the 5 V the console puts out on its USB
+  port (a gamepad on the USB-A jack needs it); default on. The M5-Bus 5 V
+  rail is never switched on: nothing on it draws power.

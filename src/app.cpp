@@ -13,6 +13,7 @@
 
 #include "audio.h"
 #include "battery.h"
+#include "power.h"
 #include "contentserver.h"
 #include "fivehead.h"
 #include "fivehead_ui.h"
@@ -41,6 +42,7 @@ enum class Action : uint8_t {
   OpenEditor, CloseEditor, SwitchWifi, ToggleTheme,
   OpenSettings, CloseSettings, VolumeDown, VolumeUp, ToggleGame,
   MoveGameUp, MoveGameDown, SettingsUp, SettingsDown,
+  ToggleFastCharge, ToggleUsbPower, PowerOff,
 };
 
 std::vector<Pack> *g_packs = nullptr;
@@ -395,8 +397,20 @@ void drawBattery() {
   const int inner = ((w - 8) * pct) / 100;
   if (inner > 0) g.fillRoundRect(x + 4, y + 4, inner, h - 8, 5, fill);
 
+  if (battery::charging()) {
+    // A bolt over the pill: two triangles, with a halo so it reads on the
+    // fill and on the empty part alike.
+    const int bx = x + w / 2 - 6, by = y + 7;
+    for (int pass = 0; pass < 2; pass++) {
+      const uint16_t c = pass == 0 ? kBg : kText;
+      const int o = pass == 0 ? 1 : 0;
+      g.fillTriangle(bx + 8 + o, by - o, bx - o, by + 15 + o, bx + 7 + o, by + 15 + o, c);
+      g.fillTriangle(bx + 5 - o, by + 11 - o, bx + 14 + o, by + 11 - o, bx + 4 - o, by + 27 + o, c);
+    }
+  }
+
   char label[16];
-  snprintf(label, sizeof(label), battery::charging() ? "%d%% +" : "%d%%", pct);
+  snprintf(label, sizeof(label), "%d%%", pct);
   uikit::drawLabel(label, x - 14, y + h / 2, kMuted, &fonts::FreeSans12pt7b,
                    middle_right);
 }
@@ -676,6 +690,11 @@ void drawSettings() {
   const Rect done{kW - kMargin - 200, 20, 200, 64};
   uikit::drawButton(done, "DONE", kGood, kOnFill, &fonts::FreeSansBold18pt7b);
   addAction(done, Action::CloseSettings);
+  // The real off: a double-press of the button does the same. Holding the
+  // button only blanks the screen and leaves everything running.
+  const Rect off{kW - kMargin - 200 - 16 - 220, 20, 220, 64};
+  uikit::drawButton(off, "POWER OFF", kDanger, kOnFill, &fonts::FreeSansBold18pt7b);
+  addAction(off, Action::PowerOff);
 
   // ---- left column: the console-wide preferences
   const int lx = kMargin, lw = 520;
@@ -716,6 +735,18 @@ void drawSettings() {
   uikit::drawButton(edit, "EDIT CONTENT OVER WI-FI", kSurfaceLift, kText,
                     &fonts::FreeSansBold12pt7b);
   addAction(edit, Action::OpenEditor);
+
+  y += 104;
+  uikit::drawLabel("POWER", lx, y, kMuted, &fonts::FreeSans12pt7b);
+  y += 30;
+  const Rect qc{lx, y, (lw - 16) / 2, 64};
+  const Rect usb{lx + (lw + 16) / 2, y, (lw - 16) / 2, 64};
+  uikit::drawButton(qc, g_console.fast_charge ? "FAST CHARGE: ON" : "FAST CHARGE: OFF",
+                    kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+  uikit::drawButton(usb, g_console.usb_power ? "USB 5V OUT: ON" : "USB 5V OUT: OFF",
+                    kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+  addAction(qc, Action::ToggleFastCharge);
+  addAction(usb, Action::ToggleUsbPower);
 
   // ---- right column: which games appear, and in what order
   const int rx = 640, rw = kW - kMargin - 640;
@@ -1027,6 +1058,24 @@ void handleTap(int x, int y, uint32_t now_ms) {
         audio::select();
         g_settings_open = true;
         g_settings_scroll = 0;
+        break;
+
+      case Action::ToggleFastCharge:
+        audio::select();
+        g_console.fast_charge = !g_console.fast_charge;
+        power::apply(g_console);
+        break;
+
+      case Action::ToggleUsbPower:
+        audio::select();
+        g_console.usb_power = !g_console.usb_power;
+        power::apply(g_console);
+        break;
+
+      case Action::PowerOff:
+        settings_store::saveMenu(g_menu);
+        settings_store::save(g_console);
+        power::off();
         break;
 
       case Action::SettingsUp:

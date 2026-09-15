@@ -9,6 +9,9 @@ namespace {
 // Slow enough that the bus is essentially idle; a battery percentage does not
 // need to be fresher than this.
 constexpr uint32_t kIntervalMs = 30000;
+// The charge flag is one expander read, and it should follow the cable
+// within a few seconds, so it has its own faster clock.
+constexpr uint32_t kChargeIntervalMs = 5000;
 
 // A read should be a couple of I2C transactions. Anything near this means the
 // bus is congested or the part is not answering, and it is not worth risking
@@ -21,6 +24,7 @@ bool g_disabled = false;
 int g_level = -1;
 bool g_charging = false;
 uint32_t g_last_read = 0;
+uint32_t g_last_charge_read = 0;
 uint32_t g_last_us = 0;
 
 }  // namespace
@@ -31,7 +35,14 @@ void update(uint32_t now_ms, bool allowed) {
   // up soon, but back off rather than polling forever on a device that simply
   // has no battery fitted.
   const uint32_t wait = g_have ? kIntervalMs : (g_attempts < 8 ? 1500 : kIntervalMs);
-  if (now_ms - g_last_read < wait) return;
+  if (now_ms - g_last_read < wait) {
+    if (g_have && now_ms - g_last_charge_read >= kChargeIntervalMs) {
+      g_last_charge_read = now_ms;
+      g_charging = (M5.Power.isCharging() == M5.Power.is_charging_t::is_charging);
+    }
+    return;
+  }
+  g_last_charge_read = now_ms;
   g_last_read = now_ms;
   g_attempts++;
 
