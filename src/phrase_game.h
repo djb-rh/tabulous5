@@ -61,11 +61,11 @@ struct Settings {
   // charger meeting it latches off. 0 = never, 1 = in a game on battery
   // (a charger already attached keeps it off), 2 = in any game.
   uint8_t pad_power = 1;
-  // The USB-C data lines: optionally off when no computer is talking, so a
-  // charger never sees the chip's USB pull-up (one brick read it as a
-  // voltage request and latched off). Off by default: a computer that
-  // suspends the bus looks the same as no computer, and the port vanishes.
-  bool usb_data_auto = false;
+  // The USB-C data lines: off unless a computer is heard within 12 s of
+  // boot, so a charger never sees the chip's USB pull-up (a brick read it
+  // as a voltage request and latched off). Decided once per boot: a
+  // computer that later suspends the bus does not lose the port.
+  bool usb_data_auto = true;
   std::string team_names[2] = {"Team A", "Team B"};
 };
 

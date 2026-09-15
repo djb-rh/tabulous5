@@ -749,14 +749,14 @@ void drawSettings() {
   addAction(usb, Action::ToggleUsbPower);
   y += 72;
   const Rect usbd{lx, y, lw, 52};
-  uikit::drawButton(usbd, g_console.usb_data_auto ? "USB-C DATA: OFF WHEN NO COMPUTER" : "USB-C DATA: ALWAYS ON",
+  uikit::drawButton(usbd, g_console.usb_data_auto ? "USB-C DATA: OFF UNLESS BOOTED ON A COMPUTER" : "USB-C DATA: ALWAYS ON",
                     kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
   addAction(usbd, Action::ToggleUsbData);
   y += 60;
-  uikit::drawLabel("Pad power also feeds the USB-C: a charger meeting it shuts off. ON BATTERY", lx, y, kMuted,
+  uikit::drawLabel("Plug chargers in from this menu. To use a computer, press the button once", lx, y, kMuted,
                    &fonts::FreeSans9pt7b);
   y += 20;
-  uikit::drawLabel("keeps a charger safe (no pad while charging); plug chargers in from the menu.", lx, y, kMuted,
+  uikit::drawLabel("(a reset) with it attached. Pad power on a charger shuts the charger off.", lx, y, kMuted,
                    &fonts::FreeSans9pt7b);
 
   // ---- right column: which games appear, and in what order

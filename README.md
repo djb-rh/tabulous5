@@ -573,9 +573,10 @@ from that commit onward is GPL-3.0.
   The M5-Bus 5 V rail is never switched on.
 - **Quick Charge.** M5Unified leaves the IP2326's QC handshake enabled;
   **FAST CHARGE** is that handshake, default off.
-- **USB-C DATA** (opt-in): after 12 s without a host the USB-serial-JTAG
-  pad is switched off until the next reset, for a brick that reads the
-  chip's D+ pull-up as a voltage request. Off by default because a host
-  that suspends the bus looks the same as no host, and the port vanishes.
+- **USB-C DATA** (default on): if no computer is heard within 12 s of boot
+  the USB-serial-JTAG pad is switched off until the next reset, because a
+  brick read the chip's D+ pull-up as a voltage request and latched off.
+  Decided once per boot, so a computer that later suspends the bus keeps
+  its port. To flash or monitor: attach, then press the button once.
 - Serial: `P` prints the expander input register, current and level;
   `0`/`1` disable/enable the charger; `u`/`U` switch the pad rail.

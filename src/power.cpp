@@ -12,8 +12,8 @@ uint8_t g_pad_power = 1;     // the setting; the policy below decides the rest
 bool g_usb_on = false;
 bool g_data_auto = true;
 bool g_data_on = true;       // the pad is on out of reset
-uint32_t g_last_host_ms = 0;
-constexpr uint32_t kHostGraceMs = 12000;   // after boot, and after a host goes quiet
+bool g_host_seen = false;    // decided once: a host heard early keeps the lines on for good
+constexpr uint32_t kHostGraceMs = 12000;   // how long after boot a host gets to show up
 }  // namespace
 
 void apply(const Settings &s) {
@@ -49,9 +49,9 @@ void forceUsbRail(bool on) {   // serial diagnostics only
 }
 
 void tick(uint32_t now_ms) {
-  if (!g_data_auto || !g_data_on) return;
-  if (Serial.isPlugged()) g_last_host_ms = now_ms;
-  if (now_ms - g_last_host_ms < kHostGraceMs) return;
+  if (!g_data_auto || !g_data_on || g_host_seen) return;
+  if (Serial.isPlugged()) { g_host_seen = true; return; }   // a computer: keep the lines up, even through a suspend
+  if (now_ms < kHostGraceMs) return;
   Serial.println("power: no USB host; USB-C data off until reset");
   Serial.flush();
   usb_serial_jtag_ll_phy_enable_pad(false);
