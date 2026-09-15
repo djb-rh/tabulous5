@@ -109,6 +109,7 @@ void setup() {
 
   // A gamepad on the USB-A port is optional too; the stack just waits.
   usbpad::begin();
+  power::setPlaying(false);   // the menu: pad power off, whatever begin() did
 
   // The card is optional: without one the NES has its built-in ROMs and
   // nothing else changes.

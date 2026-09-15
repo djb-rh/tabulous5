@@ -582,10 +582,10 @@ bool begin() {
   const BaseType_t b = xTaskCreatePinnedToCore(clientTask, "usbpad", 8192, nullptr, 2, nullptr, 0);
   Serial.printf("usbpad: host installed, tasks %d/%d\n", (int)a, (int)b);
   vTaskDelay(pdMS_TO_TICKS(100));
-  // 5 V to the USB-A port, through M5Unified's own expander driver, then the
-  // root port itself.
-  M5.Power.setExtOutput(true, m5::ext_port_mask_t::ext_USB);
-  vTaskDelay(pdMS_TO_TICKS(50));
+  // The port's 5 V is NOT switched on here: on the Tab5 that rail also
+  // drives the USB-C VBUS and kills a wall charger, so power::setPlaying
+  // owns it and turns it on only for a game on battery. The root port is
+  // told it may power up; the pad enumerates when the rail arrives.
   usb_host_lib_set_root_port_power(true);
   return true;
 }
