@@ -34,10 +34,40 @@ void setSurface(LovyanGFX *surface) { g_surface = surface; }
 
 void present() {}  // nothing to flush: we draw straight at the panel
 
+namespace {
+bool g_touch_override = false;
+TouchState g_touch_synth;
+}  // namespace
+
+TouchState touch() {
+  if (g_touch_override) return g_touch_synth;
+  const auto t = M5.Touch.getDetail();
+  TouchState s;
+  s.down = t.isPressed() || M5.Touch.getCount() > 0;
+  s.x = t.x;
+  s.y = t.y;
+  return s;
+}
+
+void overrideTouch(bool active, bool down, int x, int y) {
+  g_touch_override = active;
+  g_touch_synth.down = down;
+  g_touch_synth.x = x;
+  g_touch_synth.y = y;
+}
+
 void clearTargets() { g_targets.clear(); }
 
 void addTarget(const Rect &r, int action, int param) {
+  if (r.w <= 0 || r.h <= 0) return;  // clipped away entirely
   g_targets.push_back({r, action, param});
+}
+
+void removeTargetsIn(const Rect &r) {
+  for (size_t i = 0; i < g_targets.size();) {
+    if (g_targets[i].rect.overlaps(r)) g_targets.erase(g_targets.begin() + i);
+    else i++;
+  }
 }
 
 bool findTarget(int x, int y, int *action, int *param) {

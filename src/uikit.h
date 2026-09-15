@@ -19,6 +19,16 @@ struct Rect {
   bool hit(int px, int py) const {
     return px >= x && px < x + w && py >= y && py < y + h;
   }
+  bool overlaps(const Rect &o) const {
+    return x < o.x + o.w && o.x < x + w && y < o.y + o.h && o.y < y + h;
+  }
+  // This rect cut down to the part inside `b`; empty (w or h <= 0) if none.
+  Rect clip(const Rect &b) const {
+    const int x0 = x > b.x ? x : b.x, y0 = y > b.y ? y : b.y;
+    const int x1 = (x + w < b.x + b.w) ? x + w : b.x + b.w;
+    const int y1 = (y + h < b.y + b.h) ? y + h : b.y + b.h;
+    return Rect{x0, y0, x1 - x0, y1 - y0};
+  }
 };
 
 // Drawing goes straight at the panel. An off-screen canvas was tried and cost
@@ -37,10 +47,27 @@ void present();
 // one hook captures all of them.
 void setSurface(LovyanGFX *surface);
 
+// The finger, as the shell sees it. Reads the panel unless a synthetic
+// gesture is in progress (see overrideTouch), so a drag injected over serial
+// travels the same path a real one does - the scroller, the reorder handle,
+// the press edge in the main loop.
+struct TouchState {
+  bool down = false;
+  int x = 0, y = 0;
+};
+TouchState touch();
+// A synthetic touch stands in for the panel while `active`; pass false to
+// hand the panel back.
+void overrideTouch(bool active, bool down, int x, int y);
+
 // Hit targets are rebuilt on every repaint, so they can never drift out of
 // sync with what is actually on screen.
 void clearTargets();
 void addTarget(const Rect &r, int action, int param = 0);
+// Drops every target that overlaps `r`. A scrolling list redraws itself
+// without repainting the screen around it, so it drops its own targets and
+// registers them again where its rows now are, leaving the rest alone.
+void removeTargetsIn(const Rect &r);
 
 // Searches in REVERSE registration order, so for overlapping targets the one
 // registered LAST wins. Register the big background target first and the small

@@ -65,8 +65,16 @@ void invalidate();
 // Paints and registers this screen's hit targets.
 void draw();
 
-// Feeds a tap in. On Launch, `*index` is the title picked.
+// Feeds a press in. On Launch, `*index` is the title picked.
+//
+// A press on the list itself is not acted on here: it may be the start of a
+// scroll, and only the release can say. tick() delivers it then, with the
+// same Result, so a caller handles both the same way.
 Result handleTap(int x, int y, int *index);
+
+// Runs the list: scrolling under the finger, and the tap a press turned out
+// to be. Call every loop while this screen is up, before draw().
+Result tick(uint32_t now_ms, int *index);
 
 int size();
 const rom_index::Item &item(int i);

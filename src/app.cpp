@@ -26,6 +26,7 @@
 #include "sudoku_ui.h"
 #include "phrase_game.h"
 #include "phrase_ui.h"
+#include "scroller.h"
 #include "settings_store.h"
 #include "secrets.h"
 #include "theme.h"
@@ -39,12 +40,13 @@ using namespace theme;
 using uikit::Rect;
 
 enum class Action : uint8_t {
-  None, Launch, About, AboutBack, ScrollUp, ScrollDown, ExitYes, ExitNo,
+  None, Launch, About, AboutBack, ExitYes, ExitNo,
   OpenEditor, CloseEditor, SwitchWifi, ToggleTheme,
-  OpenSettings, CloseSettings, VolumeDown, VolumeUp, ToggleGame,
-  MoveGameUp, MoveGameDown, SettingsUp, SettingsDown,
+  OpenSettings, CloseSettings, VolumeDown, VolumeUp, ToggleGame, DragHandle,
   ToggleFastCharge, ToggleUsbPower, PowerOff, ToggleUsbData,
 };
+
+void dispatchTap(int x, int y, uint32_t now_ms);
 
 std::vector<Pack> *g_packs = nullptr;
 content::LoadReport g_report;
@@ -59,10 +61,18 @@ bool g_settings_open = false;
 settings_store::MenuPrefs g_menu;
 Settings g_console;
 
-// The settings list scrolls: it outgrew the screen at seven games and will
-// keep growing.
-constexpr int kSettingsVisible = 5;
-int g_settings_scroll = 0;
+// The games list on the settings screen scrolls, and its rows are put in
+// order by dragging the handle at their right end. While a row is held,
+// g_drag_i is its position in g_menu.order and g_drag_y is the finger.
+scroller::Scroller g_games_scroll;
+int g_drag_i = -1;
+int g_drag_dy = 0;  // finger y minus the held row's top, at the grab
+int g_drag_y = 0;
+constexpr int kGamesRowH = 84, kGamesRowGap = 8;
+constexpr int kGamesPitch = kGamesRowH + kGamesRowGap;
+constexpr int kGamesX = 640, kGamesTop = 150;
+constexpr int kGamesBarW = 40;
+constexpr int kGamesW = kW - kMargin - kGamesX - kGamesBarW;  // rows and gap
 int g_about = -1;  // entry index whose About screen is showing, or -1
 bool g_about_over_game = false;  // opened from inside a game, not the menu
 uint32_t g_revision_at_open = 0;
@@ -312,11 +322,14 @@ constexpr int kEntryCount = (int)(sizeof(kEntries) / sizeof(kEntries[0]));
 constexpr int kBlobH = 104;
 constexpr int kBlobGap = 10;
 int g_list_top = 126;  // set from the wordmark's measured height
-constexpr int kVisible = 4;
-constexpr int kScrollW = 62;
-constexpr int kListW = kW - 2 * kMargin - kScrollW - 12;
+constexpr int kBlobPitch = kBlobH + kBlobGap;
+constexpr int kScrollW = 44;
+constexpr int kListW = kW - 2 * kMargin - kScrollW;
+// The list's bottom edge, clear of the SETTINGS button at kH - 64. Whatever
+// row straddles it is cut off there, which is also what says there is more.
+constexpr int kListBottom = kH - 78;
 
-int g_scroll = 0;  // index of the first visible entry
+scroller::Scroller g_menu_scroll;
 
 // The launcher shows games in the stored order, skipping hidden ones, so
 // everything below counts VISIBLE entries rather than table rows.
@@ -338,11 +351,6 @@ int visibleEntry(int slot) {
     if (slot-- == 0) return entry;
   }
   return -1;
-}
-
-int maxScroll() {
-  const int n = visibleCount();
-  return n > kVisible ? n - kVisible : 0;
 }
 
 // TAB-U-LOUS-5, each part in its own colour, sharing one baseline so the
@@ -435,19 +443,25 @@ void drawBattery() {
                    middle_right);
 }
 
-void drawMenu() {
+// The rows at their scrolled positions, clipped to the viewport. Called on
+// every scroll step as well as from the full repaint, so it touches nothing
+// outside the list and re-registers only the list's own targets.
+void drawMenuList() {
   auto &g = uikit::gfx();
-  g.fillScreen(kBg);
+  const Rect vp = g_menu_scroll.viewport();
+  uikit::removeTargetsIn(vp);
+  g.setClipRect(vp.x, vp.y, vp.w, vp.h);
+  g.fillRect(vp.x, vp.y, vp.w, vp.h, kBg);
 
-  g_list_top = drawWordmark(kW / 2, 12) + 18;
-  drawBattery();
-
-  for (int slot = 0; slot < kVisible; slot++) {
-    const int i = visibleEntry(g_scroll + slot);
+  const int n = visibleCount();
+  for (int slot = 0; slot < n; slot++) {
+    const int y = vp.y + slot * kBlobPitch - g_menu_scroll.offset();
+    if (y + kBlobH <= vp.y) continue;
+    if (y >= vp.y + vp.h) break;
+    const int i = visibleEntry(slot);
     if (i < 0) break;
     const Entry &e = kEntries[i];
-    const Rect blob{kMargin, g_list_top + slot * (kBlobH + kBlobGap), kListW,
-                    kBlobH};
+    const Rect blob{kMargin, y, kListW, kBlobH};
 
     // Gradient plus a darker shelf along the bottom edge, so the blob reads as
     // something you press. The panel is 16-bit, so this resolves to a handful
@@ -478,25 +492,26 @@ void drawMenu() {
 
     // ORDER MATTERS: findTarget() searches in reverse, so the LAST target
     // registered wins an overlap. The ? sits inside the blob, so the blob must
-    // be registered first and the ? second.
-    uikit::addTarget(blob, (int)Action::Launch, i);
-    uikit::addTarget(q, (int)Action::About, i);
+    // be registered first and the ? second. Both are cut to the viewport: a
+    // row half off the bottom must not take taps from the footer under it.
+    uikit::addTarget(blob.clip(vp), (int)Action::Launch, i);
+    uikit::addTarget(q.clip(vp), (int)Action::About, i);
   }
+  g.clearClipRect();
+  g_menu_scroll.drawBar(kSurface, kMuted);
+}
 
-  if (visibleCount() > kVisible) {
-    const int x = kMargin + kListW + 12;
-    const int h = (kVisible * (kBlobH + kBlobGap) - kBlobGap - 12) / 2;
-    const Rect up{x, g_list_top, kScrollW, h};
-    const Rect down{x, g_list_top + h + 12, kScrollW, h};
-    const bool can_up = g_scroll > 0;
-    const bool can_down = g_scroll < maxScroll();
-    uikit::drawArrowButton(up, true, can_up ? kSurfaceLift : kSurface,
-                           can_up ? kText : kMuted);
-    uikit::drawArrowButton(down, false, can_down ? kSurfaceLift : kSurface,
-                           can_down ? kText : kMuted);
-    uikit::addTarget(up, (int)Action::ScrollUp);
-    uikit::addTarget(down, (int)Action::ScrollDown);
-  }
+void drawMenu() {
+  auto &g = uikit::gfx();
+  g.fillScreen(kBg);
+
+  g_list_top = drawWordmark(kW / 2, 12) + 18;
+  drawBattery();
+
+  const Rect vp{kMargin, g_list_top, kListW, kListBottom - g_list_top};
+  const Rect track{kMargin + kListW, g_list_top, kScrollW, vp.h};
+  g_menu_scroll.layout(vp, track, visibleCount() * kBlobPitch - kBlobGap);
+  drawMenuList();
 
 
   // One door rather than a row of them: theme, volume, the Wi-Fi editor and
@@ -701,6 +716,69 @@ void drawEditor() {
 // The launcher arrangement lives here rather than on the menu itself because
 // reordering by dragging rows around the screen you are also trying to launch
 // from is how you launch a game by accident.
+
+int gamesRowTop(int i) {
+  return g_games_scroll.viewport().y + i * kGamesPitch - g_games_scroll.offset();
+}
+
+// One row of the games list. A lifted row is the one being dragged: drawn
+// where the finger is, with a shadow, and with no targets - the finger
+// already has it.
+void drawGamesRow(int i, int y, bool lifted) {
+  auto &g = uikit::gfx();
+  const int entry = g_menu.order[i];
+  const Entry &e = kEntries[entry];
+  const bool off = hidden(entry);
+  const Rect row{kGamesX, y, kGamesW - 12, kGamesRowH};
+  if (lifted) {
+    uikit::fillRoundRectFast(row.x + 4, row.y + 6, row.w, row.h, 14, kSurface);
+  }
+  // A hidden game keeps its colour but drops to a flat, dim fill, so the
+  // list still reads as the same games rather than as two lists.
+  if (off) {
+    uikit::fillRoundRectFast(row.x, row.y, row.w, row.h, 14,
+                             rgb(shade(e.color, 34)));
+  } else {
+    uikit::fillRoundRectShaded(row.x, row.y, row.w, row.h, 14, e.color,
+                               shade(e.color, 80), shade(e.color, 58), 4);
+  }
+  const uint16_t ink = off ? kMuted : inkFor(e.color);
+  glyphs::draw(e.mark, row.x + 14, row.y + 14, 56, ink,
+               rgb(off ? shade(e.color, 34) : e.color));
+  uikit::drawLabel(e.name, row.x + 84, row.y + kGamesRowH / 2, ink,
+                   &fonts::FreeSansBold18pt7b, middle_left);
+  uikit::drawLabel(off ? "hidden" : "shown", row.x + row.w - 96,
+                   row.y + kGamesRowH / 2, ink, &fonts::FreeSans9pt7b,
+                   middle_right);
+  // The handle: three bars, the sign every phone uses for "this row moves".
+  const int hx = row.x + row.w - 66, hy = row.y + kGamesRowH / 2;
+  for (int k = -1; k <= 1; k++) g.fillRect(hx, hy + k * 11 - 2, 36, 4, ink);
+
+  if (lifted) return;
+  const Rect vp = g_games_scroll.viewport();
+  uikit::addTarget(row.clip(vp), (int)Action::ToggleGame, i);
+  // Registered after the row, so it wins the overlap.
+  uikit::addTarget(Rect{row.x + row.w - 96, row.y, 96, row.h}.clip(vp),
+                   (int)Action::DragHandle, i);
+}
+
+void drawGamesList() {
+  auto &g = uikit::gfx();
+  const Rect vp = g_games_scroll.viewport();
+  uikit::removeTargetsIn(vp);
+  g.setClipRect(vp.x, vp.y, vp.w, vp.h);
+  g.fillRect(vp.x, vp.y, vp.w, vp.h, kBg);
+  for (int i = 0; i < g_menu.count; i++) {
+    if (i == g_drag_i) continue;  // drawn last, under the finger
+    const int y = gamesRowTop(i);
+    if (y + kGamesRowH <= vp.y || y >= vp.y + vp.h) continue;
+    drawGamesRow(i, y, false);
+  }
+  if (g_drag_i >= 0) drawGamesRow(g_drag_i, g_drag_y - g_drag_dy, true);
+  g.clearClipRect();
+  g_games_scroll.drawBar(kSurface, kMuted);
+}
+
 void drawSettings() {
   auto &g = uikit::gfx();
   g.fillScreen(kBg);
@@ -750,29 +828,30 @@ void drawSettings() {
   uikit::drawLabel(vol, lx + lw / 2, y + 42, kText, &fonts::FreeSansBold18pt7b,
                    middle_center);
 
-  y += 116;
+  y += 100;
   const Rect edit{lx, y, lw, 84};
   uikit::drawButton(edit, "EDIT CONTENT OVER WI-FI", kSurfaceLift, kText,
                     &fonts::FreeSansBold12pt7b);
   addAction(edit, Action::OpenEditor);
 
-  y += 104;
+  y += 92;
   uikit::drawLabel("POWER", lx, y, kMuted, &fonts::FreeSans12pt7b);
   y += 30;
   const Rect qc{lx, y, (lw - 16) / 2, 64};
   const Rect usb{lx + (lw + 16) / 2, y, (lw - 16) / 2, 64};
+  // The smaller bold face: at 12 pt these labels ran past their buttons.
   uikit::drawButton(qc, g_console.fast_charge ? "FAST CHARGE: ON" : "FAST CHARGE: OFF",
-                    kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+                    kSurfaceLift, kText, &fonts::FreeSansBold9pt7b);
   uikit::drawButton(usb, g_console.pad_power == 2 ? "PAD POWER: IN GAMES" : g_console.pad_power == 1 ? "PAD POWER: ON BATTERY" : "PAD POWER: OFF",
-                    kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+                    kSurfaceLift, kText, &fonts::FreeSansBold9pt7b);
   addAction(qc, Action::ToggleFastCharge);
   addAction(usb, Action::ToggleUsbPower);
   y += 72;
   const Rect usbd{lx, y, lw, 52};
   uikit::drawButton(usbd, g_console.usb_data_auto ? "USB-C DATA: OFF UNLESS BOOTED ON A COMPUTER" : "USB-C DATA: ALWAYS ON",
-                    kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+                    kSurfaceLift, kText, &fonts::FreeSansBold9pt7b);
   addAction(usbd, Action::ToggleUsbData);
-  y += 60;
+  y += 56;
   uikit::drawLabel("Plug chargers in from this menu. To use a computer, press the button once", lx, y, kMuted,
                    &fonts::FreeSans9pt7b);
   y += 20;
@@ -780,83 +859,76 @@ void drawSettings() {
                    &fonts::FreeSans9pt7b);
 
   // ---- right column: which games appear, and in what order
-  const int rx = 640, rw = kW - kMargin - 640;
+  const int rx = kGamesX;
   uikit::drawLabel("GAMES", rx, 116, kMuted, &fonts::FreeSans12pt7b);
-  uikit::drawLabel("tap a name to show or hide it", rx + 110, 118, kMuted,
-                   &fonts::FreeSans9pt7b);
+  uikit::drawLabel("tap to show or hide, drag the handle to reorder", rx + 110,
+                   118, kMuted, &fonts::FreeSans9pt7b);
 
-  const int row_h = 84, row_gap = 8;
-  const int max_scroll =
-      g_menu.count > kSettingsVisible ? g_menu.count - kSettingsVisible : 0;
-  if (g_settings_scroll > max_scroll) g_settings_scroll = max_scroll;
-  if (g_settings_scroll < 0) g_settings_scroll = 0;
+  const Rect vp{rx, kGamesTop, kGamesW, kH - kGamesTop - 16};
+  const Rect track{rx + kGamesW, kGamesTop, kGamesBarW, vp.h};
+  g_games_scroll.layout(vp, track, g_menu.count * kGamesPitch - kGamesRowGap);
+  drawGamesList();
+}
 
-  int ry = 150;
-  for (int slot = 0; slot < kSettingsVisible; slot++) {
-    const int i = g_settings_scroll + slot;
-    if (i >= g_menu.count) break;
-    const int entry = g_menu.order[i];
-    const Entry &e = kEntries[entry];
-    const bool off = hidden(entry);
+// Which list, if any, takes presses on the current screen.
+scroller::Scroller *activeScroller() {
+  if (g_confirming_exit || g_editor_open || g_about >= 0) return nullptr;
+  if (g_settings_open) return &g_games_scroll;
+  if (g_current == GameId::Menu) return &g_menu_scroll;
+  return nullptr;
+}
 
-    // A hidden game keeps its colour but drops to a flat, dim fill, so the
-    // list still reads as the same five games rather than as two lists.
-    const Rect row{rx, ry, rw - 180, row_h};
-    if (off) {
-      uikit::fillRoundRectFast(row.x, row.y, row.w, row.h, 14,
-                               rgb(shade(e.color, 34)));
-    } else {
-      uikit::fillRoundRectShaded(row.x, row.y, row.w, row.h, 14, e.color,
-                                 shade(e.color, 80), shade(e.color, 58), 4);
+// Runs the list under the finger: scrolling, the tap it delivers on release,
+// and the reorder drag on the settings screen.
+void pollLists(uint32_t now_ms) {
+  scroller::Scroller *s = activeScroller();
+  if (!s) return;
+  const uikit::TouchState t = uikit::touch();
+  const bool down = t.down;
+
+  if (g_drag_i >= 0) {
+    if (!down) {
+      g_drag_i = -1;
+      drawGamesList();
+      uikit::present();
+      return;
     }
-    const uint16_t ink = off ? kMuted : inkFor(e.color);
-    glyphs::draw(e.mark, row.x + 14, row.y + 14, 56, ink,
-                 rgb(off ? shade(e.color, 34) : e.color));
-    uikit::drawLabel(e.name, row.x + 84, row.y + row_h / 2, ink,
-                     &fonts::FreeSansBold18pt7b, middle_left);
-    uikit::drawLabel(off ? "hidden" : "shown", row.x + row.w - 20,
-                     row.y + row_h / 2, ink, &fonts::FreeSans9pt7b,
-                     middle_right);
-    addAction(row, Action::ToggleGame, i);
-
-    const Rect up{rx + rw - 168, ry, 78, row_h};
-    const Rect down{rx + rw - 82, ry, 78, row_h};
-    const bool can_up = i > 0;
-    const bool can_down = i < g_menu.count - 1;
-    uikit::drawArrowButton(up, true, can_up ? kSurfaceLift : kSurface,
-                           can_up ? kText : kMuted);
-    uikit::drawArrowButton(down, false, can_down ? kSurfaceLift : kSurface,
-                           can_down ? kText : kMuted);
-    if (can_up) addAction(up, Action::MoveGameUp, i);
-    if (can_down) addAction(down, Action::MoveGameDown, i);
-
-    ry += row_h + row_gap;
+    g_drag_y = t.y;
+    // Near either edge the list creeps, so a row can be carried past the
+    // rows that are showing.
+    const Rect vp = s->viewport();
+    if (t.y < vp.y + 48) s->scrollBy(-6);
+    else if (t.y > vp.y + vp.h - 48) s->scrollBy(6);
+    // The slot under the held row's centre is where it now belongs; the rows
+    // between shuffle out of its way as it passes them.
+    const int centre = g_drag_y - g_drag_dy + kGamesRowH / 2;
+    const int rel = centre - (vp.y - s->offset());
+    int slot = rel < 0 ? 0 : rel / kGamesPitch;
+    if (slot >= g_menu.count) slot = g_menu.count - 1;
+    if (slot != g_drag_i) {
+      const uint8_t held = g_menu.order[g_drag_i];
+      if (slot > g_drag_i) {
+        for (int k = g_drag_i; k < slot; k++) g_menu.order[k] = g_menu.order[k + 1];
+      } else {
+        for (int k = g_drag_i; k > slot; k--) g_menu.order[k] = g_menu.order[k - 1];
+      }
+      g_menu.order[slot] = held;
+      g_drag_i = slot;
+      audio::select();
+    }
+    drawGamesList();
+    uikit::present();
+    return;
   }
 
-  if (max_scroll > 0) {
-    // Under the list rather than beside it: the rows already carry a pair of
-    // arrows each, and a third pair alongside them would be unreadable.
-    const int by = 150 + kSettingsVisible * (row_h + row_gap) + 6;
-    const Rect up{rx, by, 96, 56};
-    const Rect down{rx + 106, by, 96, 56};
-    const bool can_up = g_settings_scroll > 0;
-    const bool can_down = g_settings_scroll < max_scroll;
-    uikit::drawArrowButton(up, true, can_up ? kSurfaceLift : kSurface,
-                           can_up ? kText : kMuted);
-    uikit::drawArrowButton(down, false, can_down ? kSurfaceLift : kSurface,
-                           can_down ? kText : kMuted);
-    if (can_up) addAction(up, Action::SettingsUp);
-    if (can_down) addAction(down, Action::SettingsDown);
-
-    char pos[40];
-    snprintf(pos, sizeof(pos), "%d-%d of %d", g_settings_scroll + 1,
-             g_settings_scroll + kSettingsVisible < g_menu.count
-                 ? g_settings_scroll + kSettingsVisible
-                 : g_menu.count,
-             (int)g_menu.count);
-    uikit::drawLabel(pos, rx + 222, by + 28, kMuted, &fonts::FreeSans12pt7b,
-                     middle_left);
+  const bool moved = s->update(now_ms, down, t.x, t.y);
+  if (moved && !g_dirty) {
+    if (s == &g_menu_scroll) drawMenuList();
+    else drawGamesList();
+    uikit::present();
   }
+  int tx = 0, ty = 0;
+  if (s->takeTap(&tx, &ty)) dispatchTap(tx, ty, now_ms);
 }
 
 void repaint() {
@@ -1033,6 +1105,7 @@ void tick(uint32_t now_ms) {
 
   if (g_current == GameId::Menu || g_confirming_exit || g_settings_open ||
       g_about >= 0) {
+    pollLists(now_ms);
     if (g_dirty) {
       g_dirty = false;
       const uint32_t t0 = micros();
@@ -1057,11 +1130,12 @@ void tick(uint32_t now_ms) {
   else if (g_current == GameId::Arcade) pacman_ui::tick(now_ms);
 }
 
-void handleTap(int x, int y, uint32_t now_ms) {
-  // While the menu or the confirmation is up, the shell owns the screen and
-  // the running game must not also act on the tap.
-  if (g_current == GameId::Menu || g_confirming_exit || g_settings_open ||
-      g_about >= 0) {
+namespace {
+
+// A tap on one of the shell's own screens, once it is known to be a tap.
+void dispatchTap(int x, int y, uint32_t now_ms) {
+  (void)now_ms;
+  {
     int action = 0, param = 0;
     if (!uikit::findTarget(x, y, &action, &param)) return;
     switch ((Action)action) {
@@ -1084,12 +1158,6 @@ void handleTap(int x, int y, uint32_t now_ms) {
           invalidate();  // make the game rebuild its own screen and targets
         }
         break;
-      case Action::ScrollUp:
-        if (g_scroll > 0) { g_scroll--; audio::select(); }
-        break;
-      case Action::ScrollDown:
-        if (g_scroll < maxScroll()) { g_scroll++; audio::select(); }
-        break;
       case Action::ExitNo:
         audio::select();
         g_confirming_exit = false;
@@ -1103,7 +1171,8 @@ void handleTap(int x, int y, uint32_t now_ms) {
       case Action::OpenSettings:
         audio::select();
         g_settings_open = true;
-        g_settings_scroll = 0;
+        g_games_scroll.setOffset(0);
+        g_drag_i = -1;
         break;
 
       case Action::ToggleFastCharge:
@@ -1130,16 +1199,6 @@ void handleTap(int x, int y, uint32_t now_ms) {
         power::off();
         break;
 
-      case Action::SettingsUp:
-        audio::select();
-        if (g_settings_scroll > 0) g_settings_scroll--;
-        break;
-
-      case Action::SettingsDown:
-        audio::select();
-        g_settings_scroll++;
-        break;
-
       case Action::CloseSettings:
         audio::select();
         g_settings_open = false;
@@ -1147,9 +1206,6 @@ void handleTap(int x, int y, uint32_t now_ms) {
         // and reordering a five-game list takes a lot of taps.
         settings_store::saveMenu(g_menu);
         settings_store::save(g_console);
-        // A hidden or reordered game can put the scroll position past the end
-        // of a now-shorter list.
-        if (g_scroll > maxScroll()) g_scroll = maxScroll();
         break;
 
       case Action::VolumeDown:
@@ -1185,18 +1241,8 @@ void handleTap(int x, int y, uint32_t now_ms) {
         break;
       }
 
-      case Action::MoveGameUp:
-      case Action::MoveGameDown: {
-        audio::select();
-        const int from = param;
-        const int to = from + ((Action)action == Action::MoveGameUp ? -1 : 1);
-        if (to >= 0 && to < g_menu.count) {
-          const uint8_t tmp = g_menu.order[from];
-          g_menu.order[from] = g_menu.order[to];
-          g_menu.order[to] = tmp;
-        }
-        break;
-      }
+      case Action::DragHandle:
+        break;  // a press-edge event; the drag is started from handleTap
 
       case Action::ToggleTheme:
         audio::select();
@@ -1246,6 +1292,39 @@ void handleTap(int x, int y, uint32_t now_ms) {
         break;
     }
     g_dirty = true;
+  }
+}
+
+}  // namespace
+
+void handleTap(int x, int y, uint32_t now_ms) {
+  // While the menu or the confirmation is up, the shell owns the screen and
+  // the running game must not also act on the tap.
+  if (g_current == GameId::Menu || g_confirming_exit || g_settings_open ||
+      g_about >= 0) {
+    // A press inside a scrolling list is not yet a tap: it may be the start
+    // of a drag, and only the release can say. The list delivers it then. A
+    // tap injected over serial has no finger behind it and goes straight
+    // through, so the tools still work.
+    const bool finger = uikit::touch().down;
+    scroller::Scroller *s = finger ? activeScroller() : nullptr;
+    if (s) {
+      int action = 0, param = 0;
+      if (s == &g_games_scroll && g_drag_i < 0 &&
+          uikit::findTarget(x, y, &action, &param) &&
+          (Action)action == Action::DragHandle) {
+        audio::select();
+        g_drag_i = param;
+        g_drag_y = y;
+        g_drag_dy = y - gamesRowTop(param);
+        s->yieldPress();
+        drawGamesList();
+        uikit::present();
+        return;
+      }
+      if (s->owns(x, y)) return;
+    }
+    dispatchTap(x, y, now_ms);
     return;
   }
 

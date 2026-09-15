@@ -10,6 +10,7 @@
 
 #include "audio.h"
 #include "filemanager.h"
+#include "scroller.h"
 #include "sdcard.h"
 #include "theme.h"
 #include "uikit.h"
@@ -32,19 +33,21 @@ uint8_t g_scale = 0;
 bool g_portrait = false;
 
 enum class Action : uint8_t {
-  None, Pick, Back, PageUp, PageDown, Group, ToggleFav, Scale, Orient, Extra
+  None, Pick, Back, Group, ToggleFav, Scale, Orient, Extra
 };
 
-// A page is fourteen rows, which is as many as read comfortably at this size;
-// a group like S holds several hundred, so paging is by whole screens and the
-// position is spelled out.
-constexpr int kRows = 14;
+// The list scrolls continuously under the finger, with a bar down its right
+// edge. A group like S holds several hundred titles; the rail letter is the
+// jump and the bar is the position.
 constexpr int kRowH = 40, kRowGap = 2;
+constexpr int kRowPitch = kRowH + kRowGap;
 constexpr int kListTop = 100;
+constexpr int kListBottom = kH - 16;
+constexpr int kBarW = 40;
 constexpr int kRailX = kMargin, kRailCellW = 60, kRailCols = 2;
 constexpr int kListX = kMargin + kRailCols * (kRailCellW + 4) + 16;
 int g_group = 2;  // 'A'
-int g_page = 0;
+scroller::Scroller g_scroll;
 // Whether the letter on the rail is the owner's choice or ours. Until they
 // pick one, a system opens on its starred games: that is the shortlist, and on
 // a card of thousands it is the only page anyone wants first.
@@ -169,7 +172,7 @@ void scan() {
   // system was opened, or nothing is starred to show.
   if (!g_group_chosen) {
     g_group = groupTotal(rom_index::kFavourites) > 0 ? rom_index::kFavourites : 2;
-    g_page = 0;
+    g_scroll.setOffset(0);
   }
   g_scanned = true;
   g_scanned_rev = filemanager::revision();
@@ -256,7 +259,7 @@ void begin(const Config &config, uint8_t scale, bool portrait) {
     // Page eleven of the NES list is nowhere in a list of seventy, and the
     // next system opens on its own starred games rather than this one's letter.
     g_group = 2;  // 'A'
-    g_page = 0;
+    g_scroll.setOffset(0);
     g_group_chosen = false;
   }
   g_error = "";
@@ -313,6 +316,47 @@ void probeItem(int i) {
   g_cfg.probe(fsFor(it), &it);
 }
 
+// The rows at their scrolled positions, clipped to the viewport. Called on
+// every scroll step as well as from draw(), so it repaints nothing outside
+// the list and re-registers only the list's targets.
+void drawList() {
+  auto &g = gfx();
+  const Rect vp = g_scroll.viewport();
+  if (vp.w <= 0) return;
+  uikit::removeTargetsIn(vp);
+  g.setClipRect(vp.x, vp.y, vp.w, vp.h);
+  g.fillRect(vp.x, vp.y, vp.w, vp.h, kBg);
+  const int total = groupTotal(g_group);
+  for (int n = g_scroll.offset() / kRowPitch; n < total; n++) {
+    const int y = vp.y + n * kRowPitch - g_scroll.offset();
+    if (y >= vp.y + vp.h) break;
+    const int i = groupItem(g_group, n);
+    const rom_index::Item &e = g_lib->at(i);
+    const Rect row{vp.x, y, vp.w, kRowH};
+    // A title already found unplayable stays listed, dimmed, with the reason:
+    // hiding it would leave the owner hunting for a file that is right there.
+    const bool bad = e.status == 1;
+    uikit::fillRoundRectFast(row.x, row.y, row.w, row.h, 8, bad ? kSurface : kSurfaceLift);
+    const uint16_t ink = bad ? kMuted : kText;
+    uikit::drawLabel(e.name, row.x + 16, row.y + kRowH / 2 + 1, ink,
+                     &fonts::FreeSansBold12pt7b, middle_left);
+    if (bad) {
+      uikit::drawLabel(e.problem, row.x + row.w - 200, row.y + kRowH / 2 + 1, kDanger,
+                       &fonts::FreeSans9pt7b, middle_right);
+    } else if (e.source == rom_index::kFlash) {
+      uikit::drawLabel("built in", row.x + row.w - 200, row.y + kRowH / 2 + 1, kMuted,
+                       &fonts::FreeSans9pt7b, middle_right);
+    }
+    const Rect star{row.x + row.w - 64, row.y, 64, kRowH};
+    drawStar(star.x + star.w / 2, star.y + star.h / 2, 13, e.fav ? kAccent : kMuted, e.fav);
+    const Rect title{row.x, row.y, row.w - 64, row.h};
+    if (!bad) addAction(title.clip(vp), Action::Pick, i);
+    addAction(star.clip(vp), Action::ToggleFav, i);
+  }
+  g.clearClipRect();
+  g_scroll.drawBar(kSurface, kMuted);
+}
+
 void draw() {
   g_dirty = false;
   auto &g = gfx();
@@ -327,7 +371,7 @@ void draw() {
 
   // Picture size, as a toggle in the header: it is the one thing about play
   // that is decided before a game starts.
-  const Rect size_btn{back.x - 12 - 100 - 12 - 100 - 12 - 200, 18, 200, 62};
+  const Rect size_btn{back.x - 12 - 200, 18, 200, 62};
   const bool second = g_scale == g_cfg.scale_value[1];
   uikit::drawButton(size_btn, g_cfg.scale_label[second ? 1 : 0], kSurfaceLift, kText,
                     &fonts::FreeSansBold12pt7b);
@@ -361,11 +405,8 @@ void draw() {
   drawRail();
 
   const int total = groupTotal(g_group);
-  const int pages = total > 0 ? (total + kRows - 1) / kRows : 1;
-  if (g_page >= pages) g_page = pages - 1;
-  if (g_page < 0) g_page = 0;
 
-  // Where we are, spelled out next to the title: group, how many, which page.
+  // Where we are, spelled out next to the title: group and how many.
   char where[96];
   if (g_group == rom_index::kFavourites) {
     snprintf(where, sizeof(where), "Favourites  %d", total);
@@ -379,8 +420,9 @@ void draw() {
   uikit::drawLabel(g_error[0] ? g_error : where, kMargin, 82,
                    g_error[0] ? kDanger : kMuted, &fonts::FreeSans12pt7b, middle_left);
 
-  const int list_w = kW - kMargin - kListX;
+  const int list_w = kW - kMargin - kListX - kBarW;
   if (total == 0) {
+    g_scroll.layout(Rect{}, Rect{}, 0);
     uikit::drawLabel(g_group == rom_index::kFavourites
                          ? "Tap the star on a game to keep it here"
                          : "Nothing filed here",
@@ -389,50 +431,14 @@ void draw() {
     return;
   }
 
-  for (int slot = 0; slot < kRows; slot++) {
-    const int n = g_page * kRows + slot;
-    if (n >= total) break;
-    const int i = groupItem(g_group, n);
-    const rom_index::Item &e = g_lib->at(i);
-    const Rect row{kListX, kListTop + slot * (kRowH + kRowGap), list_w, kRowH};
-    // A title already found unplayable stays listed, dimmed, with the reason:
-    // hiding it would leave the owner hunting for a file that is right there.
-    const bool bad = e.status == 1;
-    uikit::fillRoundRectFast(row.x, row.y, row.w, row.h, 8, bad ? kSurface : kSurfaceLift);
-    const uint16_t ink = bad ? kMuted : kText;
-    uikit::drawLabel(e.name, row.x + 16, row.y + kRowH / 2 + 1, ink,
-                     &fonts::FreeSansBold12pt7b, middle_left);
-    if (bad) {
-      uikit::drawLabel(e.problem, row.x + row.w - 200, row.y + kRowH / 2 + 1, kDanger,
-                       &fonts::FreeSans9pt7b, middle_right);
-    } else if (e.source == rom_index::kFlash) {
-      uikit::drawLabel("built in", row.x + row.w - 200, row.y + kRowH / 2 + 1, kMuted,
-                       &fonts::FreeSans9pt7b, middle_right);
-    }
-    const Rect star{row.x + row.w - 64, row.y, 64, kRowH};
-    drawStar(star.x + star.w / 2, star.y + star.h / 2, 13, e.fav ? kAccent : kMuted, e.fav);
-    const Rect title{row.x, row.y, row.w - 64, row.h};
-    if (!bad) addAction(title, Action::Pick, i);
-    addAction(star, Action::ToggleFav, i);
-  }
-
-  if (pages > 1) {
-    const Rect up{back.x - 12 - 100 - 12 - 100, 18, 100, 62};
-    const Rect down{back.x - 12 - 100, 18, 100, 62};
-    const bool can_up = g_page > 0;
-    const bool can_down = g_page + 1 < pages;
-    uikit::drawArrowButton(up, true, can_up ? kSurfaceLift : kSurface, can_up ? kText : kMuted);
-    uikit::drawArrowButton(down, false, can_down ? kSurfaceLift : kSurface,
-                           can_down ? kText : kMuted);
-    if (can_up) addAction(up, Action::PageUp);
-    if (can_down) addAction(down, Action::PageDown);
-    char pos[48];
-    snprintf(pos, sizeof(pos), "%d / %d", g_page + 1, pages);
-    uikit::drawLabel(pos, up.x + 106, 92, kMuted, &fonts::FreeSansBold12pt7b, middle_center);
-  }
+  const Rect vp{kListX, kListTop, list_w, kListBottom - kListTop};
+  const Rect track{kListX + list_w, kListTop, kBarW, vp.h};
+  g_scroll.layout(vp, track, total * kRowPitch - kRowGap);
+  drawList();
 }
 
-Result handleTap(int x, int y, int *index) {
+// The list's own presses, once they are known to be taps.
+Result dispatch(int x, int y, int *index) {
   int action = 0, param = 0;
   if (!uikit::findTarget(x, y, &action, &param)) return Result::None;
   switch ((Action)action) {
@@ -442,7 +448,7 @@ Result handleTap(int x, int y, int *index) {
       return Result::Launch;
     case Action::Group:
       audio::select();
-      if (param != g_group) g_page = 0;
+      if (param != g_group) g_scroll.setOffset(0);
       g_group = param;
       g_group_chosen = true;
       g_dirty = true;
@@ -467,21 +473,32 @@ Result handleTap(int x, int y, int *index) {
                                                   : g_cfg.scale_value[1];
       g_dirty = true;
       return Result::ScaleChanged;
-    case Action::PageUp:
-      audio::select();
-      g_page--;
-      g_dirty = true;
-      break;
-    case Action::PageDown:
-      audio::select();
-      g_page++;
-      g_dirty = true;
-      break;
     case Action::Back:
       return Result::Back;
     case Action::None:
       break;
   }
+  return Result::None;
+}
+
+Result handleTap(int x, int y, int *index) {
+  // A press on the list may be the start of a scroll; tick() delivers it on
+  // release if it was not. A tap injected over serial has no finger behind
+  // it and goes straight through, so the tools still work.
+  if (uikit::touch().down && g_scroll.owns(x, y)) return Result::None;
+  return dispatch(x, y, index);
+}
+
+Result tick(uint32_t now_ms, int *index) {
+  // Nothing to run until the list has been drawn: the geometry is set there.
+  if (g_dirty || !g_lib) return Result::None;
+  const uikit::TouchState t = uikit::touch();
+  if (g_scroll.update(now_ms, t.down, t.x, t.y)) {
+    drawList();
+    uikit::present();
+  }
+  int x = 0, y = 0;
+  if (g_scroll.takeTap(&x, &y)) return dispatch(x, y, index);
   return Result::None;
 }
 

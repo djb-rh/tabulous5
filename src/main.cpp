@@ -50,6 +50,14 @@ std::vector<Pack> g_packs;
 // make readable.
 bool g_wdt_on = false;
 
+// A drag injected over serial ('g'), played out by the loop.
+struct Gesture {
+  bool active = false;
+  int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+  uint32_t start_ms = 0, dur_ms = 0;
+};
+Gesture g_gesture;
+
 void setup() {
   auto cfg = M5.config();
   // Not output_power = true: that switches on every outgoing 5 V rail,
@@ -420,6 +428,22 @@ void loop() {
                        arg.substring(comma + 1).toInt(), millis());
       }
     }
+    // "g<x0>,<y0>,<x1>,<y1>,<ms>" injects a drag: a finger that lands at the
+    // first point, travels to the second over that many milliseconds, and
+    // lifts. Unlike 't' it goes through the touch reading itself, so it
+    // exercises the scrolling lists and the reorder handle. See tools/drag.py.
+    if (cmd == 'g') {
+      const String arg = Serial.readStringUntil('\n');
+      int v[5] = {0, 0, 0, 0, 0};
+      int at = 0;
+      for (int k = 0; k < 5 && at <= (int)arg.length(); k++) {
+        int comma = arg.indexOf(',', at);
+        if (comma < 0) comma = arg.length();
+        v[k] = arg.substring(at, comma).toInt();
+        at = comma + 1;
+      }
+      g_gesture = {true, v[0], v[1], v[2], v[3], millis(), (uint32_t)(v[4] > 0 ? v[4] : 300)};
+    }
   }
 
   // A finished audio capture is streamed out here, between frames, rather
@@ -446,8 +470,23 @@ void loop() {
   // Detect the press edge directly rather than relying on wasPressed(), so a
   // tap still counts if M5Unified's gesture state machine classifies it as a
   // flick or drag because the finger moved a pixel or two.
-  auto touch = M5.Touch.getDetail();
-  const bool raw_down = touch.isPressed() || M5.Touch.getCount() > 0;
+  // A synthetic gesture in flight stands in for the panel. It holds the
+  // release for a few loops so every reader sees the finger lift.
+  if (g_gesture.active) {
+    const uint32_t t = now - g_gesture.start_ms;
+    if (t <= g_gesture.dur_ms) {
+      const int x = g_gesture.x0 + (int)((int64_t)(g_gesture.x1 - g_gesture.x0) * t / g_gesture.dur_ms);
+      const int y = g_gesture.y0 + (int)((int64_t)(g_gesture.y1 - g_gesture.y0) * t / g_gesture.dur_ms);
+      uikit::overrideTouch(true, true, x, y);
+    } else if (t <= g_gesture.dur_ms + 60) {
+      uikit::overrideTouch(true, false, g_gesture.x1, g_gesture.y1);
+    } else {
+      uikit::overrideTouch(false, false, 0, 0);
+      g_gesture.active = false;
+    }
+  }
+  const uikit::TouchState touch = uikit::touch();
+  const bool raw_down = touch.down;
 
   // Stuck-touch watchdog.
   //

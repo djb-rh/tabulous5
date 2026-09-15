@@ -44,7 +44,8 @@ Phase 5 is done too: five procedural game glyphs, gradient-and-shelf blobs,
 a buzzer slam, confetti on the PhraseCraze win screen, and the phrase ladder
 running on Anton converted to four real pixel sizes by `tools/fontconvert.c`.
 A console SETTINGS screen holds the theme, volume, the Wi-Fi editor, and which
-games appear in the launcher and in what order.
+games appear in the launcher and in what order: drag a row by the handle at
+its right end and the others move out of its way.
 
 The NES runs the [Anemoia](third_party/anemoia/) core at a full 60 frames a
 second with the P4's PPA doing the scaling, reads its cartridges from a
@@ -180,9 +181,15 @@ takes the same flags plus `--raw`, which also writes the undecoded RGB565 for
 
 `--tap=X,Y` goes through `app::handleTap`, the same entry point a real touch
 uses, so it exercises the real hit targets. Taps chain, so a screen several
-steps in is reachable: `tools/shot --tap=640,682 --tap=845,559 out.png`. Note that opening the port resets the board; the tool
-waits for boot before driving anything, because a tap that lands before the
-first repaint finds no hit targets registered.
+steps in is reachable: `tools/shot --tap=640,682 --tap=845,559 out.png`.
+`--drag=X0,Y0,X1,Y1[,MS]` is a finger that lands, travels and lifts, played
+out by the main loop through the same touch reading the panel feeds; it is
+how the scrolling lists and the reorder handle are driven without hands.
+`--drag-start=` sends the same without waiting, so a `--sleep` after it
+captures mid-gesture. `tools/drag.py` does one drag on its own. Note that
+opening the port resets the board; the tool waits for boot before driving
+anything, because a tap that lands before the first repaint finds no hit
+targets registered.
 
 Two things will bite anyone extending this: LovyanGFX sprite buffers hold
 RGB565 **big-endian**, and `Serial.setTxTimeoutMs(0)` drops bulk output, so the
@@ -215,8 +222,9 @@ Menu → **NES**. Put `.nes` files in a `/roms` folder on a FAT32 microSD card
 (subfolders one level deep are fine), or in `data/nes/` and `pio run -t
 uploadfs` for a few built-in ones. The card is read once per boot: a full
 No-Intro set of 5,800-odd titles takes about two seconds to index. The list
-is a rail of groups down the left — Favourites, `#`, A to Z — and pages of
-fourteen titles; the star on a row keeps a game in Favourites, stored in
+is a rail of groups down the left — Favourites, `#`, A to Z — and the titles
+in a list that scrolls under a finger, with a bar down its right edge that can
+be dragged; the star on a row keeps a game in Favourites, stored in
 `/nes_favs.txt` on the built-in filesystem so it survives a card swap.
 
 The header button chooses the picture size. **2x TOUCH** draws the game at

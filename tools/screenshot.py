@@ -4,7 +4,7 @@
 Sends 's' over serial; the firmware replies with a header, one raw RGB565
 frame, and a trailer. Writes a PNG with nothing but the standard library.
 
-Usage: tools/screenshot.py [out.png] [--tap=X,Y | --sleep=N ...] [--wait=N] [--font] [--raw]
+Usage: tools/screenshot.py [out.png] [--tap=X,Y | --drag=X0,Y0,X1,Y1[,MS] | --sleep=N ...] [--wait=N] [--font] [--raw]
 
 --wait=N counts down N seconds before the capture, which is the window for
 navigating to a screen by hand. It deliberately runs AFTER the port is open and
@@ -106,6 +106,21 @@ def main():
             p.write(("j%s\n" % a[6:]).encode())
             p.flush()
             time.sleep(0.7)
+        elif a.startswith("--drag="):
+            # A finger that lands, travels and lifts: x0,y0,x1,y1[,ms]. This
+            # is the only way to reach anything the lists do with a drag.
+            p.reset_input_buffer()
+            p.write(("g%s\n" % a[7:]).encode())
+            p.flush()
+            parts = a[7:].split(",")
+            ms = int(parts[4]) if len(parts) > 4 else 300
+            time.sleep(ms / 1000.0 + 0.9)
+        elif a.startswith("--drag-start="):
+            # The same, but without waiting for the finger to lift: follow it
+            # with --sleep=N and the capture lands mid-gesture.
+            p.reset_input_buffer()
+            p.write(("g%s\n" % a[13:]).encode())
+            p.flush()
         elif a.startswith("--sleep="):
             time.sleep(float(a[8:]))
 

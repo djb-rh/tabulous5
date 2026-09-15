@@ -577,6 +577,10 @@ void invalidate() {
 
 bool playing() { return g_mode == Mode::Playing; }
 
+namespace {
+void onBrowser(rom_browser::Result r, int index);
+}  // namespace
+
 void tick(uint32_t now_ms) {
   if (g_mode == Mode::Dips) {
     if (!g_dirty) return;
@@ -603,6 +607,12 @@ void tick(uint32_t now_ms) {
       g_next_frame_us = micros();
     }
     return;
+  }
+  {
+    // The list scrolls under the finger and delivers taps on release.
+    int index = 0;
+    onBrowser(rom_browser::tick(now_ms, &index), index);
+    if (g_mode != Mode::Picking) return;  // it launched, or left
   }
   if (!rom_browser::dirty()) return;
   const uint32_t t0 = micros();
@@ -635,7 +645,13 @@ void handleTap(int x, int y, uint32_t) {
     return;
   }
   int index = 0;
-  switch (rom_browser::handleTap(x, y, &index)) {
+  onBrowser(rom_browser::handleTap(x, y, &index), index);
+}
+
+namespace {
+// What the browser asked for, from a press or from tick().
+void onBrowser(rom_browser::Result r, int index) {
+  switch (r) {
     case rom_browser::Result::Launch:
       // Say the tap landed before disappearing to read the card: opening a
       // cartridge takes a couple of seconds and the list would otherwise sit
@@ -672,6 +688,7 @@ void handleTap(int x, int y, uint32_t) {
       break;
   }
 }
+}  // namespace
 
 }  // namespace pacman_ui
 }  // namespace tabulous

@@ -598,6 +598,10 @@ void invalidate() {
 
 bool playing() { return g_mode == Mode::Playing; }
 
+namespace {
+void onBrowser(rom_browser::Result r, int index);
+}  // namespace
+
 void tick(uint32_t now_ms) {
   if (g_mode == Mode::Playing && g_running) {
     if (g_dirty) {
@@ -615,6 +619,12 @@ void tick(uint32_t now_ms) {
     }
     return;
   }
+  {
+    // The list scrolls under the finger and delivers taps on release.
+    int index = 0;
+    onBrowser(rom_browser::tick(now_ms, &index), index);
+    if (g_mode != Mode::Picking) return;  // it launched, or left
+  }
   if (!rom_browser::dirty()) return;
   const uint32_t t0 = micros();
   uikit::clearTargets();
@@ -626,7 +636,13 @@ void tick(uint32_t now_ms) {
 void handleTap(int x, int y, uint32_t) {
   if (g_mode == Mode::Playing) return;
   int index = 0;
-  switch (rom_browser::handleTap(x, y, &index)) {
+  onBrowser(rom_browser::handleTap(x, y, &index), index);
+}
+
+namespace {
+// What the browser asked for, from a press or from tick().
+void onBrowser(rom_browser::Result r, int index) {
+  switch (r) {
     case rom_browser::Result::Launch:
       // Say the tap landed before disappearing to read the card: opening a
       // cartridge takes a couple of seconds and the list would otherwise sit
@@ -655,6 +671,7 @@ void handleTap(int x, int y, uint32_t) {
       break;
   }
 }
+}  // namespace
 
 }  // namespace snes_ui
 }  // namespace tabulous
