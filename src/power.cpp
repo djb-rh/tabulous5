@@ -27,10 +27,11 @@ void apply(const Settings &s) {
 }
 
 void setPlaying(bool playing) {
-  // Discharging reads clearly negative on battery; on external power it sits
-  // near zero or positive. The margin keeps a flat idle from counting.
-  const bool on_battery = M5.Power.getBatteryCurrent() < -20;
-  const bool want = g_usb_allowed && playing && on_battery;
+  // On for any game. Whether a charger tolerates the rail on its VBUS is
+  // being tested; if not, add `&& M5.Power.getBatteryCurrent() < -20` here
+  // (discharging reads clearly negative on battery) and the pad is
+  // battery-only.
+  const bool want = g_usb_allowed && playing;
   if (want == g_usb_on) return;
   g_usb_on = want;
   M5.Power.setUsbOutput(want);
