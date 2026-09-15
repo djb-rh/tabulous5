@@ -554,20 +554,28 @@ from that commit onward is GPL-3.0.
 
 ## Power
 
-- **Charging bolt.** The battery pill shows a bolt while the charger IC
-  reports charging (`CHG_STAT` on the second I/O expander, read through
-  `M5.Power.isCharging()` every 5 s).
-- **Off is a double-press.** Holding the power button does not turn the Tab5
-  off: per the board's own silkscreen it drops the ESP32-P4 into the download
-  bootloader — screen dark, everything else powered — which drains the
-  battery. A double-press tells the power-management MCU to cut the rails;
-  so does **Settings → POWER OFF** (`M5.Power.powerOff()`).
-- **Wall chargers.** M5Unified leaves the charger's Quick Charge handshake
-  on; some USB-PD bricks answer it by not charging at all, while a laptop
-  port (plain 5 V) is fine. **FAST CHARGE** in Settings is that handshake,
-  default off. **USB PAD POWER** is the 5 V the console puts out for a
-  gamepad on the USB-A jack — but on the Tab5 that same rail drives the
-  USB-C port's VBUS, and a wall brick meeting it trips its protection and
-  latches off (measured). So the rail is on only while a game is running
-  and the console is on battery, and always off in the menu: plug a charger
-  in from the menu. The M5-Bus 5 V rail is never switched on.
+- **Charging bolt.** The battery pill shows a bolt while current flows into
+  the battery (the INA226, read every 5 s). The charger's status pin on the
+  second I/O expander reads high whether charging or not, so M5Unified's
+  `isCharging()` is not used.
+- **Off is a double-press.** Holding the power button drops the ESP32-P4
+  into the download bootloader — screen dark, everything else powered —
+  which drains the battery. A double-press cuts the rails; so does
+  **Settings → POWER OFF** (`M5.Power.powerOff()`).
+- **Pad power is the USB-C's VBUS too.** The 5 V rail that feeds a gamepad
+  on the USB-A jack (USB5V_EN, `setExtOutput(…, ext_USB)`; `setUsbOutput`
+  has no Tab5 case) also drives the USB-C connector's VBUS. A wall brick
+  meeting it latches off until re-plugged; a laptop port tolerates it.
+  **Settings → PAD POWER**: OFF / ON BATTERY (default: on in a game, but
+  only when discharging, so a charger that is already attached stays alive
+  — no pad while charging) / IN GAMES (any game; only for chargers that
+  tolerate it). The rail is always off in the menu: plug chargers in there.
+  The M5-Bus 5 V rail is never switched on.
+- **Quick Charge.** M5Unified leaves the IP2326's QC handshake enabled;
+  **FAST CHARGE** is that handshake, default off.
+- **USB-C DATA** (opt-in): after 12 s without a host the USB-serial-JTAG
+  pad is switched off until the next reset, for a brick that reads the
+  chip's D+ pull-up as a voltage request. Off by default because a host
+  that suspends the bus looks the same as no host, and the port vanishes.
+- Serial: `P` prints the expander input register, current and level;
+  `0`/`1` disable/enable the charger; `u`/`U` switch the pad rail.

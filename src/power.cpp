@@ -8,7 +8,7 @@ namespace tabulous {
 namespace power {
 
 namespace {
-bool g_usb_allowed = true;   // the setting; the policy below decides the rest
+uint8_t g_pad_power = 1;     // the setting; the policy below decides the rest
 bool g_usb_on = false;
 bool g_data_auto = true;
 bool g_data_on = true;       // the pad is on out of reset
@@ -19,7 +19,7 @@ constexpr uint32_t kHostGraceMs = 12000;   // after boot, and after a host goes 
 void apply(const Settings &s) {
   // M5-Bus 5 V: off. ext_PA is the bus on the Tab5.
   M5.Power.setExtOutput(false, m5::ext_PA);
-  g_usb_allowed = s.usb_power;
+  g_pad_power = s.pad_power;
   g_data_auto = s.usb_data_auto;
   // Not setUsbOutput(): that has no Tab5 case and does nothing here.
   M5.Power.setExtOutput(false, m5::ext_USB);
@@ -29,16 +29,18 @@ void apply(const Settings &s) {
 }
 
 void setPlaying(bool playing) {
-  // The host port comes up with the game and goes down with it. The 5 V
-  // rail (USB5V_EN) is the USB-C OTG output, which a charger cannot share;
-  // it is off unless the setting insists, in which case it follows the game.
-  const bool want = g_usb_allowed && playing;
+  // The rail feeds the pad, and the USB-C VBUS with it. Discharging reads
+  // clearly negative on battery; with a charger attached it sits near zero
+  // or positive, and then the rail stays off in mode 1 so the charger lives.
+  const bool on_battery = M5.Power.getBatteryCurrent() < -20;
+  const bool want = playing && (g_pad_power == 2 || (g_pad_power == 1 && on_battery));
   if (want != g_usb_on) {
     g_usb_on = want;
     M5.Power.setExtOutput(want, m5::ext_USB);
     if (want) delay(50);
   }
   usbpad::portPower(playing);
+  Serial.printf("power: playing=%d usbc_5v=%d\n", (int)playing, (int)g_usb_on);
 }
 
 void forceUsbRail(bool on) {   // serial diagnostics only
