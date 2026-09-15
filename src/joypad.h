@@ -91,6 +91,10 @@ Circle buttonB();
 Rect buttonSelect();
 Rect buttonStart();
 Rect menuButton();
+// The MENU button's width: 170 beside a picture that leaves room, narrower
+// beside one that does not (Doom's full height leaves 170 px, and a 170 px
+// button then runs under it). Set by joypad_ui for the picture in play.
+void setMenuWidth(int w);
 
 // Which buttons a single touch point presses. Returns 0 for a miss, and may
 // return two bits for a D-pad corner.

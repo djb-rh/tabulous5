@@ -318,14 +318,15 @@ const Entry kEntries[] = {
      "Runs Doom from a .wad file in /doom on a FAT32 microSD card: doom.wad,\n"
      "doom1.wad (the shareware episode), doom2.wad, plutonia.wad, tnt.wad,\n"
      "or Freedoom's freedoom1.wad and freedoom2.wad. The file's NAME is how\n"
-     "the game is told apart, so keep the original names. No WAD is shipped\n"
-     "with this device.\n"
+     "the game is told apart, so keep the original names. An add-on such as\n"
+     "SIGIL plays on the doom.wad or doom2.wad beside it: pick the add-on.\n"
+     "No WAD is shipped with this device.\n"
      "\n"
      "TOUCH PAD plays with the on-screen pad: the D-pad walks and turns, FIRE\n"
      "fires, USE opens doors and works switches (and picks in the menus),\n"
      "WEAPON steps to the next weapon, MENU opens the game's own menu. FULL\n"
      "fills the height and expects a USB gamepad, whose L and R strafe. You\n"
-     "always run.\n"
+     "always run. The sidebar there has the volume and this page.\n"
      "\n"
      "Hold SELECT and START together to come back here; the game waits where\n"
      "it was. Its saves and settings file go in /doom on the card."},
@@ -1025,6 +1026,31 @@ void begin(std::vector<Pack> *packs, const content::LoadReport &report) {
 
 GameId current() { return g_current; }
 
+int volumePercent() {
+  return g_console.sound_enabled ? (int)g_console.volume * 100 / 255 : 0;
+}
+
+int adjustVolume(int direction) {
+  const int step = 24;
+  int v = (int)g_console.volume + (direction > 0 ? step : -step);
+  if (v <= 0) {
+    g_console.sound_enabled = false;
+    g_console.volume = 0;
+  } else {
+    g_console.sound_enabled = true;
+    g_console.volume = (uint8_t)(v > 255 ? 255 : v);
+  }
+  audio::setEnabled(g_console.sound_enabled);
+  audio::setVolume(g_console.volume);
+  // Preview with correct(), not select(): select() is mixed deliberately
+  // quiet because it fires on every tap, so it misrepresents the level.
+  audio::correct();
+  // Saved now rather than on leaving a screen: from inside a game there is
+  // no screen being left.
+  settings_store::save(g_console);
+  return volumePercent();
+}
+
 bool wantsOrientation() {
   switch (g_current) {
     // Passed hand to hand, so which way up matters.
@@ -1233,24 +1259,9 @@ void dispatchTap(int x, int y, uint32_t now_ms) {
         break;
 
       case Action::VolumeDown:
-      case Action::VolumeUp: {
-        const int step = 24;
-        int v = (int)g_console.volume +
-                ((Action)action == Action::VolumeUp ? step : -step);
-        if (v <= 0) {
-          g_console.sound_enabled = false;
-          g_console.volume = 0;
-        } else {
-          g_console.sound_enabled = true;
-          g_console.volume = (uint8_t)(v > 255 ? 255 : v);
-        }
-        audio::setEnabled(g_console.sound_enabled);
-        audio::setVolume(g_console.volume);
-        // Preview with correct(), not select(): select() is mixed deliberately
-        // quiet because it fires on every tap, so it misrepresents the level.
-        audio::correct();
+      case Action::VolumeUp:
+        adjustVolume((Action)action == Action::VolumeUp ? 1 : -1);
         break;
-      }
 
       case Action::ToggleGame: {
         audio::select();

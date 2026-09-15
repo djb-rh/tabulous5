@@ -12,6 +12,8 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <map>
+#include <string>
 
 extern "C" {
 #include "../third_party/doomgeneric/dg_tabulous.h"
@@ -49,11 +51,19 @@ bool g_dirty = true;
 // I_Error, after which only a restart of the console gets it back.
 enum class Engine : uint8_t { Cold, Running, Dead };
 Engine g_engine = Engine::Cold;
-char g_wad_vfs[320] = "";      // the file the engine was started on
-char g_config_dir[320] = "";   // beside it, with a trailing slash
+char g_wad_vfs[320] = "";      // the IWAD the engine was started on
+char g_pwad_vfs[320] = "";     // and the add-on with it, or empty
+char g_started_on[660] = "";   // both, for telling a resume from a change
+char g_config_dir[320] = "";   // beside the IWAD, with a trailing slash
 char g_argv0[] = "doom";
 char g_arg_iwad[] = "-iwad";
-char *g_argv[] = {g_argv0, g_arg_iwad, g_wad_vfs, nullptr};
+char g_arg_file[] = "-file";
+char *g_argv[] = {g_argv0, g_arg_iwad, g_wad_vfs, g_arg_file, g_pwad_vfs, nullptr};
+int g_argc = 3;
+
+// For an add-on (a PWAD), the IWAD in the same folder it was matched with,
+// by list index. An add-on plays on that; the engine gets both.
+std::map<int, std::string> g_pwad_iwad;
 
 // I_Error unwinds to here. Armed only around calls into the engine.
 jmp_buf g_jmp;
@@ -82,7 +92,7 @@ void doomTask(void *) {
     g_cmd_failed = false;
     g_jmp_armed = true;
     if (setjmp(g_jmp) == 0) {
-      if (g_cmd == Cmd::Create) doomgeneric_Create(3, g_argv);
+      if (g_cmd == Cmd::Create) doomgeneric_Create(g_argc, g_argv);
       else doomgeneric_Tick();
     } else {
       g_cmd_failed = true;
@@ -185,21 +195,71 @@ const char *const kIwadNames[] = {
     "chex.wad",    "hacx.wad",      "freedm.wad",    "freedoom1.wad", "freedoom2.wad",
 };
 
+// Which game an add-on is for, read from its map names: E1M1 and friends
+// are Doom, MAP01 and up are Doom II. The IWAD it plays on has to be beside
+// it under one of the game's names; the first one found is used.
+const char *const kDoom1Iwads[] = {"doom.wad", "doom1.wad", "freedoom1.wad", nullptr};
+const char *const kDoom2Iwads[] = {"doom2.wad", "plutonia.wad", "tnt.wad", "freedoom2.wad", nullptr};
+
+bool findIwadFor(fs::FS &fs, const rom_index::Item *it, File &h, std::string *iwad) {
+  uint8_t head[12];
+  h.seek(0);
+  if (h.read(head, 12) != 12) return false;
+  const uint32_t numlumps = (uint32_t)head[4] | ((uint32_t)head[5] << 8) | ((uint32_t)head[6] << 16) | ((uint32_t)head[7] << 24);
+  const uint32_t dirofs = (uint32_t)head[8] | ((uint32_t)head[9] << 8) | ((uint32_t)head[10] << 16) | ((uint32_t)head[11] << 24);
+  bool doom1 = false, doom2 = false;
+  if (numlumps < 20000 && h.seek(dirofs)) {
+    uint8_t ent[16];
+    for (uint32_t i = 0; i < numlumps; i++) {
+      if (h.read(ent, 16) != 16) break;
+      const char *n = (const char *)ent + 8;
+      if (n[0] == 'E' && n[2] == 'M' && n[1] >= '1' && n[1] <= '9' && n[3] >= '1' && n[3] <= '9' && n[4] == 0) doom1 = true;
+      if (n[0] == 'M' && n[1] == 'A' && n[2] == 'P' && n[3] >= '0' && n[3] <= '9' && n[4] >= '0' && n[4] <= '9') doom2 = true;
+    }
+  }
+  // A folder, from the file's own path.
+  std::string dir = it->path;
+  const size_t slash = dir.find_last_of('/');
+  dir = slash == std::string::npos ? "/" : dir.substr(0, slash + 1);
+  const char *const *lists[2] = {doom2 && !doom1 ? kDoom2Iwads : kDoom1Iwads,
+                                 doom2 && !doom1 ? kDoom1Iwads : kDoom2Iwads};
+  for (const char *const *list : lists) {
+    for (int k = 0; list[k]; k++) {
+      const std::string candidate = dir + list[k];
+      if (fs.exists(candidate.c_str())) {
+        *iwad = candidate;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 void probeWad(fs::FS &fs, rom_index::Item *it) {
   char magic[4] = {0, 0, 0, 0};
   File h = fs.open(it->path, "r");
   const size_t got = h ? h.read((uint8_t *)magic, 4) : 0;
   it->bytes = h ? (uint32_t)h.size() : 0;
-  if (h) h.close();
   it->status = 1;
   if (got != 4) {
+    if (h) h.close();
     it->problem = "unreadable";
     return;
   }
   if (memcmp(magic, "PWAD", 4) == 0) {
-    it->problem = "an add-on, not a game by itself";
+    std::string iwad;
+    const bool found = findIwadFor(fs, it, h, &iwad);
+    h.close();
+    if (!found) {
+      it->problem = "an add-on; needs doom.wad or doom2.wad beside it";
+      return;
+    }
+    g_pwad_iwad[(int)(it - &rom_browser::item(0))] = iwad;
+    it->status = 0;
+    it->problem = "";
     return;
   }
+  h.close();
   if (memcmp(magic, "IWAD", 4) != 0) {
     it->problem = "not a WAD";
     return;
@@ -275,23 +335,34 @@ bool load(int index) {
     rom_browser::setError(e.problem);
     return false;
   }
-  char vfs[320];
-  snprintf(vfs, sizeof(vfs), "%s%s",
-           e.source == rom_index::kCard ? sdcard::mountPoint() : "/littlefs", e.path);
+  const char *root = e.source == rom_index::kCard ? sdcard::mountPoint() : "/littlefs";
+  char iwad[320], pwad[320] = "";
+  const auto add_on = g_pwad_iwad.find(index);
+  if (add_on != g_pwad_iwad.end()) {
+    snprintf(iwad, sizeof(iwad), "%s%s", root, add_on->second.c_str());
+    snprintf(pwad, sizeof(pwad), "%s%s", root, e.path);
+  } else {
+    snprintf(iwad, sizeof(iwad), "%s%s", root, e.path);
+  }
+  char started_on[660];
+  snprintf(started_on, sizeof(started_on), "%s|%s", iwad, pwad);
 
   if (g_engine == Engine::Dead) restartConsole("Restarting the console for Doom...");
   if (g_engine == Engine::Running) {
-    if (strcmp(vfs, g_wad_vfs) != 0) restartConsole("Restarting the console to change WADs...");
+    if (strcmp(started_on, g_started_on) != 0) restartConsole("Restarting the console to change WADs...");
     return startVideo();  // resume where it was
   }
 
-  snprintf(g_wad_vfs, sizeof(g_wad_vfs), "%s", vfs);
-  snprintf(g_config_dir, sizeof(g_config_dir), "%s", vfs);
+  snprintf(g_wad_vfs, sizeof(g_wad_vfs), "%s", iwad);
+  snprintf(g_pwad_vfs, sizeof(g_pwad_vfs), "%s", pwad);
+  snprintf(g_started_on, sizeof(g_started_on), "%s", started_on);
+  g_argc = pwad[0] ? 5 : 3;
+  snprintf(g_config_dir, sizeof(g_config_dir), "%s", iwad);
   char *slash = strrchr(g_config_dir, '/');
   if (slash) slash[1] = '\0';
 
-  Serial.printf("doom: starting on %s (%lu KB), config in %s\n", g_wad_vfs,
-                (unsigned long)(e.bytes / 1024), g_config_dir);
+  Serial.printf("doom: starting on %s%s%s (%lu KB), config in %s\n", g_wad_vfs,
+                pwad[0] ? " with " : "", pwad, (unsigned long)(e.bytes / 1024), g_config_dir);
   const uint32_t t0 = millis();
   if (!runEngine(Cmd::Create)) {
     g_engine = g_task ? Engine::Dead : Engine::Cold;
@@ -413,6 +484,7 @@ void runFrame(uint32_t now_ms) {
 
 void begin() {
   g_mode = Mode::Picking;
+  g_pwad_iwad.clear();
   settings_store::loadDoom(&g_settings);
   settings_store::loadPadMap(&g_padmap);
   g_quit_hold = 0;
@@ -428,6 +500,7 @@ void begin() {
   cfg.scale_value[1] = 2;
   cfg.probe = probeWad;
   cfg.empty_hint = "Put doom.wad, doom1.wad or doom2.wad in /doom on the card";
+  cfg.flat = true;  // a handful of files, not a card of thousands
   rom_browser::begin(cfg, g_settings.size);
   rom_browser::ensureScanned();
   g_dirty = true;

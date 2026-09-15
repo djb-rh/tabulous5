@@ -47,6 +47,7 @@ constexpr int kBarW = 40;
 constexpr int kRailX = kMargin, kRailCellW = 60, kRailCols = 2;
 constexpr int kListX = kMargin + kRailCols * (kRailCellW + 4) + 16;
 int g_group = 2;  // 'A'
+constexpr int kAllGroup = -1;  // every title, for a flat list
 scroller::Scroller g_scroll;
 // Whether the letter on the rail is the owner's choice or ours. Until they
 // pick one, a system opens on its starred games: that is the shortlist, and on
@@ -170,7 +171,10 @@ void scan() {
   loadFavourites();
   // Open on the starred games, unless a letter has been picked since this
   // system was opened, or nothing is starred to show.
-  if (!g_group_chosen) {
+  if (g_cfg.flat) {
+    g_group = kAllGroup;
+    g_scroll.setOffset(0);
+  } else if (!g_group_chosen) {
     // Starred games first; otherwise the first letter that has anything,
     // which for a system with one file is the letter that file is under.
     g_group = 2;  // 'A'
@@ -212,11 +216,13 @@ void drawStar(int cx, int cy, int r, uint16_t colour, bool filled) {
 }
 
 int groupTotal(int group) {
+  if (group == kAllGroup) return g_lib->size();
   return group == rom_index::kFavourites ? g_lib->favouriteCount()
                                          : g_lib->groupCount(group);
 }
 
 int groupItem(int group, int n) {
+  if (group == kAllGroup) return n;
   return group == rom_index::kFavourites ? g_lib->favouriteAt(n)
                                          : g_lib->groupBegin(group) + n;
 }
@@ -264,7 +270,7 @@ void begin(const Config &config, uint8_t scale, bool portrait) {
     g_scanned = false;
     // Page eleven of the NES list is nowhere in a list of seventy, and the
     // next system opens on its own starred games rather than this one's letter.
-    g_group = 2;  // 'A'
+    g_group = config.flat ? kAllGroup : 2;  // 'A'
     g_scroll.setOffset(0);
     g_group_chosen = false;
   }
@@ -402,13 +408,15 @@ void draw() {
     return;
   }
 
-  drawRail();
+  if (!g_cfg.flat) drawRail();
 
   const int total = groupTotal(g_group);
 
   // Where we are, spelled out next to the title: group and how many.
   char where[96];
-  if (g_group == rom_index::kFavourites) {
+  if (g_group == kAllGroup) {
+    snprintf(where, sizeof(where), "%d file%s", total, total == 1 ? "" : "s");
+  } else if (g_group == rom_index::kFavourites) {
     snprintf(where, sizeof(where), "Favourites  %d", total);
   } else {
     snprintf(where, sizeof(where), "%s  %d of %d", rom_index::groupLabel(g_group), total,
@@ -420,19 +428,20 @@ void draw() {
   uikit::drawLabel(g_error[0] ? g_error : where, kMargin, 82,
                    g_error[0] ? kDanger : kMuted, &fonts::FreeSans12pt7b, middle_left);
 
-  const int list_w = kW - kMargin - kListX - kBarW;
+  const int list_x = g_cfg.flat ? kMargin : kListX;
+  const int list_w = kW - kMargin - list_x - kBarW;
   if (total == 0) {
     g_scroll.layout(Rect{}, Rect{}, 0);
     uikit::drawLabel(g_group == rom_index::kFavourites
                          ? "Tap the star on a game to keep it here"
                          : "Nothing filed here",
-                     kListX + list_w / 2, kListTop + 200, kMuted,
+                     list_x + list_w / 2, kListTop + 200, kMuted,
                      &fonts::FreeSansBold18pt7b, middle_center);
     return;
   }
 
-  const Rect vp{kListX, kListTop, list_w, kListBottom - kListTop};
-  const Rect track{kListX + list_w, kListTop, kBarW, vp.h};
+  const Rect vp{list_x, kListTop, list_w, kListBottom - kListTop};
+  const Rect track{list_x + list_w, kListTop, kBarW, vp.h};
   g_scroll.layout(vp, track, total * kRowPitch - kRowGap);
   drawList();
 }

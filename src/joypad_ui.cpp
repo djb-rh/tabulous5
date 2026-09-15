@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "app.h"
+#include "audio.h"
 #include "emu_video.h"
 #include "joypad.h"
 #include "padmap.h"
@@ -250,17 +251,101 @@ void mapStep() {
 
 // Every contact, OR-ed. Holding a direction while pressing A has to work, and
 // that is two simultaneous points.
+// The sidebar's other controls, only in the sizes that draw no pad: the
+// volume and the About page. They fire on the press edge, once.
+bool g_sidebar = false;      // drawGamepadChrome has laid them out
+bool g_sidebar_down = false;
+int g_volume_drawn = -1;
+
+struct Sidebar {
+  uikit::Rect vol_down, vol_up, about;
+  int label_x, label_y;
+};
+
+Sidebar sidebar() {
+  const joypad::Rect m = joypad::menuButton();
+  const int x = m.x, w = m.w;
+  const int y = 336;
+  const int bw = w / 2 - 8;
+  Sidebar s;
+  s.vol_down = uikit::Rect{x, y, bw, 56};
+  s.vol_up = uikit::Rect{x + w - bw, y, bw, 56};
+  s.label_x = x + w / 2;
+  s.label_y = y - 16;
+  s.about = uikit::Rect{x, y + 72, w, 52};
+  return s;
+}
+
+void drawVolumeLabel() {
+  const Sidebar s = sidebar();
+  const int pct = app::volumePercent();
+  if (pct == g_volume_drawn) return;
+  g_volume_drawn = pct;
+  char text[20];
+  if (pct == 0) snprintf(text, sizeof(text), "VOLUME  muted");
+  else snprintf(text, sizeof(text), "VOLUME  %d%%", pct);
+  gfx().fillRect(s.vol_down.x, s.label_y - 12, s.about.w, 24, kBg);
+  uikit::drawLabel(text, s.label_x, s.label_y, kMuted, &fonts::FreeSans9pt7b,
+                   middle_center);
+}
+
+void drawSidebar() {
+  const Sidebar s = sidebar();
+  uikit::drawButton(s.vol_down, "-", kSurfaceLift, kText, &fonts::FreeSansBold18pt7b);
+  uikit::drawButton(s.vol_up, "+", kSurfaceLift, kText, &fonts::FreeSansBold18pt7b);
+  uikit::drawButton(s.about, "ABOUT", kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+  g_volume_drawn = -1;
+  drawVolumeLabel();
+}
+
+void sidebarPress(int x, int y) {
+  const Sidebar s = sidebar();
+  if (s.vol_down.hit(x, y)) {
+    app::adjustVolume(-1);
+    drawVolumeLabel();
+  } else if (s.vol_up.hit(x, y)) {
+    app::adjustVolume(1);
+    drawVolumeLabel();
+  } else if (s.about.hit(x, y)) {
+    audio::select();
+    app::showAbout();
+  }
+}
+
 uint8_t pollPad(bool *menu_held) {
   uint8_t out = 0;
   *menu_held = false;
+  bool sidebar_hit = false;
+  int sx = 0, sy = 0;
+  const joypad::Rect m = joypad::menuButton();
   const int count = M5.Touch.getCount();
   for (int i = 0; i < count; i++) {
     const auto t = M5.Touch.getDetail(i);
     if (!t.isPressed()) continue;
     out |= joypad::hitTest(t.x, t.y);
-    const joypad::Rect m = joypad::menuButton();
     if (m.contains(t.x, t.y)) *menu_held = true;
+    if (g_sidebar && t.x < emu_video::geometry().x) {
+      sidebar_hit = true;
+      sx = t.x;
+      sy = t.y;
+    }
   }
+  // A drag injected over serial is one contact too, so the pad and the
+  // sidebar can be driven without hands.
+  if (uikit::touchIsSynthetic()) {
+    const uikit::TouchState t = uikit::touch();
+    if (t.down) {
+      out |= joypad::hitTest(t.x, t.y);
+      if (m.contains(t.x, t.y)) *menu_held = true;
+      if (g_sidebar && t.x < emu_video::geometry().x) {
+        sidebar_hit = true;
+        sx = t.x;
+        sy = t.y;
+      }
+    }
+  }
+  if (sidebar_hit && !g_sidebar_down) sidebarPress(sx, sy);
+  g_sidebar_down = sidebar_hit;
   return out;
 }
 
@@ -269,6 +354,11 @@ void drawGamepadChrome(bool full) {
   if (full) {
     uikit::drawButton(uikit::Rect{m.x, m.y, m.w, m.h}, "MENU", kSurfaceLift,
                       kText, &fonts::FreeSansBold12pt7b);
+    g_sidebar = true;
+    g_sidebar_down = false;
+    drawSidebar();
+  } else {
+    drawVolumeLabel();  // a gamepad's own volume buttons could change it
   }
   const usbpad::State u = usbpad::state();
   // The name lives in the state struct, which is returned by value, so it is
@@ -303,6 +393,7 @@ void drawGamepadChrome(bool full) {
 }
 
 void drawControls(uint8_t state, uint8_t prev, bool full) {
+  g_sidebar = false;  // the pad is where the sidebar would be
   if (full) {
     const joypad::Rect m = joypad::menuButton();
     uikit::drawButton(uikit::Rect{m.x, m.y, m.w, m.h}, "MENU", kSurfaceLift,
@@ -327,6 +418,9 @@ bool beginPlay(bool portrait, int src_w, int src_h, float scale_x, float scale_y
     return false;
   }
   const int w = M5.Display.width(), h = M5.Display.height();
+  // The MENU button lives in the picture's left margin, which a full-height
+  // Doom leaves 170 px of: the button gives way rather than the picture.
+  joypad::setMenuWidth(emu_video::geometry().x - 48);
   if (portrait) {
     // Below the MENU button, with everything left over given to the controls.
     const emu_video::Geometry g = emu_video::geometry();
@@ -348,6 +442,8 @@ void setLabels(const char *select_label, const char *start_label,
 
 void endPlay() {
   setLabels();
+  g_sidebar = false;
+  joypad::setMenuWidth(170);
   emu_video::waitIdle();
   joypad::setLayout(false);
   M5.Display.setRotation(1);

@@ -42,6 +42,9 @@ struct Config {
   // One more button in the header, for something only this system has. Null
   // for a system with nothing to put there.
   const char *extra_label = nullptr;
+  // No rail of letters, one list of everything: for a system that has a
+  // handful of files rather than a card of thousands.
+  bool flat = false;
 };
 
 enum class Result : uint8_t {

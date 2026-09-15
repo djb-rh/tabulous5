@@ -49,6 +49,12 @@ void showAbout();
 
 GameId current();
 
+// The console volume, stepped up or down by one notch (what the settings
+// screen's - and + do), saved, and previewed. Returns the new level in
+// percent; 0 means muted.
+int adjustVolume(int direction);
+int volumePercent();
+
 // Whether the current context has any use for the accelerometer.
 //
 // The IMU shares the Tab5's internal I2C bus with the touch controller, and a

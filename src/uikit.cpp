@@ -49,6 +49,8 @@ TouchState touch() {
   return s;
 }
 
+bool touchIsSynthetic() { return g_touch_override; }
+
 void overrideTouch(bool active, bool down, int x, int y) {
   g_touch_override = active;
   g_touch_synth.down = down;

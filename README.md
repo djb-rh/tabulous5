@@ -265,8 +265,11 @@ Menu → **Doom**. Put an IWAD in `/doom` on the card under its original name:
 `doom.wad`, `doom1.wad` (the shareware episode), `doom2.wad`, `plutonia.wad`,
 `tnt.wad`, or Freedoom's `freedoom1.wad` / `freedoom2.wad`. The engine tells
 the games apart by the file's name, so a renamed file is listed with a note
-rather than launched. Add-on PWADs are listed but not playable on their own.
-No WAD ships with this project.
+rather than launched. An add-on (a PWAD such as SIGIL) is listed too and
+plays on the IWAD beside it — its map names say whether it wants Doom or
+Doom II — so picking the add-on is how it is played. The list is flat: a
+handful of files does not need the letter rail. No WAD ships with this
+project.
 
 The engine is [doomgeneric](third_party/doomgeneric/), the id source behind a
 five-function platform seam; the seam is `src/doom_ui.cpp`. It renders at its
@@ -279,7 +282,10 @@ block as a strip of noise. The palette comes across as
 
 Controls: the D-pad walks and turns, FIRE fires, USE opens doors and works
 switches and also picks in the game's menus, WEAPON steps through the digit
-keys, MENU is Escape. On a USB gamepad L and R strafe. Autorun is on. Hold
+keys, MENU is Escape. On a USB gamepad L and R strafe. Autorun is on. In the
+full-height size the sidebar holds MENU (narrowed to the margin the picture
+leaves), the volume, and ABOUT, which is the same page as the launcher's ? -
+and that sidebar is shared with every system's gamepad size. Hold
 SELECT and START to come back to the list: the engine cannot be started twice
 in one boot, so leaving keeps it alive and picking the same WAD again resumes
 it. Picking a different WAD restarts the console. The game's own settings

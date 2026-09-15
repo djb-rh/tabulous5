@@ -87,7 +87,13 @@ Rect buttonStart() {
   return Rect{1104, 556, 150, 66};
 }
 
-Rect menuButton() { return Rect{24, 24, 170, 64}; }
+namespace {
+int g_menu_w = 170;
+}  // namespace
+
+void setMenuWidth(int w) { g_menu_w = w < 96 ? 96 : (w > 170 ? 170 : w); }
+
+Rect menuButton() { return Rect{24, 24, g_menu_w, 64}; }
 
 uint8_t hitTest(int x, int y) {
   if (buttonA().contains(x, y)) return kA;

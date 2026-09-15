@@ -59,6 +59,9 @@ TouchState touch();
 // A synthetic touch stands in for the panel while `active`; pass false to
 // hand the panel back.
 void overrideTouch(bool active, bool down, int x, int y);
+// Whether a synthetic touch is standing in right now, for the screens that
+// read the panel's contacts directly and would otherwise not see it.
+bool touchIsSynthetic();
 
 // Hit targets are rebuilt on every repaint, so they can never drift out of
 // sync with what is actually on screen.
