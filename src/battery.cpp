@@ -9,9 +9,13 @@ namespace {
 // Slow enough that the bus is essentially idle; a battery percentage does not
 // need to be fresher than this.
 constexpr uint32_t kIntervalMs = 30000;
-// The charge flag is one expander read, and it should follow the cable
-// within a few seconds, so it has its own faster clock.
+// The charge flag should follow the cable within a few seconds, so it has
+// its own faster clock. It comes from the battery monitor's current, not the
+// charger's status pin: on the Tab5 that pin reads high whether the charger
+// is pushing half an amp into the cell or is switched off (measured).
 constexpr uint32_t kChargeIntervalMs = 5000;
+constexpr int32_t kChargingMa = 50;   // into the battery; idle on USB reads about 0
+bool chargingNow() { return M5.Power.getBatteryCurrent() > kChargingMa; }
 
 // A read should be a couple of I2C transactions. Anything near this means the
 // bus is congested or the part is not answering, and it is not worth risking
@@ -38,7 +42,7 @@ void update(uint32_t now_ms, bool allowed) {
   if (now_ms - g_last_read < wait) {
     if (g_have && now_ms - g_last_charge_read >= kChargeIntervalMs) {
       g_last_charge_read = now_ms;
-      g_charging = (M5.Power.isCharging() == M5.Power.is_charging_t::is_charging);
+      g_charging = chargingNow();
     }
     return;
   }
@@ -49,7 +53,7 @@ void update(uint32_t now_ms, bool allowed) {
   const uint32_t t0 = micros();
   const int32_t lv = M5.Power.getBatteryLevel();
   const int16_t mv = M5.Power.getBatteryVoltage();
-  const auto chg = M5.Power.isCharging();
+  const bool chg = chargingNow();
   g_last_us = micros() - t0;
 
   if (g_last_us > kTooSlowUs) {
@@ -67,7 +71,7 @@ void update(uint32_t now_ms, bool allowed) {
   } else {
     g_have = false;
   }
-  g_charging = (chg == M5.Power.is_charging_t::is_charging);
+  g_charging = chg;
 }
 
 bool available() { return g_have; }

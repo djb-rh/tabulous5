@@ -565,6 +565,9 @@ from that commit onward is GPL-3.0.
 - **Wall chargers.** M5Unified leaves the charger's Quick Charge handshake
   on; some USB-PD bricks answer it by not charging at all, while a laptop
   port (plain 5 V) is fine. **FAST CHARGE** in Settings is that handshake,
-  default off. **USB 5V OUT** is the 5 V the console puts out on its USB
-  port (a gamepad on the USB-A jack needs it); default on. The M5-Bus 5 V
-  rail is never switched on: nothing on it draws power.
+  default off. **USB PAD POWER** is the 5 V the console puts out for a
+  gamepad on the USB-A jack — but on the Tab5 that same rail drives the
+  USB-C port's VBUS, and a wall brick meeting it trips its protection and
+  latches off (measured). So the rail is on only while a game is running
+  and the console is on battery, and always off in the menu: plug a charger
+  in from the menu. The M5-Bus 5 V rail is never switched on.

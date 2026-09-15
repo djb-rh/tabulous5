@@ -743,10 +743,16 @@ void drawSettings() {
   const Rect usb{lx + (lw + 16) / 2, y, (lw - 16) / 2, 64};
   uikit::drawButton(qc, g_console.fast_charge ? "FAST CHARGE: ON" : "FAST CHARGE: OFF",
                     kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
-  uikit::drawButton(usb, g_console.usb_power ? "USB 5V OUT: ON" : "USB 5V OUT: OFF",
+  uikit::drawButton(usb, g_console.usb_power ? "USB PAD POWER: AUTO" : "USB PAD POWER: OFF",
                     kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
   addAction(qc, Action::ToggleFastCharge);
   addAction(usb, Action::ToggleUsbPower);
+  y += 72;
+  uikit::drawLabel("Pad power is on only during a game, on battery: a wall", lx, y, kMuted,
+                   &fonts::FreeSans9pt7b);
+  y += 22;
+  uikit::drawLabel("charger meeting it shuts itself off. Plug in from this menu.", lx, y, kMuted,
+                   &fonts::FreeSans9pt7b);
 
   // ---- right column: which games appear, and in what order
   const int rx = 640, rw = kW - kMargin - 640;
@@ -963,6 +969,15 @@ void tick(uint32_t now_ms) {
   const bool on_menu = (g_current == GameId::Menu) && !g_editor_open &&
                        !g_confirming_exit && !g_settings_open && g_about < 0;
   battery::update(now_ms, on_menu);
+  // The USB 5 V rail follows what is running: see power::setPlaying.
+  {
+    static bool was_playing = false;
+    const bool playing = g_current != GameId::Menu;
+    if (playing != was_playing) {
+      was_playing = playing;
+      power::setPlaying(playing);
+    }
+  }
   if (on_menu) {
     // Repaint ONLY the pill when the reading changes. Marking the whole menu
     // dirty would re-clear the screen and redraw four blobs to change two
