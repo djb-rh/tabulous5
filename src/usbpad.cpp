@@ -590,7 +590,9 @@ bool begin() {
 }
 
 void portPower(bool on) {
-  if (!g_began) { Serial.println("usbpad: portPower before begin"); return; }
+  if (!g_began) {
+    if (!on || !begin()) return;
+  }
   const esp_err_t e = usb_host_lib_set_root_port_power(on);
   Serial.printf("usbpad: root port power %d -> %d\n", (int)on, (int)e);
 }

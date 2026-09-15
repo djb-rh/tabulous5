@@ -293,6 +293,20 @@ void saveGb(const GbSettings &settings) {
   g_prefs.end();
 }
 
+void loadDoom(DoomSettings *out) {
+  if (!out) return;
+  if (!g_prefs.begin(kNamespace, true)) return;
+  const uint8_t size = g_prefs.getUChar("doom_size", out->size);
+  g_prefs.end();
+  if (size == 1 || size == 2) out->size = size;
+}
+
+void saveDoom(const DoomSettings &settings) {
+  if (!g_prefs.begin(kNamespace, false)) return;
+  g_prefs.putUChar("doom_size", settings.size);
+  g_prefs.end();
+}
+
 void loadSnes(SnesSettings *out) {
   if (!out) return;
   if (!g_prefs.begin(kNamespace, true)) return;

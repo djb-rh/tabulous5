@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include "doom_ui.h"
 #include "glyphs.h"
 #include "joshua_ui.h"
 #include "joypad_ui.h"
@@ -311,6 +312,23 @@ const Entry kEntries[] = {
      "\n"
      "MENU and ? sit in the corners of the terminal screens, between\n"
      "games; the board itself has no controls on it."},
+
+    {"Doom", "The 1993 one. Bring your own WAD.", 0x3D4653,
+     glyphs::Glyph::Doom, GameId::Doom,
+     "Runs Doom from a .wad file in /doom on a FAT32 microSD card: doom.wad,\n"
+     "doom1.wad (the shareware episode), doom2.wad, plutonia.wad, tnt.wad,\n"
+     "or Freedoom's freedoom1.wad and freedoom2.wad. The file's NAME is how\n"
+     "the game is told apart, so keep the original names. No WAD is shipped\n"
+     "with this device.\n"
+     "\n"
+     "TOUCH PAD plays with the on-screen pad: the D-pad walks and turns, FIRE\n"
+     "fires, USE opens doors and works switches (and picks in the menus),\n"
+     "WEAPON steps to the next weapon, MENU opens the game's own menu. FULL\n"
+     "fills the height and expects a USB gamepad, whose L and R strafe. You\n"
+     "always run.\n"
+     "\n"
+     "Hold SELECT and START together to come back here; the game waits where\n"
+     "it was. Its saves and settings file go in /doom on the card."},
 };
 
 constexpr int kEntryCount = (int)(sizeof(kEntries) / sizeof(kEntries[0]));
@@ -973,6 +991,9 @@ void launch(GameId id) {
   } else if (id == GameId::Joshua) {
     joshua_ui::begin();
     joshua_ui::invalidate();
+  } else if (id == GameId::Doom) {
+    doom_ui::begin();
+    doom_ui::invalidate();
   } else if (id == GameId::Solitaire) {
     solitaire_ui::begin(&g_solitaire);
     solitaire_ui::invalidate();
@@ -1024,6 +1045,7 @@ bool wantsOrientation() {
     case GameId::GameBoy:
     case GameId::Snes:
     case GameId::Arcade:
+    case GameId::Doom:
       return false;
     default:
       return true;  // the shell, where taps are rare
@@ -1043,6 +1065,7 @@ void invalidate() {
   if (g_current == GameId::Sudoku) sudoku_ui::invalidate();
   if (g_current == GameId::Solitaire) solitaire_ui::invalidate();
   if (g_current == GameId::Joshua) joshua_ui::invalidate();
+  if (g_current == GameId::Doom) doom_ui::invalidate();
 }
 
 void requestExit() {
@@ -1128,6 +1151,7 @@ void tick(uint32_t now_ms) {
   else if (g_current == GameId::GameBoy) gb_ui::tick(now_ms);
   else if (g_current == GameId::Snes) snes_ui::tick(now_ms);
   else if (g_current == GameId::Arcade) pacman_ui::tick(now_ms);
+  else if (g_current == GameId::Doom) doom_ui::tick(now_ms);
 }
 
 namespace {
@@ -1264,6 +1288,10 @@ void dispatchTap(int x, int y, uint32_t now_ms) {
         // editor is opened. Hand the reservation back first; it is taken
         // again when the editor closes.
         snes_ui::yieldWorkRamReserve();
+        Serial.printf("editor: internal=%uKB largest=%uKB dma_largest=%uKB\n",
+                      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+                      (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024),
+                      (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_DMA) / 1024));
         // Auto: try the house network, fall back to the device's own
         // hotspot if it can't be reached.
         contentserver::start(contentserver::Mode::Auto, WIFI_SSID,
@@ -1348,6 +1376,8 @@ void handleTap(int x, int y, uint32_t now_ms) {
     snes_ui::handleTap(x, y, now_ms);
   else if (g_current == GameId::Arcade)
     pacman_ui::handleTap(x, y, now_ms);
+  else if (g_current == GameId::Doom)
+    doom_ui::handleTap(x, y, now_ms);
 }
 
 }  // namespace app

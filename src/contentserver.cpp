@@ -517,7 +517,11 @@ void loop() {
         Serial.printf("[net] joined, serving on http://%s/  mdns=%d\n",
                       WiFi.localIP().toString().c_str(), (int)g_mdns);
       } else if (millis() - g_started_ms > kConnectTimeoutMs) {
-        WiFi.disconnect(true);
+        // disconnect(false), not (true): true also powers the radio off, and
+        // the co-processor's transport cannot be brought up a second time in
+        // one boot - its buffer pool fails to allocate and the console
+        // asserts and reboots. The hotspot is started with the radio still up.
+        WiFi.disconnect(false);
         Serial.printf("[net] join timed out after %ums (wifi status=%d)\n",
                       (unsigned)kConnectTimeoutMs, (int)WiFi.status());
         if (g_mode == Mode::Auto) {

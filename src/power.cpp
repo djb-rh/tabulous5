@@ -1,6 +1,7 @@
 #include "power.h"
 
 #include <M5Unified.h>
+#include <esp_heap_caps.h>
 #include "hal/usb_serial_jtag_ll.h"
 #include "usbpad.h"
 

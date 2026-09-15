@@ -190,6 +190,25 @@ void tictactoe(const Box &b, uint16_t ink, uint16_t ground) {
   ring(b.px(12), b.py(36));
 }
 
+// The cacodemon: a ball with one eye and too many teeth. It is the only
+// creature in the game that is a shape on its own, and it survives one
+// colour at 52 px, which the marine's helmet does not.
+void doom(const Box &b, uint16_t ink, uint16_t ground) {
+  auto &g = uikit::gfx();
+  // Horns first, so the head sits over their roots.
+  g.fillTriangle(b.px(14), b.py(24), b.px(6), b.py(4), b.px(26), b.py(14), ink);
+  g.fillTriangle(b.px(58), b.py(24), b.px(66), b.py(4), b.px(46), b.py(14), ink);
+  g.fillCircle(b.px(36), b.py(40), b.f(28), ink);
+  g.fillCircle(b.px(36), b.py(30), b.f(9), ground);  // the eye
+  g.fillCircle(b.px(36), b.py(30), b.f(4), ink);      // and what it looks with
+  // The grin: a dark band, with the teeth left standing in ink.
+  g.fillRect(b.px(13), b.py(48), b.f(46), b.f(9), ground);
+  for (int i = 0; i < 5; i++) {
+    const int x = 15 + i * 9;
+    g.fillTriangle(b.px(x), b.py(48), b.px(x + 8), b.py(48), b.px(x + 4), b.py(56), ink);
+  }
+}
+
 }  // namespace
 
 void draw(Glyph glyph, int x, int y, int size, uint16_t ink, uint16_t ground) {
@@ -205,6 +224,7 @@ void draw(Glyph glyph, int x, int y, int size, uint16_t ink, uint16_t ground) {
     case Glyph::Nes: nes(b, ink, ground); break;
     case Glyph::Snes: snes(b, ink, ground); break;
     case Glyph::TicTacToe: tictactoe(b, ink, ground); break;
+    case Glyph::Doom: doom(b, ink, ground); break;
     case Glyph::None: break;
   }
 }

@@ -45,6 +45,7 @@ void setLabels(const char *select_label = nullptr, const char *start_label = nul
 // centred with the pad either side, held in two hands. False if the picture
 // would not fit.
 bool beginPlay(bool portrait, int src_w, int src_h, float scale);
+bool beginPlay(bool portrait, int src_w, int src_h, float scale_x, float scale_y);
 
 // Puts the screen back the way the rest of the console expects it.
 void endPlay();

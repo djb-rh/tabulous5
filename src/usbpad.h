@@ -29,10 +29,13 @@ struct State {
   uint32_t reports = 0;    // total received, so a dead pad can be told apart
 };
 
-// Starts the host stack and powers the port. Safe to call once; does nothing
-// on later calls. Returns false if the host stack would not install.
+// Starts the host stack. Safe to call more than once. Returns false if the
+// host stack would not install. Not called at boot: the stack and its tasks
+// take internal RAM the Wi-Fi transport also needs, so it is started by the
+// first game that powers the port.
 bool begin();
-// Power the host stack's root port up or down; a game start powers it up.
+// Power the host stack's root port up or down; a game start powers it up,
+// starting the stack first if it has not been.
 void portPower(bool on);
 // A snapshot of the pad right now. Cheap; call it every frame.
 State state();

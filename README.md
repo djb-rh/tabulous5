@@ -14,6 +14,7 @@ its 1280x720 touch panel.
 | **Sudoku** | Four difficulties, pencil marks, conflict highlighting. |
 | **Solitaire** | Klondike, draw one or three, with undo and an auto-play button. |
 | **Joshua** | Tic-tac-toe on WOPR's terminal. Zero, one or two players; the computer never loses. |
+| **Doom** | The 1993 engine, from your own WAD on the card, on the touch pad or a USB gamepad. |
 | **NES** | Cartridges from a microSD card, with sound, on the touch screen or a USB gamepad. |
 
 Word lists are plain text files you edit from a browser over Wi-Fi. Sounds are
@@ -186,7 +187,14 @@ steps in is reachable: `tools/shot --tap=640,682 --tap=845,559 out.png`.
 out by the main loop through the same touch reading the panel feeds; it is
 how the scrolling lists and the reorder handle are driven without hands.
 `--drag-start=` sends the same without waiting, so a `--sleep` after it
-captures mid-gesture. `tools/drag.py` does one drag on its own. Note that
+captures mid-gesture. `tools/drag.py` does one drag on its own. `--pad=` holds
+NES-style buttons for a number of frames in the NES and in Doom.
+
+`tools/put.py LOCAL /path/on/card` copies a file onto the card over the same
+USB link, without pulling the card: the firmware's `w` command takes the
+bytes in 4 KB chunks and acknowledges each once it is written, which is the
+flow control (the USB serial driver drops what its buffer cannot hold, and
+the card is slower than the link). An 11 MB WAD takes about fifty seconds. Note that
 opening the port resets the board; the tool waits for boot before driving
 anything, because a tap that lands before the first repaint finds no hit
 targets registered.
@@ -250,6 +258,42 @@ anything else is listed with the reason it will not run. The card stays in
 whatever layout you give it — one open in a folder of thousands of files costs
 ~110 ms on the 4-bit bus, which is fine for a pick and would not be for a
 scan, so the scan uses `readdir` and reads no file headers until you pick.
+
+## Doom
+
+Menu → **Doom**. Put an IWAD in `/doom` on the card under its original name:
+`doom.wad`, `doom1.wad` (the shareware episode), `doom2.wad`, `plutonia.wad`,
+`tnt.wad`, or Freedoom's `freedoom1.wad` / `freedoom2.wad`. The engine tells
+the games apart by the file's name, so a renamed file is listed with a note
+rather than launched. Add-on PWADs are listed but not playable on their own.
+No WAD ships with this project.
+
+The engine is [doomgeneric](third_party/doomgeneric/), the id source behind a
+five-function platform seam; the seam is `src/doom_ui.cpp`. It renders at its
+native 320x200 and the P4's PPA stretches that towards 4:3 — 460x350 between
+the on-screen pads, or 940x700 for **FULL GAMEPAD**. The scaler's factors are
+sixteenths, and these are the exact ones whose products are whole pixels; a
+factor like 3.6 rounds inside the scaler and its last rows spill out of the
+block as a strip of noise. The palette comes across as
+256 indices and is mapped to RGB565 on the way to the panel.
+
+Controls: the D-pad walks and turns, FIRE fires, USE opens doors and works
+switches and also picks in the game's menus, WEAPON steps through the digit
+keys, MENU is Escape. On a USB gamepad L and R strafe. Autorun is on. Hold
+SELECT and START to come back to the list: the engine cannot be started twice
+in one boot, so leaving keeps it alive and picking the same WAD again resumes
+it. Picking a different WAD restarts the console. The game's own settings
+file and its saves go in `/doom` on the card.
+
+Memory: the engine's zone heap and its frame buffers come from PSRAM (this
+build sends any allocation over 4 KB there). Four of its static tables — the
+visplanes, openings, drawsegs and vissprites, plus the tic buffer — were 180 KB
+of `.bss` and are allocated on first use instead, and the state, thing and
+sound tables are copied out of flash into PSRAM at start; see
+[third_party/doomgeneric/CHANGES.md](third_party/doomgeneric/CHANGES.md). The
+engine runs in its own task with a 64 KB stack in PSRAM, since a bigger loop
+stack in internal RAM left the Wi-Fi co-processor's transport unable to start.
+There is no sound yet.
 
 ## Arcade
 
@@ -470,6 +514,21 @@ blocks than the partition now holds, and asserts. Fix it with
 loop makes the USB port come and go, so the upload may need a couple of
 attempts. Everything in `data/` comes back; anything edited on the device does
 not.
+
+**A large upload in the web file manager reboots the console.** The web
+server handles a whole request inside one call, so the loop stops feeding
+the freeze watchdog for as long as the transfer takes, and at fifteen seconds
+the watchdog reboots. Known and not yet fixed; for anything big, use
+`tools/put.py` over USB instead.
+
+**Opening the Wi-Fi editor goes white, pauses, then the console reboots.**
+The radio is an ESP32-C6, which is 2.4 GHz only: an SSID ending in `-5G` can
+never be joined, and neither can a network that is not there. Until
+2026-09-15 a join that timed out was followed by the hotspot fallback turning
+the radio off and on, and the co-processor's transport cannot be started
+twice in one boot - its buffer pool fails ("HS_MP: mempool create failed")
+and the console asserts. The fallback now keeps the radio up. Check
+`include/secrets.h` names the 2.4 GHz network.
 
 **No sound anywhere after a crash.** A reset that lands mid-transaction on
 the internal I2C bus can leave the ES8388 codec or the I/O expander that

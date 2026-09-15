@@ -3,6 +3,7 @@
 #include <LittleFS.h>
 #include <WebServer.h>
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
 #include <dirent.h>
 #include <sys/stat.h>
 
@@ -505,6 +506,10 @@ bool flushStaged() {
 
 void handleUploadData() {
   HTTPUpload &up = g_server->upload();
+  // The whole upload is handled inside one handleClient() call, so the loop
+  // is not feeding the freeze watchdog for as long as it takes - and a WAD
+  // takes minutes. Each piece that arrives is proof of life.
+  esp_task_wdt_reset();
   if (up.status == UPLOAD_FILE_START) {
     uploadCleanup();
     g_up_ok = false;

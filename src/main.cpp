@@ -23,6 +23,7 @@
 #include "filemanager.h"
 #include "app.h"
 #include "gb_ui.h"
+#include "doom_ui.h"
 #include "nes_ui.h"
 #include "pacman_ui.h"
 #include "phrase_game.h"
@@ -66,6 +67,9 @@ void setup() {
   cfg.output_power = false;
   M5.begin(cfg);
 
+  // Room for one chunk of an incoming file (the 'w' command): the driver
+  // drops what does not fit its buffer, it does not hold the host off.
+  Serial.setRxBufferSize(8192);
   Serial.begin(115200);
   // Serial here is the ESP32-P4's native USB-serial-JTAG. If nothing is
   // attached reading it, its TX buffer fills and every write then BLOCKS
@@ -97,6 +101,12 @@ void setup() {
                 (unsigned)getCpuFrequencyMhz(),
                 (unsigned)(ESP.getFreePsram() / 1024),
                 (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
+  // Internal RAM as the drivers see it: a DMA pool wants one contiguous
+  // block, so the largest free one matters more than the total.
+  Serial.printf("internal largest=%uKB dma=%uKB dma_largest=%uKB\n",
+                (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024),
+                (unsigned)(heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024),
+                (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_DMA) / 1024));
   Serial.printf("imu=%d speaker=%d rot=%u calibrated=%d\n",
                 (int)M5.Imu.isEnabled(), (int)M5.Speaker.isEnabled(),
                 (unsigned)orientation::rotation(),
@@ -116,7 +126,9 @@ void setup() {
   Serial.printf("sfx=%d/7\n", audio::sampleCount());
 
   // A gamepad on the USB-A port is optional too; the stack just waits.
-  usbpad::begin();
+  // usbpad::begin() is not called here: the host stack and its two tasks
+  // are started the first time a game powers the port (usbpad::portPower),
+  // which keeps their internal RAM free for the Wi-Fi transport until then.
   power::setPlaying(false);   // the menu: pad power off, whatever begin() did
 
   // The card is optional: without one the NES has its built-in ROMs and
@@ -372,6 +384,14 @@ void loop() {
     if (cmd == 'f') dumpFontSpecimen();
     if (cmd == 'p') dumpPanel();
     if (cmd == 'd') probeSd();
+    if (cmd == 'm') {
+      Serial.printf("mem: internal=%uKB largest=%uKB dma=%uKB dma_largest=%uKB psram=%uKB\n",
+                    (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+                    (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024),
+                    (unsigned)(heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024),
+                    (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_DMA) / 1024),
+                    (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+    }
     // Power diagnostics: the raw charger status bit, and what the battery
     // monitor says is flowing, which is the ground truth for "charging".
     // 'P' prints; '0' and '1' switch the charger off and on to see what the
@@ -413,8 +433,10 @@ void loop() {
       const String arg = Serial.readStringUntil('\n');
       const int comma = arg.indexOf(',');
       if (comma > 0) {
-        nes_ui::injectPad((uint8_t)strtol(arg.substring(0, comma).c_str(), nullptr, 16),
-                          (uint32_t)arg.substring(comma + 1).toInt());
+        const uint8_t bits = (uint8_t)strtol(arg.substring(0, comma).c_str(), nullptr, 16);
+        const uint32_t frames = (uint32_t)arg.substring(comma + 1).toInt();
+        nes_ui::injectPad(bits, frames);
+        doom_ui::injectPad(bits, frames);
       }
     }
     // "t<x>,<y>" injects a tap, so a screen several taps deep can be reached
@@ -426,6 +448,46 @@ void loop() {
       if (comma > 0) {
         app::handleTap(arg.substring(0, comma).toInt(),
                        arg.substring(comma + 1).toInt(), millis());
+      }
+    }
+    // "w<path>,<bytes>\n" then the bytes in 4 KB chunks, each acknowledged
+    // with a '.' once it is on the card: writes a file at <path>, folders
+    // made as needed. The acknowledgement is the flow control - the USB
+    // serial driver drops bytes its buffer cannot hold rather than holding
+    // the host off, and the card is slower than the link. This is how a WAD
+    // or a ROM gets onto the card without pulling it. See tools/put.py.
+    if (cmd == 'w') {
+      const String arg = Serial.readStringUntil('\n');
+      const int comma = arg.indexOf(',');
+      const String path = comma > 0 ? arg.substring(0, comma) : String();
+      const uint32_t total = comma > 0 ? (uint32_t)arg.substring(comma + 1).toInt() : 0;
+      if (!path.startsWith("/") || total == 0 || !sdcard::begin()) {
+        Serial.println("put: bad request or no card");
+      } else {
+        fs::FS &fs = sdcard::fs();
+        for (int i = 1; (i = path.indexOf('/', i)) > 0; i++) fs.mkdir(path.substring(0, i));
+        File f = fs.open(path, "w");
+        if (!f) {
+          Serial.println("put: could not open the file for writing");
+        } else {
+          static uint8_t buf[4096];
+          const uint32_t t0 = millis();
+          uint32_t got = 0;
+          Serial.setTimeout(3000);
+          while (got < total) {
+            const size_t want = total - got < sizeof(buf) ? total - got : sizeof(buf);
+            const size_t n = Serial.readBytes(buf, want);
+            if (n == 0) break;  // the sender stopped
+            if (f.write(buf, n) != n) break;
+            got += n;
+            Serial.write('.');  // this chunk is down; send the next
+            esp_task_wdt_reset();  // a long file is not a freeze
+          }
+          f.close();
+          Serial.setTimeout(1000);
+          Serial.printf("put: %s %lu of %lu bytes in %lu ms\n", got == total ? "ok" : "SHORT",
+                        (unsigned long)got, (unsigned long)total, (unsigned long)(millis() - t0));
+        }
       }
     }
     // "g<x0>,<y0>,<x1>,<y1>,<ms>" injects a drag: a finger that lands at the
@@ -576,7 +638,8 @@ void loop() {
   if (total > 25000 && app::current() != app::GameId::Nes &&
       app::current() != app::GameId::GameBoy &&
       app::current() != app::GameId::Snes &&
-      app::current() != app::GameId::Arcade) {
+      app::current() != app::GameId::Arcade &&
+      app::current() != app::GameId::Doom) {
     Serial.printf("slow loop %u ms: m5=%u tap=%u orient=%u audio=%u tick=%u\n",
                   (unsigned)(total / 1000), (unsigned)((p0 - loop_start) / 1000),
                   (unsigned)((p1 - p0) / 1000), (unsigned)((p2 - p1) / 1000),

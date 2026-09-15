@@ -37,7 +37,7 @@ volatile bool g_ppa_busy = false;
 uint16_t *g_buf[2] = {nullptr, nullptr};
 int g_cur = 0;
 int g_src_w = 0, g_src_h = 0;
-float g_scale = 0.0f;
+float g_scale = 0.0f, g_scale_y = 0.0f;
 size_t g_frame_bytes = 0;
 Geometry g_geom;
 uint32_t g_last_us = 0;
@@ -92,7 +92,7 @@ bool blitPpa(const uint16_t *src) {
       break;
   }
   op.scale_x = g_scale;
-  op.scale_y = g_scale;
+  op.scale_y = g_scale_y;
   // Non-blocking when there is a second buffer to draw the next frame into;
   // the wait happens up front, for the transfer before this one.
   const bool overlap = g_buf[1] != nullptr;
@@ -193,15 +193,20 @@ bool begin() {
 }
 
 bool configure(int src_w, int src_h, float scale) {
+  return configure(src_w, src_h, scale, scale);
+}
+
+bool configure(int src_w, int src_h, float scale, float scale_y) {
   waitIdle();
   const size_t bytes = (size_t)src_w * src_h * 2;
   if (bytes != g_frame_bytes) release();
   g_src_w = src_w;
   g_src_h = src_h;
   g_scale = scale;
+  g_scale_y = scale_y;
   g_frame_bytes = bytes;
   g_geom.w = (int)lroundf(src_w * scale);
-  g_geom.h = (int)lroundf(src_h * scale);
+  g_geom.h = (int)lroundf(src_h * scale_y);
   g_geom.x = (logicalW() - g_geom.w) / 2;
   g_geom.y = (logicalH() - g_geom.h) / 2;
 
@@ -217,7 +222,8 @@ bool configure(int src_w, int src_h, float scale) {
     if (!b) b = (uint16_t *)heap_caps_aligned_alloc(128, bytes, MALLOC_CAP_SPIRAM);
   }
   if (!g_buf[0]) return false;
-  if (!g_ppa && g_scale != (float)(int)g_scale) return false;  // see blitCpu
+  // The CPU fallback duplicates whole pixels, the same number each way.
+  if (!g_ppa && (g_scale != (float)(int)g_scale || g_scale_y != g_scale)) return false;
   for (uint16_t *b : g_buf) {
     if (b) memset(b, 0, bytes);
   }

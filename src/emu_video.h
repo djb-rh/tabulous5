@@ -34,6 +34,9 @@ void placeAt(int x, int y);
 // Returns false if there is no memory for the frames, or if a fractional
 // magnification is asked for on a machine that has no hardware scaler.
 bool configure(int src_w, int src_h, float scale);
+// The same with different magnifications across and down, for a picture
+// whose pixels were never square: Doom's 320x200 was drawn for a 4:3 screen.
+bool configure(int src_w, int src_h, float scale_x, float scale_y);
 
 // Frees the frames. Waits for any transfer still in flight first.
 void release();

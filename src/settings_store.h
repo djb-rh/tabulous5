@@ -95,6 +95,14 @@ struct ArcadeSettings {
 void loadArcade(ArcadeSettings *out);
 void saveArcade(const ArcadeSettings &settings);
 
+// The Doom picture: with the on-screen pad either side, or the full height
+// for a USB gamepad. Stored as 1 and 2 rather than the fractional scales.
+struct DoomSettings {
+  uint8_t size = 1;  // 1 = touch, 2 = gamepad
+};
+void loadDoom(DoomSettings *out);
+void saveDoom(const DoomSettings &settings);
+
 // Which USB gamepad button is which; taught in the Gamepad Test screen.
 void loadPadMap(padmap::Map *out);
 void savePadMap(const padmap::Map &map);

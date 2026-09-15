@@ -280,9 +280,13 @@ void drawGamepadChrome(bool full) {
   snprintf(g_shown, sizeof(g_shown), "%s", name);
   g_shown_valid = true;
 
-  // Below the frame-rate readout the emulator screens put just under MENU.
+  // Below the frame-rate readout the emulator screens put just under MENU,
+  // and inside the margin the picture leaves: 256 px beside a 3x NES, 170
+  // beside Doom. Nothing here may touch the picture, which the scaler
+  // repaints every frame over anything drawn there.
   const int x = m.x, y = 180;
-  gfx().fillRect(x, y - 26, 320, 136, kBg);
+  const int w = emu_video::geometry().x - x - 8;
+  gfx().fillRect(x, y - 26, w, 160, kBg);
   if (u.connected) {
     uikit::drawLabel(u.name[0] ? u.name : "Gamepad", x, y, kMuted,
                      &fonts::FreeSans12pt7b, middle_left);
@@ -290,12 +294,12 @@ void drawGamepadChrome(bool full) {
   }
   uikit::drawLabel("No gamepad", x, y, kDanger, &fonts::FreeSansBold12pt7b,
                    middle_left);
-  uikit::drawLabel("Plug one in, or pick the", x, y + 36, kMuted,
-                   &fonts::FreeSans9pt7b, middle_left);
-  uikit::drawLabel("smaller size in the list", x, y + 58, kMuted,
-                   &fonts::FreeSans9pt7b, middle_left);
-  uikit::drawLabel("for on-screen controls.", x, y + 80, kMuted,
-                   &fonts::FreeSans9pt7b, middle_left);
+  const char *lines[] = {"Plug one in, or", "pick the smaller", "size in the list",
+                         "for on-screen", "controls."};
+  for (int i = 0; i < 5; i++) {
+    uikit::drawLabel(lines[i], x, y + 30 + i * 22, kMuted, &fonts::FreeSans9pt7b,
+                     middle_left);
+  }
 }
 
 void drawControls(uint8_t state, uint8_t prev, bool full) {
@@ -312,8 +316,12 @@ namespace {
 }  // namespace
 
 bool beginPlay(bool portrait, int src_w, int src_h, float scale) {
+  return beginPlay(portrait, src_w, src_h, scale, scale);
+}
+
+bool beginPlay(bool portrait, int src_w, int src_h, float scale_x, float scale_y) {
   M5.Display.setRotation(portrait ? 0 : 1);
-  if (!emu_video::begin() || !emu_video::configure(src_w, src_h, scale)) {
+  if (!emu_video::begin() || !emu_video::configure(src_w, src_h, scale_x, scale_y)) {
     M5.Display.setRotation(1);
     joypad::setLayout(false);
     return false;

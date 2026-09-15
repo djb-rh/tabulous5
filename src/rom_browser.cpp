@@ -171,7 +171,13 @@ void scan() {
   // Open on the starred games, unless a letter has been picked since this
   // system was opened, or nothing is starred to show.
   if (!g_group_chosen) {
-    g_group = groupTotal(rom_index::kFavourites) > 0 ? rom_index::kFavourites : 2;
+    // Starred games first; otherwise the first letter that has anything,
+    // which for a system with one file is the letter that file is under.
+    g_group = 2;  // 'A'
+    for (int gi = 1; gi < rom_index::kGroups; gi++) {
+      if (groupTotal(gi) > 0) { g_group = gi; break; }
+    }
+    if (groupTotal(rom_index::kFavourites) > 0) g_group = rom_index::kFavourites;
     g_scroll.setOffset(0);
   }
   g_scanned = true;

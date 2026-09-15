@@ -27,6 +27,7 @@ enum class Glyph : uint8_t {
   Nes,     // the front-loader
   Snes,    // the one with the slot on top
   TicTacToe,  // Joshua -- a won board, X down the diagonal
+  Doom,       // the one-eyed floating one
 };
 
 // Draws into a square of `size` at (x, y). `ink` is the mark, `ground` is the
