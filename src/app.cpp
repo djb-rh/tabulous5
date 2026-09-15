@@ -742,7 +742,11 @@ void drawGamesRow(int i, int y, bool lifted) {
   const bool off = hidden(entry);
   const Rect row{kGamesX, y, kGamesW - 12, kGamesRowH};
   if (lifted) {
-    uikit::fillRoundRectFast(row.x + 4, row.y + 6, row.w, row.h, 14, kSurface);
+    // The shadow, as the two strips that show past the row rather than a
+    // whole rectangle under it: the row is redrawn on every move, and a
+    // rectangle painted first and then covered is a flash.
+    g.fillRect(row.x + row.w, row.y + 6, 4, row.h, kSurface);
+    g.fillRect(row.x + 4, row.y + row.h, row.w, 6, kSurface);
   }
   // A hidden game keeps its colour but drops to a flat, dim fill, so the
   // list still reads as the same games rather than as two lists.
@@ -777,19 +781,33 @@ void drawGamesList() {
   auto &g = uikit::gfx();
   const Rect vp = g_games_scroll.viewport();
   uikit::removeTargetsIn(vp);
-  scroller::drawRows(g_games_scroll, kGamesX, kGamesW - 12, kGamesPitch,
-                     kGamesRowH, 14, g_menu.count, kBg, [&](int i, int y) {
+  const auto row = [&](int i, int y) {
     if (i == g_drag_i) {
-      // Its slot stays empty; the row itself is drawn last, under the finger.
+      // Its slot stays empty; the row itself is under the finger.
       g.fillRect(kGamesX, y, kGamesW - 12, kGamesRowH, kBg);
       return;
     }
     drawGamesRow(i, y, false);
-  });
-  if (g_drag_i >= 0) {
+  };
+  if (g_drag_i < 0) {
+    scroller::drawRows(g_games_scroll, kGamesX, kGamesW - 12, kGamesPitch,
+                       kGamesRowH, 14, g_menu.count, kBg, row);
+  } else {
+    // The held row goes down FIRST, where the finger is now, and the list
+    // is painted around it in the two bands above and below - never over
+    // it, which is what made it blink on every move. Wherever it was last
+    // frame lies in one of the bands and is painted over there.
+    const int ly = g_drag_y - g_drag_dy;
+    const int band_h = kGamesRowH + 6;  // with its shadow
     g.setClipRect(vp.x, vp.y, vp.w, vp.h);
-    drawGamesRow(g_drag_i, g_drag_y - g_drag_dy, true);
+    drawGamesRow(g_drag_i, ly, true);
     g.clearClipRect();
+    const Rect above{vp.x, vp.y, vp.w, ly - vp.y};
+    const Rect below{vp.x, ly + band_h, vp.w, vp.y + vp.h - (ly + band_h)};
+    scroller::drawRows(g_games_scroll, kGamesX, kGamesW - 12, kGamesPitch,
+                       kGamesRowH, 14, g_menu.count, kBg, row, &above);
+    scroller::drawRows(g_games_scroll, kGamesX, kGamesW - 12, kGamesPitch,
+                       kGamesRowH, 14, g_menu.count, kBg, row, &below);
   }
   g_games_scroll.drawBar(kSurface, kMuted);
 }

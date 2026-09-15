@@ -227,11 +227,14 @@ void Scroller::drawBar(uint16_t track_colour, uint16_t thumb_colour) const {
 
 void drawRows(const Scroller &s, int row_x, int row_w, int pitch, int row_h,
               int corner_r, int count, uint16_t bg,
-              const std::function<void(int, int)> &draw_row) {
+              const std::function<void(int, int)> &draw_row,
+              const Rect *only) {
   auto &g = uikit::gfx();
   const Rect vp = s.viewport();
   if (vp.w <= 0 || vp.h <= 0) return;
-  g.setClipRect(vp.x, vp.y, vp.w, vp.h);
+  const Rect clip = only ? vp.clip(*only) : vp;
+  if (clip.w <= 0 || clip.h <= 0) return;
+  g.setClipRect(clip.x, clip.y, clip.w, clip.h);
   if (row_x > vp.x) g.fillRect(vp.x, vp.y, row_x - vp.x, vp.h, bg);
   const int right = row_x + row_w;
   if (right < vp.x + vp.w) g.fillRect(right, vp.y, vp.x + vp.w - right, vp.h, bg);

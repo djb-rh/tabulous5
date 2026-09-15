@@ -99,10 +99,13 @@ class Scroller {
 // region was cleared ahead of the rows.
 //
 // draw_row(i, y) draws row i with its top at y; a row that should show as an
-// empty slot fills its own rectangle with the background.
+// empty slot fills its own rectangle with the background. `only`, if given,
+// limits the painting to that part of the viewport, so a caller can paint
+// around something it has already drawn on top.
 void drawRows(const Scroller &s, int row_x, int row_w, int pitch, int row_h,
               int corner_r, int count, uint16_t bg,
-              const std::function<void(int, int)> &draw_row);
+              const std::function<void(int, int)> &draw_row,
+              const uikit::Rect *only = nullptr);
 
 }  // namespace scroller
 }  // namespace tabulous
