@@ -31,6 +31,9 @@ Everything here is upstream's, apart from:
 - `r_draw.c`: `MAXWIDTH`/`MAXHEIGHT` are the screen's own size, not 1120x832.
 - `statdump.c`: `MAX_CAPTURES` 32 -> 2.
 - `doomgeneric.c`: calls `dg_alloc_tables()` under `DG_TABULOUS`.
+- `dg_sound.c`: added. The sound module (`DG_sound_module`) mixes the WAD's
+  DMX sound effects to 11025 Hz mono and hands the console one tic at a time;
+  the music module is stubs. Built with `FEATURE_SOUND`.
 - `r_plane.c`/`r_plane.h`: the ten per-column and per-row arrays join the
   heap allocation in `R_AllocPlanes`; `p_maputl.c`/`p_local.h`: `intercepts`
   allocated in `P_PathTraverse`; `r_things.c`/`r_things.h`: `negonearray`

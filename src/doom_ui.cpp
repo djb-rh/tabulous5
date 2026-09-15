@@ -400,9 +400,9 @@ void runFrame(uint32_t now_ms) {
   drawPlayChrome(false);
 
   if (now_ms - g_fps_at >= 2000) {
-    Serial.printf("doom %lu fps  push=%luus  stack left %u\n",
+    Serial.printf("doom %lu fps  push=%luus  sfx=%lu  stack left %u\n",
                   (unsigned long)(g_frames * 1000 / (now_ms - g_fps_at)),
-                  (unsigned long)emu_video::lastUs(),
+                  (unsigned long)emu_video::lastUs(), (unsigned long)dg_sound_starts(),
                   (unsigned)uxTaskGetStackHighWaterMark(g_task));
     g_frames = 0;
     g_fps_at = now_ms;
@@ -522,6 +522,31 @@ using namespace tabulous::doom_ui;
 extern "C" {
 
 void DG_Init(void) {}
+
+// ---- sound -------------------------------------------------------------
+//
+// The engine mixes a tic at a time (dg_sound.c); these are the speaker end.
+// Four blocks rotate so the one the speaker is reading is never the one
+// being filled; the queue is kept two deep, as the emulators do.
+namespace {
+constexpr int kDoomAudioChannel = 1;
+constexpr int kAudioBlocks = 4;
+constexpr int kAudioBlockMax = 320;
+int16_t g_audio[kAudioBlocks][kAudioBlockMax];
+int g_audio_which = 0;
+}  // namespace
+
+int dg_audio_wants(void) {
+  return audio::enabled() && M5.Speaker.isPlaying(kDoomAudioChannel) < 2;
+}
+
+void dg_audio_push(const int16_t *pcm, int count, int rate) {
+  if (count > kAudioBlockMax) count = kAudioBlockMax;
+  int16_t *block = g_audio[g_audio_which];
+  memcpy(block, pcm, (size_t)count * sizeof(int16_t));
+  M5.Speaker.playRaw(block, (size_t)count, (uint32_t)rate, false, 1, kDoomAudioChannel);
+  g_audio_which = (g_audio_which + 1) % kAudioBlocks;
+}
 
 void DG_DrawFrame(void) {
   if (dg_palette_changed() || !g_lut_valid) rebuildLut();

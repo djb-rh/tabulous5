@@ -293,7 +293,11 @@ sound tables are copied out of flash into PSRAM at start; see
 [third_party/doomgeneric/CHANGES.md](third_party/doomgeneric/CHANGES.md). The
 engine runs in its own task with a 64 KB stack in PSRAM, since a bigger loop
 stack in internal RAM left the Wi-Fi co-processor's transport unable to start.
-There is no sound yet.
+
+Sound effects play: the WAD's DMX lumps are mixed to 11025 Hz mono a tic at a
+time and queued on the speaker (`third_party/doomgeneric/dg_sound.c`). There
+is no music - the tracks are MUS for an OPL chip, and nothing here emulates
+one.
 
 ## Arcade
 

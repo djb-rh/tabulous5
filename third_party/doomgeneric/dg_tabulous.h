@@ -1,6 +1,8 @@
 // What the console adds to doomgeneric's platform seam. See CHANGES.md.
 #pragma once
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -19,6 +21,12 @@ int dg_ready_weapon(void);     // 0..8, the weapon in hand
 void dg_set_autorun(void);     // the joyb_speed=29 trick: always run
 void dg_save_defaults(void);   // write default.cfg now
 int dg_palette_changed(void);  // 1 once after a palette change, then 0
+// Sound, from dg_sound.c to the console: whether the speaker has room for a
+// tic, and a tic of 16-bit mono samples at `rate`.
+int dg_audio_wants(void);
+void dg_audio_push(const int16_t *pcm, int count, int rate);
+uint32_t dg_sound_starts(void);  // sounds started since last asked
+void dg_printf(const char *fmt, ...);
 const unsigned char *dg_palette(void);  // 256 x {b,g,r,a}
 
 #ifdef __cplusplus
