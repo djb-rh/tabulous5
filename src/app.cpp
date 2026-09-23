@@ -1065,7 +1065,9 @@ void drawSettings() {
 // Which list, if any, takes presses on the current screen.
 scroller::Scroller *activeScroller() {
   if (g_confirming_exit || g_editor_open || g_about >= 0) return nullptr;
-  if (g_settings_open) return &g_games_scroll;
+  // Only on the page that shows it: on TIME & SCORES the list is not there,
+  // and a swipe over where it would be must not scroll it into view.
+  if (g_settings_open) return g_settings_page == 0 ? &g_games_scroll : nullptr;
   if (g_current == GameId::Menu) return &g_menu_scroll;
   return nullptr;
 }
