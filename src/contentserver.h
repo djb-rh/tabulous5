@@ -61,6 +61,12 @@ void switchMode(Mode mode);
 
 Mode mode();
 bool usingHotspot();
+// Whether the radio has already had its one session this boot. The
+// co-processor's transport cannot be started twice - the second start
+// asserts - so a second session means restarting the console first.
+bool radioSpent();
+// Called by whoever ends a radio session of their own (see wallclock).
+void noteRadioSpent();
 const char *hotspotSsid();
 void stop();
 

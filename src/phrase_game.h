@@ -66,6 +66,8 @@ struct Settings {
   // as a voltage request and latched off). Decided once per boot: a
   // computer that later suspends the bus does not lose the port.
   bool usb_data_auto = true;
+  // Which of wallclock's zones the clock shows.
+  uint8_t time_zone = 0;
   std::string team_names[2] = {"Team A", "Team B"};
 };
 

@@ -10,6 +10,7 @@
 #include "snes_ui.h"
 
 #include <M5Unified.h>
+#include <esp_system.h>
 
 #include <cstring>
 
@@ -32,6 +33,8 @@
 #include "secrets.h"
 #include "theme.h"
 #include "uikit.h"
+#include "wallclock.h"
+#include "highscores.h"
 
 namespace tabulous {
 namespace app {
@@ -45,6 +48,7 @@ enum class Action : uint8_t {
   OpenEditor, CloseEditor, SwitchWifi, ToggleTheme,
   OpenSettings, CloseSettings, VolumeDown, VolumeUp, ToggleGame, DragHandle,
   ToggleFastCharge, ToggleUsbPower, PowerOff, ToggleUsbData,
+  SettingsPage, ZonePrev, ZoneNext, SyncNow, ResetScores,
 };
 
 void dispatchTap(int x, int y, uint32_t now_ms);
@@ -56,6 +60,30 @@ GameId g_current = GameId::Menu;
 bool g_confirming_exit = false;
 bool g_editor_open = false;
 bool g_settings_open = false;
+// The settings screen has two pages: the console, and time & scores.
+int g_settings_page = 0;
+// A RESET for a game's scores asks twice: the first tap arms it, and only a
+// second within a few seconds clears anything. Which row is armed, and when.
+int g_reset_armed = -1;
+uint32_t g_reset_armed_ms = 0;
+constexpr uint32_t kResetArmMs = 4000;
+
+// Every game that keeps a score table, and the NVS keys it keeps them under
+// (one per difficulty; the names are the games' own, in their *_ui.cpp).
+struct ScoredGame {
+  const char *name;
+  const char *const *keys;
+  int count;
+};
+const char *const kMineKeys[] = {"hs_mine_0", "hs_mine_1", "hs_mine_2"};
+const char *const kSudokuKeys[] = {"hs_sud_0", "hs_sud_1", "hs_sud_2", "hs_sud_3"};
+const char *const kSolitaireKeys[] = {"hs_sol_1", "hs_sol_3"};
+const ScoredGame kScoredGames[] = {
+    {"Minesweeper", kMineKeys, 3},
+    {"Sudoku", kSudokuKeys, 4},
+    {"Solitaire", kSolitaireKeys, 2},
+};
+constexpr int kScoredGameCount = (int)(sizeof(kScoredGames) / sizeof(kScoredGames[0]));
 
 // The launcher's arrangement, and the console-wide volume that the settings
 // screen shares with PhraseCraze rather than keeping a second copy of.
@@ -512,12 +540,29 @@ void drawMenuList() {
   g_menu_scroll.drawBar(kSurface, kMuted);
 }
 
+// The time, top left, only once the network has ever set it: an unset clock
+// would be worse than none. Drawn on its own when the minute turns.
+constexpr int kClockW = 300, kClockH = 64;
+void drawClock() {
+  auto &g = uikit::gfx();
+  g.fillRect(kMargin, 18, kClockW, kClockH, kBg);
+  struct tm t;
+  if (!wallclock::localTime(&t)) return;
+  char time_text[16], date_text[24];
+  strftime(time_text, sizeof(time_text), "%l:%M %p", &t);
+  strftime(date_text, sizeof(date_text), "%A %b %e", &t);
+  const char *tt = time_text[0] == ' ' ? time_text + 1 : time_text;
+  uikit::drawLabel(tt, kMargin, 22, kText, &fonts::FreeSansBold18pt7b);
+  uikit::drawLabel(date_text, kMargin, 60, kMuted, &fonts::FreeSans9pt7b);
+}
+
 void drawMenu() {
   auto &g = uikit::gfx();
   g.fillScreen(kBg);
 
   g_list_top = drawWordmark(kW / 2, 12) + 18;
   drawBattery();
+  drawClock();
 
   const Rect vp{kMargin, g_list_top, kListW, kListBottom - g_list_top};
   const Rect track{kMargin + kListW, g_list_top, kScrollW, vp.h};
@@ -724,6 +769,103 @@ void drawEditor() {
 
 // Console settings: everything that is not about one game's rules.
 //
+void drawTimeAndScores();
+
+// Page two: the clock's zone and source, and the score tables.
+void drawTimeAndScores() {
+  const int lx = kMargin;
+  int y = 116;
+  uikit::drawLabel("TIME", lx, y, kMuted, &fonts::FreeSans12pt7b);
+  y += 34;
+
+  struct tm t;
+  char line[64];
+  if (wallclock::localTime(&t)) {
+    char time_text[16], date_text[32];
+    strftime(time_text, sizeof(time_text), "%l:%M %p", &t);
+    strftime(date_text, sizeof(date_text), "%A, %B %e", &t);
+    const char *tt = time_text[0] == ' ' ? time_text + 1 : time_text;
+    uikit::drawLabel(tt, lx, y, kText, &fonts::FreeSansBold24pt7b);
+    uikit::drawLabel(date_text, lx + 200, y + 14, kMuted, &fonts::FreeSans12pt7b);
+  } else {
+    uikit::drawLabel("Not set yet", lx, y, kMuted, &fonts::FreeSansBold24pt7b);
+  }
+  y += 60;
+
+  // Where the time came from, and where it will come from next.
+  switch (wallclock::state()) {
+    case wallclock::State::Joining:
+      snprintf(line, sizeof(line), "Joining the network to ask the time...");
+      break;
+    case wallclock::State::Syncing:
+      snprintf(line, sizeof(line), "Asking the network for the time...");
+      break;
+    default:
+      if (wallclock::lastSync()) {
+        const time_t when = (time_t)wallclock::lastSync();
+        struct tm w;
+        localtime_r(&when, &w);
+        char when_text[40];
+        strftime(when_text, sizeof(when_text), "%b %e at %l:%M %p", &w);
+        snprintf(line, sizeof(line), "Set from the network on %s. The clock chip keeps it between boots.", when_text);
+      } else {
+        snprintf(line, sizeof(line), "The clock appears once the network has set it, over Wi-Fi.");
+      }
+      break;
+  }
+  uikit::drawLabel(line, lx, y, kMuted, &fonts::FreeSans9pt7b);
+  y += 20;
+  const char *second;
+  if (wallclock::state() == wallclock::State::Failed) {
+    second = "The last attempt could not reach the network.";
+  } else if (!wallclock::canSync()) {
+    second = "The radio has had its one session this boot; restart the console to sync again.";
+  } else if (wallclock::syncDue()) {
+    second = "A check is due: press SYNC NOW, or open the Wi-Fi editor, which syncs too.";
+  } else {
+    second = "Checked whenever the Wi-Fi editor is open, or on SYNC NOW.";
+  }
+  uikit::drawLabel(second, lx, y, kMuted, &fonts::FreeSans9pt7b);
+  y += 40;
+
+  uikit::drawLabel("TIME ZONE", lx, y, kMuted, &fonts::FreeSans12pt7b);
+  y += 34;
+  const Rect prev{lx, y, 96, 84};
+  const Rect zone{lx + 112, y, 440, 84};
+  const Rect next{lx + 568, y, 96, 84};
+  const Rect sync{lx + 700, y, 260, 84};
+  uikit::drawButton(prev, "<", kSurfaceLift, kText, &fonts::FreeSansBold24pt7b);
+  uikit::drawButton(next, ">", kSurfaceLift, kText, &fonts::FreeSansBold24pt7b);
+  uikit::fillRoundRectFast(zone.x, zone.y, zone.w, zone.h, 16, kSurface);
+  uikit::drawLabel(wallclock::zoneName(g_console.time_zone), zone.x + zone.w / 2,
+                   zone.y + zone.h / 2, kText, &fonts::FreeSansBold18pt7b, middle_center);
+  const bool busy = wallclock::state() == wallclock::State::Joining ||
+                    wallclock::state() == wallclock::State::Syncing;
+  const bool can = wallclock::canSync() && !busy;
+  uikit::drawButton(sync, busy ? "SYNCING..." : "SYNC NOW", can ? kSurfaceLift : kSurface,
+                    can ? kText : kMuted, &fonts::FreeSansBold12pt7b);
+  addAction(prev, Action::ZonePrev);
+  addAction(next, Action::ZoneNext);
+  if (can) addAction(sync, Action::SyncNow);
+  y += 84 + 44;
+
+  uikit::drawLabel("HIGH SCORES", lx, y, kMuted, &fonts::FreeSans12pt7b);
+  y += 34;
+  for (int i = 0; i < kScoredGameCount; i++) {
+    const Rect row{lx, y, 640, 64};
+    uikit::fillRoundRectFast(row.x, row.y, row.w, row.h, 14, kSurface);
+    uikit::drawLabel(kScoredGames[i].name, row.x + 24, row.y + row.h / 2, kText,
+                     &fonts::FreeSansBold18pt7b, middle_left);
+    const Rect reset{lx + 660, y, 300, 64};
+    const bool armed = g_reset_armed == i;
+    uikit::drawButton(reset, armed ? "TAP AGAIN TO RESET" : "RESET SCORES",
+                      armed ? kDanger : kSurfaceLift, armed ? kOnFill : kText,
+                      &fonts::FreeSansBold12pt7b);
+    addAction(reset, Action::ResetScores, i);
+    y += 72;
+  }
+}
+
 // The launcher arrangement lives here rather than on the menu itself because
 // reordering by dragging rows around the screen you are also trying to launch
 // from is how you launch a game by accident.
@@ -826,6 +968,20 @@ void drawSettings() {
   const Rect off{kW - kMargin - 200 - 16 - 220, 20, 220, 64};
   uikit::drawButton(off, "POWER OFF", kDanger, kOnFill, &fonts::FreeSansBold18pt7b);
   addAction(off, Action::PowerOff);
+
+  // The two pages, as tabs between the title and the buttons.
+  const Rect tab0{312, 20, 200, 64};
+  const Rect tab1{524, 20, 250, 64};
+  uikit::drawButton(tab0, "CONSOLE", g_settings_page == 0 ? kAccent : kSurfaceLift,
+                    g_settings_page == 0 ? kInk : kMuted, &fonts::FreeSansBold12pt7b);
+  uikit::drawButton(tab1, "TIME & SCORES", g_settings_page == 1 ? kAccent : kSurfaceLift,
+                    g_settings_page == 1 ? kInk : kMuted, &fonts::FreeSansBold12pt7b);
+  addAction(tab0, Action::SettingsPage, 0);
+  addAction(tab1, Action::SettingsPage, 1);
+  if (g_settings_page == 1) {
+    drawTimeAndScores();
+    return;
+  }
 
   // ---- left column: the console-wide preferences
   const int lx = kMargin, lw = 520;
@@ -1147,6 +1303,28 @@ void tick(uint32_t now_ms) {
       power::setPlaying(playing);
     }
   }
+  {
+    // The minute turning: the clock alone on the menu, the whole time page
+    // in settings (it is cheap, and its status line changes too).
+    static int shown_minute = -1;
+    struct tm t;
+    const int minute = wallclock::localTime(&t) ? t.tm_hour * 60 + t.tm_min : -1;
+    static wallclock::State shown_state = wallclock::State::Idle;
+    if (minute != shown_minute || wallclock::state() != shown_state) {
+      shown_minute = minute;
+      shown_state = wallclock::state();
+      if (on_menu && !g_dirty) {
+        drawClock();
+        uikit::present();
+      } else if (g_settings_open && g_settings_page == 1 && !g_confirming_exit) {
+        g_dirty = true;
+      }
+    }
+    if (g_reset_armed >= 0 && now_ms - g_reset_armed_ms > kResetArmMs) {
+      g_reset_armed = -1;
+      if (g_settings_open) g_dirty = true;
+    }
+  }
   if (on_menu) {
     // Repaint ONLY the pill when the reading changes. Marking the whole menu
     // dirty would re-clear the screen and redraw four blobs to change two
@@ -1202,7 +1380,6 @@ namespace {
 
 // A tap on one of the shell's own screens, once it is known to be a tap.
 void dispatchTap(int x, int y, uint32_t now_ms) {
-  (void)now_ms;
   {
     int action = 0, param = 0;
     if (!uikit::findTarget(x, y, &action, &param)) return;
@@ -1239,8 +1416,46 @@ void dispatchTap(int x, int y, uint32_t now_ms) {
       case Action::OpenSettings:
         audio::select();
         g_settings_open = true;
+        g_settings_page = 0;
+        g_reset_armed = -1;
         g_games_scroll.setOffset(0);
         g_drag_i = -1;
+        break;
+
+      case Action::SettingsPage:
+        audio::select();
+        g_settings_page = param;
+        g_reset_armed = -1;
+        break;
+
+      case Action::ZonePrev:
+      case Action::ZoneNext: {
+        audio::select();
+        const int n = wallclock::zoneCount();
+        g_console.time_zone = (uint8_t)((g_console.time_zone + n +
+                                         ((Action)action == Action::ZoneNext ? 1 : -1)) % n);
+        wallclock::setZone(g_console.time_zone);
+        settings_store::save(g_console);
+        break;
+      }
+
+      case Action::SyncNow:
+        audio::select();
+        if (!wallclock::startSync()) audio::reject();
+        break;
+
+      case Action::ResetScores:
+        if (g_reset_armed == param && now_ms - g_reset_armed_ms <= kResetArmMs) {
+          for (int k = 0; k < kScoredGames[param].count; k++) {
+            highscores::clear(kScoredGames[param].keys[k]);
+          }
+          g_reset_armed = -1;
+          audio::correct();
+        } else {
+          g_reset_armed = param;
+          g_reset_armed_ms = now_ms;
+          audio::select();
+        }
         break;
 
       case Action::ToggleFastCharge:
@@ -1307,6 +1522,19 @@ void dispatchTap(int x, int y, uint32_t now_ms) {
         break;
       case Action::OpenEditor:
         audio::select();
+        if (contentserver::radioSpent()) {
+          // The radio's one session this boot is spent; a second start would
+          // assert. Say so, then restart, which is what the assert did
+          // without saying so.
+          settings_store::saveMenu(g_menu);
+          settings_store::save(g_console);
+          uikit::gfx().fillScreen(kBg);
+          uikit::drawLabel("Restarting: the radio can only be started once per boot",
+                           kW / 2, kH / 2, kMuted, &fonts::FreeSansBold18pt7b, middle_center);
+          uikit::present();
+          delay(1500);
+          esp_restart();
+        }
         g_settings_open = false;  // the editor replaces it; DONE comes back
         g_editor_open = true;
         g_revision_at_open = contentserver::revision();

@@ -18,6 +18,8 @@
 #include "audio.h"
 #include "battery.h"
 #include "power.h"
+#include "secrets.h"
+#include "wallclock.h"
 #include "content.h"
 #include "contentserver.h"
 #include "filemanager.h"
@@ -94,6 +96,7 @@ void setup() {
   audio::begin(settings.volume);
   audio::setEnabled(settings.sound_enabled);
   power::apply(settings);
+  wallclock::begin(settings.time_zone);
   orientation::setEnabled(settings.auto_rotate);
   orientation::setStableMs(settings.flip_delay_ms);
 
@@ -146,6 +149,7 @@ void setup() {
   filemanager::begin();
 
   app::begin(&g_packs, report);
+  wallclock::configure(WIFI_SSID, WIFI_PASSWORD);
 
   Serial.printf("PSRAM free %u KB\n", (unsigned)(ESP.getFreePsram() / 1024));
   // A freeze that is not a crash leaves nothing behind: no panic, no core
@@ -613,6 +617,7 @@ void loop() {
   audio::update(now);
   const uint32_t p3 = micros();
 
+  wallclock::tick(now);
   app::tick(now);
   const uint32_t p4 = micros();
 

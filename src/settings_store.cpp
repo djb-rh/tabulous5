@@ -27,7 +27,7 @@ bool differs(const Settings &a, const Settings &b) {
          a.skips_per_round != b.skips_per_round || a.volume != b.volume ||
          a.sound_enabled != b.sound_enabled || a.auto_rotate != b.auto_rotate ||
          a.fast_charge != b.fast_charge || a.pad_power != b.pad_power ||
-         a.usb_data_auto != b.usb_data_auto ||
+         a.usb_data_auto != b.usb_data_auto || a.time_zone != b.time_zone ||
          a.flip_delay_ms != b.flip_delay_ms ||
          a.max_difficulty != b.max_difficulty || a.scoring != b.scoring ||
          a.team_names[0] != b.team_names[0] ||
@@ -57,6 +57,7 @@ void load(Settings *out) {
   out->fast_charge = g_prefs.getBool("s_qc", d.fast_charge);
   out->pad_power = g_prefs.getUChar("s_padpwr", d.pad_power);
   out->usb_data_auto = g_prefs.getBool("s_usbdat3", d.usb_data_auto);
+  out->time_zone = g_prefs.getUChar("s_tz", d.time_zone);
   out->flip_delay_ms = g_prefs.getUShort("s_flipms", d.flip_delay_ms);
   out->max_difficulty =
       (Difficulty)g_prefs.getUChar("s_diff", (uint8_t)d.max_difficulty);
@@ -111,6 +112,7 @@ void save(const Settings &s) {
     g_prefs.putUChar("s_padpwr", s.pad_power);
   if (all || s.usb_data_auto != o.usb_data_auto)
     g_prefs.putBool("s_usbdat3", s.usb_data_auto);
+  if (all || s.time_zone != o.time_zone) g_prefs.putUChar("s_tz", s.time_zone);
   if (all || s.flip_delay_ms != o.flip_delay_ms)
     g_prefs.putUShort("s_flipms", s.flip_delay_ms);
   if (all || s.max_difficulty != o.max_difficulty)

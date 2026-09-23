@@ -418,6 +418,8 @@ void beginServer() {
   if (g_mdns) MDNS.addService("http", "tcp", 80);
 }
 
+bool g_radio_spent = false;
+
 void startHotspot() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(kApSsid);
@@ -503,10 +505,18 @@ void stop() {
     MDNS.end();
     g_mdns = false;
   }
+  // Powered off, which gives back about 60 KB of the internal RAM the radio
+  // took (an idle radio keeps all of it, and leaves the card driver with no
+  // DMA memory at all). The transport cannot then be started again this
+  // boot, so the next session restarts the console first: see radioSpent.
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
+  g_radio_spent = true;
   g_state = State::Off;
 }
+
+bool radioSpent() { return g_radio_spent; }
+void noteRadioSpent() { g_radio_spent = true; }
 
 void loop() {
   switch (g_state) {

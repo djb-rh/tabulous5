@@ -537,8 +537,9 @@ never be joined, and neither can a network that is not there. Until
 2026-09-15 a join that timed out was followed by the hotspot fallback turning
 the radio off and on, and the co-processor's transport cannot be started
 twice in one boot - its buffer pool fails ("HS_MP: mempool create failed")
-and the console asserts. The fallback now keeps the radio up. Check
-`include/secrets.h` names the 2.4 GHz network.
+and the console asserts. The fallback now keeps the radio up, and a second
+editor session in one boot restarts the console deliberately, with a message.
+Check `include/secrets.h` names the 2.4 GHz network.
 
 **No sound anywhere after a crash.** A reset that lands mid-transaction on
 the internal I2C bus can leave the ES8388 codec or the I/O expander that
@@ -629,6 +630,34 @@ what that means in practice and which components carry their own terms.
 This was MIT until 2026-09-07. It was relicensed to use the Anemoia-ESP32 NES
 core, which is GPL-3.0. Copies taken under MIT keep their MIT rights; everything
 from that commit onward is GPL-3.0.
+
+## Clock and time
+
+The launcher shows the time, top left, once it can be believed. The Tab5's
+real-time clock (an RX8130, kept running by the battery) is read at boot, but
+a chip that was never set reads the year 2000, so the clock appears only after
+the network has set it through NTP, which is remembered. From then on the RTC
+carries the time between boots and the network only corrects drift.
+
+The network is the awkward part. The Wi-Fi co-processor's transport can be
+started **once per boot**: a second start asserts, and an idle radio keeps
+every byte of the ~140 KB of internal RAM it took, leaving the card driver no
+DMA memory. So the console never starts the radio on its own. A sync happens
+whenever the Wi-Fi editor is open (it joins the house network anyway), or when
+**SYNC NOW** on the settings screen's TIME & SCORES page is pressed, which
+starts a session of its own and powers the radio off afterwards. Opening the
+editor or syncing a second time in one boot restarts the console first, and
+says so. The time zone is chosen on the same page from a short list of POSIX
+rules (`src/wallclock.cpp`); the RTC holds UTC.
+
+`src/wallclock.cpp` is the whole of it: the zone, the trust flag and last-sync
+time in NVS, the SNTP request, and setting the RTC from the result.
+
+## High scores
+
+Minesweeper, Sudoku and Solitaire keep score tables per difficulty in NVS. The
+TIME & SCORES page has a RESET for each game; it asks twice, and the second tap
+has to come within a few seconds of the first.
 
 ## Power
 
