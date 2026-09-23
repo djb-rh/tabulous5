@@ -8,6 +8,7 @@
 #include "audio.h"
 #include "theme.h"
 #include "uikit.h"
+#include "hwkeyboard.h"
 
 namespace tabulous {
 namespace textentry {
@@ -37,6 +38,9 @@ bool g_dirty = true;
 // whole keyboard per keystroke was slow enough to feel like dropped touches.
 bool g_redraw_field = false;
 bool g_redraw_keys = false;
+// Whether the screen was last drawn for the hardware keyboard, which takes
+// the place of the on-screen keys while it is clipped on.
+bool g_drawn_hw = false;
 
 struct Spec {
   const char *label;
@@ -200,7 +204,58 @@ void drawAll() {
 
   drawField();
   addKey(clearRect(), Key::Clear);
+  g_drawn_hw = hwkeyboard::present();
+  if (g_drawn_hw) {
+    // The keyboard is clipped on: it does the typing, and the screen says so
+    // instead of drawing keys nobody needs.
+    drawLabel("Type on the keyboard", kW / 2, 330, kText, &fonts::FreeSansBold24pt7b,
+              middle_center);
+    drawLabel("ENTER to finish, ESC to cancel", kW / 2, 390, kMuted, &fonts::FreeSans12pt7b,
+              middle_center);
+    return;
+  }
   drawKeys(true);
+}
+
+// One key from the hardware keyboard, applied the way a tap on the screen
+// would have been. Returns Closed when it finished the entry.
+Result applyHardwareKey(const hwkeyboard::Key &k) {
+  if (k.special == hwkeyboard::Special::Enter) {
+    std::string name = g_text;
+    while (!name.empty() && name.front() == ' ') name.erase(name.begin());
+    while (!name.empty() && name.back() == ' ') name.pop_back();
+    if (name.empty()) {
+      audio::skip();
+      return Result::None;
+    }
+    g_result = name;
+    g_accepted = true;
+    g_active = false;
+    audio::correct();
+    return Result::Closed;
+  }
+  if (k.special == hwkeyboard::Special::Escape) {
+    g_accepted = false;
+    g_active = false;
+    audio::skip();
+    return Result::Closed;
+  }
+  if (k.special == hwkeyboard::Special::Backspace || k.special == hwkeyboard::Special::Delete) {
+    if (!g_text.empty()) {
+      g_text.pop_back();
+      audio::select();
+      g_redraw_field = true;
+      g_dirty = true;
+    }
+    return Result::None;
+  }
+  if (k.ch >= ' ' && k.ch < 127 && !k.ctrl && !k.alt && g_text.size() < g_max) {
+    g_text.push_back(k.ch);
+    audio::select();
+    g_redraw_field = true;
+    g_dirty = true;
+  }
+  return Result::None;
 }
 
 }  // namespace
@@ -222,9 +277,20 @@ bool accepted() { return g_accepted; }
 const std::string &text() { return g_result; }
 void invalidate() { g_dirty = true; }
 
-void tick(uint32_t now_ms) {
+Result tick(uint32_t now_ms) {
   (void)now_ms;
-  if (!g_active || !g_dirty) return;
+  if (!g_active) return Result::None;
+  // Keys typed on the hardware keyboard, and the screen following it on
+  // and off.
+  hwkeyboard::Key k;
+  while (hwkeyboard::take(&k)) {
+    if (applyHardwareKey(k) == Result::Closed) return Result::Closed;
+  }
+  if (hwkeyboard::present() != g_drawn_hw) {
+    g_dirty = true;
+    g_redraw_field = g_redraw_keys = false;
+  }
+  if (!g_dirty) return Result::None;
 
   const uint32_t t0 = micros();
   if (g_redraw_field || g_redraw_keys) {
@@ -238,6 +304,7 @@ void tick(uint32_t now_ms) {
 
   g_dirty = false;
   g_redraw_field = g_redraw_keys = false;
+  return Result::None;
 }
 
 Result handleTap(int x, int y) {

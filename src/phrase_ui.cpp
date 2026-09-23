@@ -616,11 +616,23 @@ void invalidate() {
 uint32_t worstActionUs() { return g_worst_action_us; }
 int worstAction() { return g_worst_action; }
 
+namespace {
+// The text entry closed - by a tap on DONE or CANCEL, or by the keyboard.
+void onEntryClosed() {
+    if (textentry::accepted()) {
+      g_game->mutableSettings().team_names[g_editing_team] =
+          textentry::text();
+      settings_store::save(g_game->settings());
+    }
+    g_dirty = true;  // rebuild this screen's own hit targets
+}
+}  // namespace
+
 void tick(uint32_t now_ms) {
   if (!g_game) return;
 
   if (textentry::active()) {
-    textentry::tick(now_ms);
+    if (textentry::tick(now_ms) == textentry::Result::Closed) onEntryClosed();
     return;
   }
   if (packpicker::active()) {
@@ -686,14 +698,7 @@ void handleTap(int x, int y, uint32_t now_ms) {
   }
 
   if (textentry::active()) {
-    if (textentry::handleTap(x, y) == textentry::Result::Closed) {
-      if (textentry::accepted()) {
-        g_game->mutableSettings().team_names[g_editing_team] =
-            textentry::text();
-        settings_store::save(g_game->settings());
-      }
-      g_dirty = true;  // rebuild this screen's own hit targets
-    }
+    if (textentry::handleTap(x, y) == textentry::Result::Closed) onEntryClosed();
     return;
   }
 

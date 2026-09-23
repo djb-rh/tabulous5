@@ -29,7 +29,7 @@ constexpr uint32_t kSampleMs = 400;
 // Bumped when the stored calibration format or defaults change, so a flash
 // that alters the meaning of the stored values starts clean instead of
 // inheriting a calibration that no longer means what it did.
-constexpr uint8_t kCalibrationVersion = 2;
+constexpr uint8_t kCalibrationVersion = 3;  // 3: the default way up flipped
 
 // Never flip more often than this, whatever the speed setting says. Without
 // it, "instant" lets noise either side of the threshold flip the screen
@@ -42,11 +42,13 @@ uint32_t g_last_flip_ms = 0;
 constexpr float kFlipG = 0.50f;
 
 bool g_enabled = true;
-uint8_t g_rotation = kLandscapeA;
+// The default way up is B: the way the buttons and the card slot end up on
+// the right, which is how it is held.
+uint8_t g_rotation = kLandscapeB;
 float g_last = 0.0f;
 
 uint32_t g_last_sample = 0;
-uint8_t g_candidate = kLandscapeA;
+uint8_t g_candidate = kLandscapeB;
 uint32_t g_candidate_since = 0;
 
 // Latest raw sample, so flipNow() can calibrate from whatever is happening at
@@ -63,11 +65,11 @@ float g_ax = 0, g_ay = 0;
 bool g_calibrated = false;
 bool g_axis_is_y = false;
 float g_ref_sign = 1.0f;
-uint8_t g_ref_rotation = kLandscapeA;
+uint8_t g_ref_rotation = kLandscapeB;
 
 // The orientation to sit in when lying flat, where there is no in-plane
 // gravity to go on. Also user-set via FLIP, and persisted.
-uint8_t g_resting = kLandscapeA;
+uint8_t g_resting = kLandscapeB;
 
 Preferences g_prefs;
 
@@ -95,8 +97,8 @@ void load() {
   g_calibrated = g_prefs.getBool("o_cal", false);
   g_axis_is_y = g_prefs.getBool("o_axisy", false);
   g_ref_sign = g_prefs.getChar("o_sign", 1) >= 0 ? 1.0f : -1.0f;
-  g_ref_rotation = g_prefs.getUChar("o_refrot", kLandscapeA);
-  g_resting = g_prefs.getUChar("o_rest", kLandscapeA);
+  g_ref_rotation = g_prefs.getUChar("o_refrot", kLandscapeB);
+  g_resting = g_prefs.getUChar("o_rest", kLandscapeB);
   g_prefs.end();
 }
 
@@ -128,11 +130,11 @@ uint32_t stableMs() { return g_stable_ms; }
 
 void resetCalibration() {
   g_calibrated = false;
-  g_resting = kLandscapeA;
-  g_ref_rotation = kLandscapeA;
+  g_resting = kLandscapeB;
+  g_ref_rotation = kLandscapeB;
   g_ref_sign = 1.0f;
   g_axis_is_y = false;
-  g_rotation = kLandscapeA;
+  g_rotation = kLandscapeB;
   M5.Display.setRotation(g_rotation);
   save();
 }

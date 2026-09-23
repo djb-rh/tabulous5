@@ -190,6 +190,10 @@ how the scrolling lists and the reorder handle are driven without hands.
 captures mid-gesture. `tools/drag.py` does one drag on its own. `--pad=` holds
 NES-style buttons for a number of frames in the NES and in Doom.
 
+The launcher's default way up puts the buttons and the card slot on the right;
+auto-rotate flips it 180 degrees as the console changes hands, and FLIP in
+PhraseCraze calibrates which way is which.
+
 `tools/put.py LOCAL /path/on/card` copies a file onto the card over the same
 USB link, without pulling the card: the firmware's `w` command takes the
 bytes in 4 KB chunks and acknowledges each once it is written, which is the
@@ -630,6 +634,19 @@ what that means in practice and which components carry their own terms.
 This was MIT until 2026-09-07. It was relicensed to use the Anemoia-ESP32 NES
 core, which is GPL-3.0. Copies taken under MIT keep their MIT rights; everything
 from that commit onward is GPL-3.0.
+
+## Tab5 Keyboard
+
+M5Stack's clip-on keyboard for the 2x5 header is found on its own: it is an
+STM32 on I2C at 0x6D over G0/G1 with an interrupt on G50, and `src/hwkeyboard.cpp`
+probes for it a few times a second, so clipping it on mid-session works. The
+chip has no spare I2C port, so the Grove port's bus is moved to those pins
+(nothing here uses Grove). It is read in its HID shape - a modifier byte and a
+USB usage code - and mapped to characters on its US layout.
+
+While it is on, every text entry (team names, high-score names) takes typing
+from it instead of drawing the on-screen keys: ENTER finishes, ESC cancels,
+Backspace deletes. Unclip it and the on-screen keys come back.
 
 ## Clock and time
 

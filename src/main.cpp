@@ -20,6 +20,7 @@
 #include "power.h"
 #include "secrets.h"
 #include "wallclock.h"
+#include "hwkeyboard.h"
 #include "content.h"
 #include "contentserver.h"
 #include "filemanager.h"
@@ -97,6 +98,7 @@ void setup() {
   audio::setEnabled(settings.sound_enabled);
   power::apply(settings);
   wallclock::begin(settings.time_zone);
+  hwkeyboard::begin();
   orientation::setEnabled(settings.auto_rotate);
   orientation::setStableMs(settings.flip_delay_ms);
 
@@ -388,6 +390,19 @@ void loop() {
     if (cmd == 'f') dumpFontSpecimen();
     if (cmd == 'p') dumpPanel();
     if (cmd == 'd') probeSd();
+    if (cmd == 'k') hwkeyboard::dumpLog();
+    // "i": what answers on the two I2C buses, for finding an accessory.
+    if (cmd == 'i') {
+      for (int bus = 0; bus < 2; bus++) {
+        auto &i2c = bus == 0 ? M5.In_I2C : M5.Ex_I2C;
+        bool found[120];
+        Serial.printf("i2c %s:", bus == 0 ? "internal" : "external");
+        if (!i2c.isEnabled()) { Serial.println(" (not enabled)"); continue; }
+        i2c.scanID(found);
+        for (int a = 0; a < 120; a++) if (found[a]) Serial.printf(" 0x%02X", a);
+        Serial.println();
+      }
+    }
     if (cmd == 'm') {
       Serial.printf("mem: internal=%uKB largest=%uKB dma=%uKB dma_largest=%uKB psram=%uKB\n",
                     (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
@@ -618,6 +633,7 @@ void loop() {
   const uint32_t p3 = micros();
 
   wallclock::tick(now);
+  hwkeyboard::tick(now);
   app::tick(now);
   const uint32_t p4 = micros();
 

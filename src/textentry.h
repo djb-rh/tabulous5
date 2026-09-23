@@ -34,7 +34,9 @@ bool accepted();
 const std::string &text();
 
 void invalidate();
-void tick(uint32_t now_ms);
+// Closed when the hardware keyboard finished the entry (Enter or Esc);
+// the host then does what it does after a Closed from handleTap.
+Result tick(uint32_t now_ms);
 Result handleTap(int x, int y);
 
 }  // namespace textentry

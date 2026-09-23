@@ -666,11 +666,26 @@ void begin(solitaire::Game *game) {
 
 void invalidate() { markAllDirty(); }
 
+namespace {
+// The text entry closed - by a tap on DONE or CANCEL, or by the keyboard.
+void onEntryClosed() {
+    if (textentry::accepted()) {
+      const int key = g_opt.draw_three ? 1 : 0;
+      highscores::Table t = highscores::load(kScoreKeys[key]);
+      const int row = t.insert(textentry::text().c_str(), g_pending_time, true);
+      highscores::save(kScoreKeys[key], t);
+      scoreboard::open("SOLITAIRE - BEST TIMES", kScoreKeys, kScoreLabels, 2,
+                       key, true, row);
+    }
+    g_dirty = true;
+}
+}  // namespace
+
 void tick(uint32_t now_ms) {
   if (!g_game) return;
 
   if (textentry::active()) {
-    textentry::tick(now_ms);
+    if (textentry::tick(now_ms) == textentry::Result::Closed) onEntryClosed();
     return;
   }
   if (scoreboard::active()) {
@@ -705,17 +720,7 @@ void handleTap(int x, int y, uint32_t now_ms) {
   if (!g_game) return;
 
   if (textentry::active()) {
-    if (textentry::handleTap(x, y) == textentry::Result::Closed) {
-      if (textentry::accepted()) {
-        const int key = g_opt.draw_three ? 1 : 0;
-        highscores::Table t = highscores::load(kScoreKeys[key]);
-        const int row = t.insert(textentry::text().c_str(), g_pending_time, true);
-        highscores::save(kScoreKeys[key], t);
-        scoreboard::open("SOLITAIRE - BEST TIMES", kScoreKeys, kScoreLabels, 2,
-                         key, true, row);
-      }
-      g_dirty = true;
-    }
+    if (textentry::handleTap(x, y) == textentry::Result::Closed) onEntryClosed();
     return;
   }
   if (scoreboard::active()) {

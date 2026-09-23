@@ -405,12 +405,28 @@ void pollGridTouch(uint32_t now_ms) {
   }
 }
 
+namespace {
+// The text entry closed - by a tap on DONE or CANCEL, or by the keyboard.
+void onEntryClosed() {
+    if (textentry::accepted()) {
+      highscores::Table table = highscores::load(kScoreKeys[(int)g_level]);
+      const int row =
+          table.insert(textentry::text().c_str(), g_pending_time, true);
+      highscores::save(kScoreKeys[(int)g_level], table);
+      scoreboard::open("MINESWEEPER - BEST TIMES", kScoreKeys, kScoreLabels,
+                       3, (int)g_level, true, row);
+    }
+    g_swallow_touch = true;
+    g_dirty = true;
+}
+}  // namespace
+
 void tick(uint32_t now_ms) {
   if (!g_board) return;
 
   // Modals own the screen while they are up.
   if (textentry::active()) {
-    textentry::tick(now_ms);
+    if (textentry::tick(now_ms) == textentry::Result::Closed) onEntryClosed();
     return;
   }
   if (scoreboard::active()) {
@@ -459,18 +475,7 @@ void handleTap(int x, int y, uint32_t now_ms) {
   if (!g_board) return;
 
   if (textentry::active()) {
-    if (textentry::handleTap(x, y) == textentry::Result::Closed) {
-      if (textentry::accepted()) {
-        highscores::Table table = highscores::load(kScoreKeys[(int)g_level]);
-        const int row =
-            table.insert(textentry::text().c_str(), g_pending_time, true);
-        highscores::save(kScoreKeys[(int)g_level], table);
-        scoreboard::open("MINESWEEPER - BEST TIMES", kScoreKeys, kScoreLabels,
-                         3, (int)g_level, true, row);
-      }
-      g_swallow_touch = true;
-      g_dirty = true;
-    }
+    if (textentry::handleTap(x, y) == textentry::Result::Closed) onEntryClosed();
     return;
   }
   if (scoreboard::active()) {

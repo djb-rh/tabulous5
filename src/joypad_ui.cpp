@@ -9,6 +9,7 @@
 #include "audio.h"
 #include "emu_video.h"
 #include "joypad.h"
+#include "orientation.h"
 #include "padmap.h"
 #include "settings_store.h"
 #include "theme.h"
@@ -411,9 +412,11 @@ bool beginPlay(bool portrait, int src_w, int src_h, float scale) {
 }
 
 bool beginPlay(bool portrait, int src_w, int src_h, float scale_x, float scale_y) {
-  M5.Display.setRotation(portrait ? 0 : 1);
+  // Landscape is whichever way up the console is being held, not a fixed
+  // rotation: the launcher may be the other way round.
+  M5.Display.setRotation(portrait ? 0 : orientation::rotation());
   if (!emu_video::begin() || !emu_video::configure(src_w, src_h, scale_x, scale_y)) {
-    M5.Display.setRotation(1);
+    M5.Display.setRotation(orientation::rotation());
     joypad::setLayout(false);
     return false;
   }
@@ -446,7 +449,7 @@ void endPlay() {
   joypad::setMenuWidth(170);
   emu_video::waitIdle();
   joypad::setLayout(false);
-  M5.Display.setRotation(1);
+  M5.Display.setRotation(orientation::rotation());
 }
 
 void begin() {
