@@ -779,7 +779,7 @@ void drawTimeAndScores() {
   y += 34;
 
   struct tm t;
-  char line[64];
+  char line[160];
   if (wallclock::localTime(&t)) {
     char time_text[16], date_text[32];
     strftime(time_text, sizeof(time_text), "%l:%M %p", &t);
@@ -807,7 +807,10 @@ void drawTimeAndScores() {
         localtime_r(&when, &w);
         char when_text[40];
         strftime(when_text, sizeof(when_text), "%b %e at %l:%M %p", &w);
-        snprintf(line, sizeof(line), "Set from the network on %s. The clock chip keeps it between boots.", when_text);
+        // %l pads the hour with a space, which reads as a typo mid-sentence.
+        char *w0 = strstr(when_text, "at  ");
+        if (w0) memmove(w0 + 3, w0 + 4, strlen(w0 + 4) + 1);
+        snprintf(line, sizeof(line), "Set from the network on %s; the clock chip keeps it between boots.", when_text);
       } else {
         snprintf(line, sizeof(line), "The clock appears once the network has set it, over Wi-Fi.");
       }
