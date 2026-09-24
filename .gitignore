@@ -20,3 +20,7 @@ data/arcade/*.arc
 # See third_party/snes9x/README.md.
 third_party/snes9x/*
 !third_party/snes9x/README.md
+
+# Release outputs
+site/
+dist/

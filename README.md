@@ -55,6 +55,22 @@ microSD card, and takes a USB gamepad. Remaining: a coredump partition.
 a bare `Serial.printf` loop for proving the serial link, and `src/bench/`
 measures display throughput.
 
+## Installing without building anything
+
+Open the **[web installer](https://djb-rh.github.io/tabulous5/)** in Chrome or
+Edge on a desktop, connect the Tab5's USB-C port, press its power button once
+with the cable attached (a running Tabulous5 keeps its USB data lines off
+unless it was started on a computer, and that press is a restart), and click
+Install. The [latest release](https://github.com/djb-rh/tabulous5/releases/latest)
+also carries the merged image (`tabulous5-<version>.bin`, written at offset 0)
+for esptool or any other flasher.
+
+The web install puts the firmware on and nothing else: the word packs and
+sounds it keeps on its own flash are set up on first boot, and the emulators
+read from the card. `tools/release.sh <version>` builds the image and the
+installer into `dist/` and `site/`; `tools/publish_site.sh <version>` pushes
+`site/` as the `gh-pages` branch that GitHub Pages serves.
+
 ## Build
 
 PlatformIO lives in a project-local venv because Homebrew's Python is
