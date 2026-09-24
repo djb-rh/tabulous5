@@ -1,0 +1,12 @@
+{
+  "name": "Tabulous5",
+  "version": "v1.3.0",
+  "new_install_prompt_erase": true,
+  "new_install_improv_wait_time": 0,
+  "builds": [
+    {
+      "chipFamily": "ESP32-P4",
+      "parts": [{ "path": "tabulous5-v1.3.0.bin", "offset": 0 }]
+    }
+  ]
+}

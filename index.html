@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tabulous5 installer</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#e6edf3;--dim:#8b949e;--accent:#2f81f7}
+@media (prefers-color-scheme:light){:root{--bg:#f6f8fa;--panel:#fff;--border:#d0d7de;--text:#1f2328;--dim:#59636e;--accent:#0969da}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:760px;margin:0 auto;padding:28px 16px 48px}h1{margin:0 0 4px;font-size:28px}h2{font-size:19px;margin:28px 0 8px}
+p,li{color:var(--dim)}b,strong{color:var(--text)}a{color:var(--accent)}img{width:100%;border-radius:10px;border:1px solid var(--border);margin:14px 0}
+.box{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin:18px 0}
+ol{padding-left:22px}li{margin:6px 0}code{background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:1px 5px;color:var(--text)}
+button.install{background:#2f81f7;color:#fff;border:0;border-radius:8px;padding:12px 22px;font:600 17px system-ui,sans-serif;cursor:pointer;margin:8px 0 4px}
+button.install:hover{filter:brightness(1.1)}
+</style></head><body><main>
+<h1>Tabulous5</h1>
+<p>Firmware v1.3.0: a party, puzzle and emulation console for the M5Stack Tab5 — nine games from
+PhraseCraze to Doom. Source, docs and licence (GPL-3.0) on
+<a href="https://github.com/djb-rh/tabulous5">GitHub</a>.</p>
+<img src="home.png" alt="The launcher">
+
+<h2>1. Install the firmware</h2>
+<div class="box">
+<ol>
+<li>Use <b>Chrome or Edge on a desktop</b> (Web Serial is needed; Safari and Firefox do not have it).</li>
+<li>Connect the Tab5's <b>USB-C</b> port to the computer, then <b>press the Tab5's power button once</b> with the
+cable attached. If it is already running Tabulous5 it keeps its USB data lines off unless it was started on a
+computer, and that press is a restart.</li>
+<li>Click <b>Install</b> below and choose the Tab5's port (it is usually called <b>USB JTAG/serial debug unit</b>).</li>
+</ol>
+<esp-web-install-button manifest="manifest.json">
+<button slot="activate" class="install">Install Tabulous5 v1.3.0</button>
+<span slot="unsupported"><b>This browser cannot flash devices.</b> Use Chrome or Edge on a desktop computer.</span>
+<span slot="not-allowed"><b>The page must be opened over https.</b></span>
+</esp-web-install-button>
+<p>If no port shows up or the install fails: hold the Tab5's power button until the screen goes dark to put it in
+download mode, then try again. Installing replaces whatever firmware the Tab5 had; the word packs, sounds and
+settings it keeps on its own flash are set up fresh on first boot.</p>
+</div>
+
+<h2>2. Games from a card</h2>
+<div class="box"><ol>
+<li>The party and puzzle games need nothing more. The emulators and Doom read from a <b>FAT32</b> microSD card:
+folders <code>/nes</code>, <code>/gb</code>, <code>/arcade</code>, <code>/snes</code> and <code>/doom</code>, with your own
+files in them. Nothing of that kind is shipped.</li>
+<li>Word packs and sounds can be edited from a browser: <b>SETTINGS → EDIT CONTENT OVER WI-FI</b>, once
+the network is named in the firmware's <code>secrets.h</code> or by joining the console's own hotspot.</li>
+<li>Everything else is in the <a href="https://github.com/djb-rh/tabulous5#readme">README</a>.</li>
+</ol></div>
+</main></body></html>
