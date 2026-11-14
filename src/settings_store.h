@@ -6,6 +6,7 @@
 #pragma once
 
 #include "fivehead.h"
+#include "busmap.h"
 #include "padmap.h"
 #include "phrase_game.h"
 
@@ -106,6 +107,11 @@ void saveDoom(const DoomSettings &settings);
 // Which USB gamepad button is which; taught in the Gamepad Test screen.
 void loadPadMap(padmap::Map *out);
 void savePadMap(const padmap::Map &map);
+
+// The built-in gamepad's wiring: which header line each button is on.
+// Untouched if none has been saved.
+void loadBusWiring(busmap::Wiring *out);
+void saveBusWiring(const busmap::Wiring &wiring);
 
 }  // namespace settings_store
 }  // namespace tabulous

@@ -25,8 +25,10 @@ public:
     Cartridge* cart;
     uint8_t RAM[2048];
     uint8_t controller = 0x00;
+    uint8_t controller2 = 0x00;
 
     void setController(uint8_t state);
+    void setController2(uint8_t state);
     uint8_t getControllerState();
 
     void cpuWrite(uint16_t addr, uint8_t data);
@@ -54,6 +56,7 @@ public:
 
 private:
     uint8_t controller_state;
+    uint8_t controller2_state = 0x00;
     uint8_t controller_strobe = 0x00;
 };
 

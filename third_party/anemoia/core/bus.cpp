@@ -34,6 +34,11 @@ void Bus::setController(uint8_t state)
     controller = state;
 }
 
+void Bus::setController2(uint8_t state)
+{
+    controller2 = state;
+}
+
 uint8_t Bus::getControllerState()
 {
     return controller;
@@ -129,6 +134,12 @@ void Bus::buildPageTables()
             if (!b->controller_strobe) b->controller_state >>= 1;
             return value | 0x40;
         }
+        if (a == 0x4017)
+        {
+            uint8_t value = b->controller2_state & 1;
+            if (!b->controller_strobe) b->controller2_state >>= 1;
+            return value | 0x40;
+        }
         return 0x00;
     };
     write_handlers[0x40] = [](Bus* b, uint16_t a, uint8_t d)
@@ -138,7 +149,11 @@ void Bus::buildPageTables()
         else if (a == 0x4016)
         {
             b->controller_strobe = d & 1;
-            if (b->controller_strobe) b->controller_state = b->controller;
+            if (b->controller_strobe)
+            {
+                b->controller_state = b->controller;
+                b->controller2_state = b->controller2;
+            }
         }
     };
 }

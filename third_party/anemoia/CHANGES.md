@@ -79,3 +79,8 @@ about this device.
   `read` serve from that copy. Bank switches therefore never touch the
   filesystem, which matters on a card whose ROM directory holds thousands of
   files: one FAT lookup there costs hundreds of milliseconds.
+* `core/bus.{h,cpp}` — a second controller. Upstream read `$4016` only and
+  answered `$4017` with zero, so two-player games had one player. The strobe
+  now latches both pads and `$4017` shifts the second out the same way;
+  `setController2()` feeds it. (Writes to `$4017` are the APU's frame counter
+  and still go there.)

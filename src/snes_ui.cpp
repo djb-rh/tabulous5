@@ -60,7 +60,8 @@ bool S9xReadSuperScopePosition(int32_t *, int32_t *, uint32_t *) { return false;
 // outside is pointless -- whatever is put there is overwritten before the
 // program ever sees it. This is the only way in.
 volatile uint32_t g_snes_pad = 0;
-uint32_t S9xReadJoypad(int32_t port) { return port == 0 ? g_snes_pad : 0; }
+volatile uint32_t g_snes_pad2 = 0;   // player two: a USB pad, when the console has its own
+uint32_t S9xReadJoypad(int32_t port) { return port == 0 ? g_snes_pad : port == 1 ? g_snes_pad2 : 0; }
 }
 
 #include "app.h"
@@ -73,6 +74,7 @@ uint32_t S9xReadJoypad(int32_t port) { return port == 0 ? g_snes_pad : 0; }
 #include "settings_store.h"
 #include "theme.h"
 #include "uikit.h"
+#include "buspad.h"
 #include "usbpad.h"
 
 namespace tabulous {
@@ -415,7 +417,7 @@ void drawPlayChrome(bool full) {
   g_pad_drawn = g_pad;
 }
 
-uint32_t toSnes(uint8_t pad, const usbpad::State &u) {
+uint32_t toSnes(uint8_t pad) {
   uint32_t out = 0;
   if (pad & joypad::kUp) out |= SNES_UP_MASK;
   if (pad & joypad::kDown) out |= SNES_DOWN_MASK;
@@ -425,14 +427,43 @@ uint32_t toSnes(uint8_t pad, const usbpad::State &u) {
   if (pad & joypad::kB) out |= SNES_B_MASK;
   if (pad & joypad::kSelect) out |= SNES_SELECT_MASK;
   if (pad & joypad::kStart) out |= SNES_START_MASK;
-  // The on-screen pad has no X, Y or shoulders; a real one does, and this is
-  // the machine that needs them.
-  if (u.connected) {
-    if ((u.down >> 0) & 1u) out |= SNES_X_MASK;   // GP100 X
-    if ((u.down >> 3) & 1u) out |= SNES_Y_MASK;   // GP100 Y
-    if ((u.down >> 4) & 1u) out |= SNES_TL_MASK;  // L
-    if ((u.down >> 5) & 1u) out |= SNES_TR_MASK;  // R
-  }
+  return out;
+}
+
+// The on-screen pad has no X, Y or shoulders; a real one does, and this is
+// the machine that needs them. X and Y are their own buttons here, so they
+// come off the eight-button byte, where they stood in for A and B.
+uint32_t usbToSnes(const usbpad::State &u) {
+  if (!u.connected) return 0;
+  const bool x = (u.down >> 0) & 1u, a = (u.down >> 1) & 1u;   // the GP100's numbering
+  const bool b = (u.down >> 2) & 1u, y = (u.down >> 3) & 1u;
+  uint8_t nes = padmap::toNes(u.down, u.x, u.y, g_padmap);
+  if (x && !a) nes &= (uint8_t)~joypad::kA;
+  if (y && !b) nes &= (uint8_t)~joypad::kB;
+  uint32_t out = toSnes(nes);
+  if (x) out |= SNES_X_MASK;
+  if (y) out |= SNES_Y_MASK;
+  if ((u.down >> 4) & 1u) out |= SNES_TL_MASK;
+  if ((u.down >> 5) & 1u) out |= SNES_TR_MASK;
+  return out;
+}
+
+uint32_t busToSnes() {
+  const uint16_t b = buspad::buttons();
+  const auto on = [b](busmap::Button n) { return (b >> n) & 1u; };
+  uint32_t out = 0;
+  if (on(busmap::kUp)) out |= SNES_UP_MASK;
+  if (on(busmap::kDown)) out |= SNES_DOWN_MASK;
+  if (on(busmap::kLeft)) out |= SNES_LEFT_MASK;
+  if (on(busmap::kRight)) out |= SNES_RIGHT_MASK;
+  if (on(busmap::kA)) out |= SNES_A_MASK;
+  if (on(busmap::kB)) out |= SNES_B_MASK;
+  if (on(busmap::kX)) out |= SNES_X_MASK;
+  if (on(busmap::kY)) out |= SNES_Y_MASK;
+  if (on(busmap::kL)) out |= SNES_TL_MASK;
+  if (on(busmap::kR)) out |= SNES_TR_MASK;
+  if (on(busmap::kSelect)) out |= SNES_SELECT_MASK;
+  if (on(busmap::kStart)) out |= SNES_START_MASK;
   return out;
 }
 
@@ -464,7 +495,13 @@ void runFrame(uint32_t now_ms) {
   bool menu_held = false;
   g_pad = joypad_ui::pollPad(&menu_held);
   if (g_scale >= 3) g_pad = 0;
+  const uint8_t touch = g_pad;
+  // The console's own pad is player one. A USB pad is player one as well
+  // until the console has a pad of its own, and player two once it does.
+  // g_pad stays the eight-button view of everything, for the way out.
   const usbpad::State u = usbpad::state();
+  const bool usb_is_two = buspad::wired();
+  g_pad |= buspad::nes();
   if (u.connected) g_pad |= padmap::toNes(u.down, u.x, u.y, g_padmap);
   if ((g_pad & (joypad::kSelect | joypad::kStart)) == (joypad::kSelect | joypad::kStart)) {
     if (++g_quit_hold >= 40) menu_held = true;
@@ -481,7 +518,12 @@ void runFrame(uint32_t now_ms) {
   }
   if (!menu_held) g_menu_down = false;
 
-  g_snes_pad = toSnes(g_pad, u);
+  {
+    uint32_t one = toSnes(touch) | busToSnes();
+    if (!usb_is_two) one |= usbToSnes(u);
+    g_snes_pad = one;
+    g_snes_pad2 = usb_is_two ? usbToSnes(u) : 0;
+  }
 
   // Every frame is emulated; only every other one is drawn. The picture is
   // where the time goes -- the machine's own logic and its sound run at full

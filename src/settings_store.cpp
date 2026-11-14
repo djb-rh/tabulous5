@@ -366,6 +366,21 @@ void savePadMap(const padmap::Map &map) {
   g_prefs.end();
 }
 
+void loadBusWiring(busmap::Wiring *out) {
+  if (!out) return;
+  if (!g_prefs.begin(kNamespace, true)) return;
+  if (g_prefs.isKey("bus_wire") && g_prefs.getBytesLength("bus_wire") == sizeof(out->line)) {
+    g_prefs.getBytes("bus_wire", out->line, sizeof(out->line));
+  }
+  g_prefs.end();
+}
+
+void saveBusWiring(const busmap::Wiring &wiring) {
+  if (!g_prefs.begin(kNamespace, false)) return;
+  g_prefs.putBytes("bus_wire", wiring.line, sizeof(wiring.line));
+  g_prefs.end();
+}
+
 void loadSolitaire(SolitaireSettings *out) {
   if (!out) return;
   if (!g_prefs.begin(kNamespace, true)) return;

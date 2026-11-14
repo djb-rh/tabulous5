@@ -34,6 +34,7 @@ extern "C" {
 #include "snes_ui.h"
 #include "theme.h"
 #include "uikit.h"
+#include "buspad.h"
 #include "usbpad.h"
 
 namespace tabulous {
@@ -482,6 +483,14 @@ void runFrame(uint32_t now_ms) {
       } else {
         g_pad |= from_pad;
       }
+    }
+    // The console's own pad, by the same rule.
+    const uint8_t from_bus = buspad::nes();
+    if (g_buttons_as_stick) {
+      g_pad |= (uint8_t)(from_bus & ~(joypad::kA | joypad::kB));
+      g_pad |= buspad::stick();
+    } else {
+      g_pad |= from_bus;
     }
   }
   if ((g_pad & (joypad::kSelect | joypad::kStart)) == (joypad::kSelect | joypad::kStart)) {

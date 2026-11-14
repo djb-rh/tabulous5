@@ -14,6 +14,7 @@
 #include "settings_store.h"
 #include "theme.h"
 #include "uikit.h"
+#include "buspad.h"
 #include "usbpad.h"
 
 namespace tabulous {
@@ -54,6 +55,21 @@ uint32_t g_map_before = 0;
 const char *const kMapPrompts[5] = {"", "Press A", "Press B", "Press SELECT", "Press START"};
 
 const joypad::Rect kMapButton{joypad::kPanelW - 24 - 190, 24, 190, 64};
+
+// The built-in pad: its twelve header lines as lamps along the top, and the
+// flow that teaches which button is on which. Step 0 = idle; 1..12 = waiting
+// for that button, in busmap::Button order.
+const joypad::Rect kWireButton{kMapButton.x - 16 - 190, 24, 190, 64};
+constexpr int kBusX = 24 + 170 + 20;                 // right of MENU
+constexpr int kBusW = (joypad::kPanelW - 24 - 190 - 16 - 190) - 20 - kBusX;    // up to WIRE PAD
+uint16_t g_bus_lines = 0;
+uint16_t g_bus_drawn = 0xFFFF;
+int g_wire_step = 0;
+int g_wire_step_drawn = -1;
+busmap::Wiring g_wire_new;
+uint16_t g_wire_before = 0;
+int g_wire_cand = -1;          // a line seen down once; taken when seen twice
+bool g_wire_btn_down = false;
 
 uint16_t litFill(bool on) { return on ? kAccent : kSurfaceLift; }
 uint16_t litInk(bool on) { return on ? kInk : kText; }
@@ -207,16 +223,113 @@ void drawUsb() {
   g_usb_conn_drawn = g_usb.connected;
 }
 
-void draw(bool full) {
-  if (full) {
-    gfx().fillScreen(kBg);
-    uikit::drawButton(uikit::Rect{kMapButton.x, kMapButton.y, kMapButton.w, kMapButton.h},
-                      "MAP PAD", kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+// The built-in pad's strip: a lamp per header line, lit while that line is
+// held to ground, with the GPIO it is and the button it has been taught as.
+// A lamp that is lit with nothing pressed is a wire shorted to ground; a
+// button that lights no lamp is a wire that is not making contact.
+void drawBus() {
+  auto &g = gfx();
+  g.fillRect(kBusX, 0, kBusW, joypad::kVideoY - 2, kBg);
+  const busmap::Wiring shown = g_wire_step > 0 ? g_wire_new : buspad::wiring();
+  const int cw = kBusW / busmap::kLines;
+  for (int n = 0; n < busmap::kLines; n++) {
+    const bool on = (g_bus_lines >> n) & 1u;
+    const int cx = kBusX + n * cw + cw / 2;
+    g.fillCircle(cx, 22, 10, on ? kGood : kSurfaceLift);
+    char label[8];
+    snprintf(label, sizeof(label), "G%d", busmap::kGpio[n]);
+    uikit::drawLabel(label, cx, 48, on ? kText : kMuted, &fonts::FreeSans9pt7b, middle_center);
+    for (int b = 0; b < busmap::kButtonCount; b++) {
+      if (shown.line[b] != n) continue;
+      const char *name = busmap::name((busmap::Button)b);
+      // SELECT and START are too wide for a 50 px cell at this size.
+      const char *brief = b == busmap::kSelect ? "SEL" : b == busmap::kStart ? "STA" : name;
+      uikit::drawLabel(brief, cx, 70, kAccent, &fonts::FreeSansBold9pt7b, middle_center);
+    }
   }
+  char line[96];
+  uint16_t ink = kMuted;
+  if (g_wire_step > 0) {
+    snprintf(line, sizeof(line), "Press %s   (%d of %d)   SKIP if it lights nothing",
+             busmap::name((busmap::Button)(g_wire_step - 1)), g_wire_step, busmap::kButtonCount);
+    ink = kAccent;
+  } else if (!buspad::wired()) {
+    snprintf(line, sizeof(line), "Built-in pad: not taught. WIRE PAD, then press each button as asked.");
+  } else {
+    int n = snprintf(line, sizeof(line), "Built-in pad: ");
+    const uint16_t b = buspad::buttons();
+    for (int i = 0; i < busmap::kButtonCount && n < (int)sizeof(line) - 8; i++) {
+      if ((b >> i) & 1u) n += snprintf(line + n, sizeof(line) - n, "%s ", busmap::name((busmap::Button)i));
+    }
+    if (!b) snprintf(line + n, sizeof(line) - n, "%d of %d buttons taught", busmap::assigned(buspad::wiring()),
+                     busmap::kButtonCount);
+    ink = b ? kText : kMuted;
+  }
+  uikit::drawLabel(line, kBusX, 100, ink, g_wire_step > 0 ? &fonts::FreeSansBold12pt7b : &fonts::FreeSans9pt7b,
+                   middle_left);
+  g_bus_drawn = g_bus_lines;
+}
+
+// The two buttons top right. While the built-in pad is being taught they are
+// the way out of the flow and the way past a button that does nothing.
+void drawTopButtons() {
+  const bool wiring = g_wire_step > 0;
+  uikit::drawButton(uikit::Rect{kWireButton.x, kWireButton.y, kWireButton.w, kWireButton.h},
+                    wiring ? "CANCEL" : "WIRE PAD", kSurfaceLift, kText, &fonts::FreeSansBold12pt7b);
+  uikit::drawButton(uikit::Rect{kMapButton.x, kMapButton.y, kMapButton.w, kMapButton.h},
+                    wiring ? "SKIP" : "MAP PAD", wiring ? kAccent : kSurfaceLift, wiring ? kInk : kText,
+                    &fonts::FreeSansBold12pt7b);
+  g_wire_step_drawn = g_wire_step;
+}
+
+void draw(bool full) {
+  if (full) gfx().fillScreen(kBg);
+  if (full || (g_wire_step > 0) != (g_wire_step_drawn > 0)) drawTopButtons();
+  g_wire_step_drawn = g_wire_step;
   drawControls(g_state, g_drawn, full);
   drawReadout(g_state, full);
   drawUsb();
+  drawBus();
   g_drawn = g_state;
+}
+
+// Ends the teaching flow and keeps what was taught.
+void wireFinish() {
+  g_wire_step = 0;
+  g_wire_cand = -1;
+  buspad::setWiring(g_wire_new);
+  audio::select();
+}
+
+// One button per step. A line counts once it has been seen down on two
+// polls running, so a wire brushing past does not get taken for a press;
+// lines already down when the step began are not presses at all.
+void wireStep() {
+  const int n = busmap::newLine(g_bus_lines, g_wire_before, g_wire_new);
+  if (n >= 0 && n == g_wire_cand) {
+    g_wire_new.line[g_wire_step - 1] = (uint8_t)n;
+    g_wire_cand = -1;
+    g_wire_before = g_bus_lines;
+    if (++g_wire_step > busmap::kButtonCount) wireFinish();
+    else audio::select();
+    return;
+  }
+  g_wire_cand = n;
+  g_wire_before = g_bus_lines;
+  if (n >= 0) g_wire_before &= (uint16_t)~(1u << n);
+}
+
+// Any contact inside a rectangle, a real finger or one injected over serial.
+bool heldIn(const joypad::Rect &r) {
+  for (int i = 0; i < M5.Touch.getCount(); i++) {
+    const auto t = M5.Touch.getDetail(i);
+    if (t.isPressed() && r.contains(t.x, t.y)) return true;
+  }
+  if (uikit::touchIsSynthetic()) {
+    const uikit::TouchState t = uikit::touch();
+    if (t.down && r.contains(t.x, t.y)) return true;
+  }
+  return false;
 }
 
 // One button per step, on a fresh press. Finishing writes the map; a step
@@ -366,7 +479,9 @@ void drawGamepadChrome(bool full) {
   // copied rather than pointed at.
   static char g_shown[48] = "";
   static bool g_shown_valid = false;
-  const char *name = u.connected ? u.name : "";
+  const bool own = buspad::wired();
+  char name[48];
+  snprintf(name, sizeof(name), "%s%.40s", own ? "+" : "", u.connected ? (u.name[0] ? u.name : "Gamepad") : "");
   if (!full && g_shown_valid && strcmp(g_shown, name) == 0) return;
   snprintf(g_shown, sizeof(g_shown), "%s", name);
   g_shown_valid = true;
@@ -378,6 +493,15 @@ void drawGamepadChrome(bool full) {
   const int x = m.x, y = 180;
   const int w = emu_video::geometry().x - x - 8;
   gfx().fillRect(x, y - 26, w, 160, kBg);
+  if (own) {
+    // The console's own pad plays; a USB one beside it is the second player.
+    uikit::drawLabel("Built-in pad", x, y, kMuted, &fonts::FreeSans12pt7b, middle_left);
+    if (u.connected) {
+      uikit::drawLabel("Player 2:", x, y + 34, kMuted, &fonts::FreeSans9pt7b, middle_left);
+      uikit::drawLabel(u.name[0] ? u.name : "Gamepad", x, y + 58, kMuted, &fonts::FreeSans9pt7b, middle_left);
+    }
+    return;
+  }
   if (u.connected) {
     uikit::drawLabel(u.name[0] ? u.name : "Gamepad", x, y, kMuted,
                      &fonts::FreeSans12pt7b, middle_left);
@@ -460,6 +584,10 @@ void begin() {
   g_last_poll = 0;
   g_map_step = 0;
   g_usb_drawn = 0xFFFFFFFFu;
+  g_wire_step = 0;
+  g_wire_step_drawn = -1;
+  g_wire_cand = -1;
+  g_bus_drawn = 0xFFFF;
   settings_store::loadPadMap(&g_map);
 }
 
@@ -485,13 +613,31 @@ void tick(uint32_t now_ms) {
   }
   if (!menu_held) g_menu_down = false;
 
-  // MAP PAD, likewise on the edge. Starts the flow; a second tap cancels it.
-  bool map_held = false;
-  for (int i = 0; i < M5.Touch.getCount(); i++) {
-    const auto t = M5.Touch.getDetail(i);
-    if (t.isPressed() && kMapButton.contains(t.x, t.y)) map_held = true;
+  // WIRE PAD, on the edge: starts teaching the built-in pad, or cancels it
+  // and keeps the wiring it had.
+  const bool wire_held = heldIn(kWireButton);
+  if (wire_held && !g_wire_btn_down) {
+    if (g_wire_step == 0) {
+      g_wire_step = 1;
+      g_wire_new = busmap::none();
+      g_wire_before = buspad::lines();
+      g_wire_cand = -1;
+      g_map_step = 0;
+    } else {
+      g_wire_step = 0;
+    }
+    g_bus_drawn = 0xFFFF;
   }
-  if (map_held && !g_map_btn_down && g_usb.connected) {
+  g_wire_btn_down = wire_held;
+
+  // MAP PAD, likewise on the edge. Starts the flow; a second tap cancels it.
+  // While the built-in pad is being taught the same button is SKIP.
+  const bool map_held = heldIn(kMapButton);
+  if (map_held && !g_map_btn_down && g_wire_step > 0) {
+    if (++g_wire_step > busmap::kButtonCount) wireFinish();
+    g_wire_cand = -1;
+    g_bus_drawn = 0xFFFF;
+  } else if (map_held && !g_map_btn_down && g_usb.connected) {
     if (g_map_step == 0) {
       g_map_step = 1;
       g_map_new = padmap::Map{};
@@ -510,9 +656,19 @@ void tick(uint32_t now_ms) {
     fresh |= padmap::toNes(g_usb.down, g_usb.x, g_usb.y, g_map);
   }
 
+  g_bus_lines = buspad::lines();
+  if (g_wire_step > 0) {
+    const int step = g_wire_step;
+    wireStep();
+    if (g_wire_step != step) g_bus_drawn = 0xFFFF;
+  } else {
+    fresh |= buspad::nes();
+  }
+
   g_state = fresh;
   const bool usb_changed = g_usb.down != g_usb_drawn || g_usb.connected != g_usb_conn_drawn;
-  if (!g_full && g_state == g_drawn && !usb_changed) return;  // nothing moved
+  const bool bus_changed = g_bus_lines != g_bus_drawn;
+  if (!g_full && g_state == g_drawn && !usb_changed && !bus_changed) return;  // nothing moved
 
   const uint32_t t0 = micros();
   draw(g_full);

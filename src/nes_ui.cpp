@@ -26,6 +26,7 @@
 #include "settings_store.h"
 #include "theme.h"
 #include "uikit.h"
+#include "buspad.h"
 #include "usbpad.h"
 
 namespace tabulous {
@@ -112,6 +113,7 @@ TaskHandle_t g_apu_task = nullptr;
 volatile bool g_apu_run = false;
 
 uint8_t g_pad = 0, g_pad_drawn = 0xFF;
+uint8_t g_pad2 = 0;  // player two: a USB pad, when the console has its own
 // How many frames since the last stats line saw a finger on the panel.
 uint32_t g_touch_seen = 0;
 bool g_menu_down = false;
@@ -372,10 +374,18 @@ void runFrame(uint32_t now_ms) {
   if (M5.Touch.getCount() > 0) g_touch_seen++;
   if (g_scale == 3) g_pad = 0;  // no on-screen controls to hit
 
-  // A USB pad, if there is one, on top of the touch controls.
+  // The pads, on top of the touch controls. The console's own is player one.
+  // A USB pad is player one as well until the console has a pad of its own,
+  // and player two once it does.
+  g_pad |= buspad::nes();
+  g_pad2 = 0;
   {
     const usbpad::State u = usbpad::state();
-    if (u.connected) g_pad |= padmap::toNes(u.down, u.x, u.y, g_padmap);
+    if (u.connected) {
+      const uint8_t usb = padmap::toNes(u.down, u.x, u.y, g_padmap);
+      if (buspad::wired()) g_pad2 = usb;
+      else g_pad |= usb;
+    }
   }
   // Injected input joins here rather than further down, so that a held
   // Select+Start from the serial port leaves a game exactly as a real pad
@@ -389,7 +399,8 @@ void runFrame(uint32_t now_ms) {
 
   // Select+Start held for about two thirds of a second leaves the game: a
   // pad has no MENU button, and no game uses that chord for long.
-  if ((g_pad & (joypad::kSelect | joypad::kStart)) == (joypad::kSelect | joypad::kStart)) {
+  const uint8_t chord = joypad::kSelect | joypad::kStart;
+  if ((g_pad & chord) == chord || (g_pad2 & chord) == chord) {
     if (++g_quit_hold >= 40) menu_held = true;
   } else {
     g_quit_hold = 0;
@@ -414,6 +425,7 @@ void runFrame(uint32_t now_ms) {
   // joypad's bit order is the NES shift register's, which is what the core
   // expects, so the pad byte goes across untranslated.
   g_cpu->bus.setController(g_pad);
+  g_cpu->bus.setController2(g_pad2);
 
   const uint32_t t_emu = micros();
   g_chunk_row = 0;

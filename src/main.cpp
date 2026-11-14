@@ -33,6 +33,7 @@
 #include "orientation.h"
 #include "sdcard.h"
 #include "snes_ui.h"
+#include "buspad.h"
 #include "usbpad.h"
 #include "pack.h"
 #include "settings_store.h"
@@ -135,6 +136,9 @@ void setup() {
   // are started the first time a game powers the port (usbpad::portPower),
   // which keeps their internal RAM free for the Wi-Fi transport until then.
   power::setPlaying(false);   // the menu: pad power off, whatever begin() did
+  // The built-in pad: twelve header pins as inputs, and its saved wiring.
+  buspad::begin();
+  Serial.printf("buspad: %s, lines=%03x\n", buspad::wired() ? "wired" : "not wired", buspad::lines());
 
   // The card is optional: without one the NES has its built-in ROMs and
   // nothing else changes.
@@ -349,6 +353,14 @@ void reportPad() {
     last_down = s.down;
     last_x = s.x;
     last_y = s.y;
+  }
+  // The built-in pad the same way: its raw lines, so a wire on the wrong pin
+  // or a line stuck to ground can be seen without the teaching screen.
+  static uint16_t last_lines = 0;
+  const uint16_t lines = buspad::lines();
+  if (lines != last_lines) {
+    Serial.printf("bus: lines=%03x buttons=%03x\n", lines, buspad::buttons());
+    last_lines = lines;
   }
 }
 

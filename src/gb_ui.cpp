@@ -41,6 +41,7 @@ static void audio_write(uint16_t addr, uint8_t val) {
 #include "settings_store.h"
 #include "theme.h"
 #include "uikit.h"
+#include "buspad.h"
 #include "usbpad.h"
 
 namespace tabulous {
@@ -361,6 +362,7 @@ void runFrame(uint32_t now_ms) {
   {
     const usbpad::State u = usbpad::state();
     if (u.connected) g_pad |= padmap::toNes(u.down, u.x, u.y, g_padmap);
+    g_pad |= buspad::nes();   // the console's own pad; one player here, so both pads are that player
   }
   // Select+Start held for about two thirds of a second leaves the game: a pad
   // has no MENU button, and no game uses that chord for long.

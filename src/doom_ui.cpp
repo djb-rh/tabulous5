@@ -33,6 +33,7 @@ extern "C" {
 #include "snes_ui.h"
 #include "theme.h"
 #include "uikit.h"
+#include "buspad.h"
 #include "usbpad.h"
 
 namespace tabulous {
@@ -412,6 +413,13 @@ void readPad() {
     // no NES game has them, so they are read as they are.
     if (u.down & (1u << 4)) keys |= kKStrafeL;
     if (u.down & (1u << 5)) keys |= kKStrafeR;
+  }
+  // The console's own pad, the same way.
+  g_pad |= buspad::nes();
+  {
+    const uint16_t b = buspad::buttons();
+    if ((b >> busmap::kL) & 1u) keys |= kKStrafeL;
+    if ((b >> busmap::kR) & 1u) keys |= kKStrafeR;
   }
   const uint8_t chord = joypad::kSelect | joypad::kStart;
   if ((g_pad & chord) == chord) {
