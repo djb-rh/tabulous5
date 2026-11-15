@@ -5,6 +5,8 @@
 // can change is stored.
 #pragma once
 
+#include <cstddef>
+
 #include "fivehead.h"
 #include "busmap.h"
 #include "padmap.h"
@@ -112,6 +114,11 @@ void savePadMap(const padmap::Map &map);
 // Untouched if none has been saved.
 void loadBusWiring(busmap::Wiring *out);
 void saveBusWiring(const busmap::Wiring &wiring);
+
+// The Quake game played last: its folder under /quake ("id1", "hipnotic"...).
+// Leaves `out` alone when nothing is stored.
+void loadQuakeGame(char *out, size_t size);
+void saveQuakeGame(const char *dir);
 
 }  // namespace settings_store
 }  // namespace tabulous

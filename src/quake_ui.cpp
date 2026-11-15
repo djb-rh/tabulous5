@@ -12,6 +12,7 @@ void invalidate() {}
 void tick(uint32_t) {}
 void handleTap(int, int, uint32_t) {}
 bool playing() { return false; }
+bool resumePending() { return false; }
 void injectPad(uint8_t, uint32_t) {}
 void console(const char *) {}
 }  // namespace quake_ui
@@ -26,9 +27,12 @@ void console(const char *) {}
 #include <freertos/idf_additions.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include <dirent.h>
+#include <esp_attr.h>
 #include <sys/stat.h>
 
 #include <csetjmp>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 
@@ -64,6 +68,9 @@ using uikit::Rect;
 
 // Where the game lives on the card: /quake/id1/pak0.pak, and pak1.pak beside
 // it for the registered episodes. The engine is told the folder above id1.
+// Any other folder of /quake with a pak0.pak in it is a game of its own that
+// runs on top of id1: the two mission packs, or anything else made for the
+// original engine.
 constexpr const char *kBaseDir = "/quake";
 constexpr int kW = 1280, kH = 720;
 
@@ -81,9 +88,35 @@ char g_status[96] = "";
 bool g_have_pak = false, g_have_pak1 = false;
 int g_size = 3;   // the picture: 2 = 640x480 with the touch pad, 3 = 960x720
 
+// The games found on the card. The first is always id1, Quake itself.
+struct Game {
+  char dir[24];
+  char title[32];
+};
+constexpr int kMaxGames = 4;   // what one row of buttons holds
+Game g_games[kMaxGames];
+int g_game_count = 0;
+int g_game = 0;            // the one chosen on the screen
+int g_engine_game = -1;    // the one the engine was started with
+char g_wanted[24] = "";    // the folder remembered from last time
+
+// The engine takes its game on its command line and never changes it, and it
+// cannot be started twice; so a change of game is a restart of the console.
+// This is the note left for the far side of that restart, in memory that a
+// software reset leaves alone: come straight back, to this game, at this size.
+constexpr uint32_t kResumeMagic = 0x51554B45;   // "QUKE"
+struct Resume {
+  uint32_t magic;
+  uint8_t size;
+  char dir[24];
+};
+RTC_NOINIT_ATTR Resume g_resume;
+int g_autostart = 0;       // a size to start at on the next tick, or 0
+
 char g_basedir[64] = "";
 char g_a0[] = "quake", g_a1[] = "-basedir";
-char *g_argv[] = {g_a0, g_a1, g_basedir, nullptr};
+char g_game_flag[12] = "", g_game_dir[24] = "";
+char *g_argv[] = {g_a0, g_a1, g_basedir, nullptr, nullptr, nullptr};
 int g_argc = 3;
 constexpr int kAudioChannel = 1;
 
@@ -246,29 +279,110 @@ void painterIdle() {
   xSemaphoreGive(g_paint_done);
 }
 
-void restartConsole(const char *why) {
+// Restarts the console and comes straight back into the chosen game.
+void restartInto(const char *why) {
   auto &g = uikit::gfx();
   g.fillScreen(kBg);
   uikit::drawLabel(why, kW / 2, kH / 2, kText, &fonts::FreeSansBold18pt7b, middle_center);
-  delay(1500);
+  g_resume.magic = kResumeMagic;
+  g_resume.size = (uint8_t)g_size;
+  snprintf(g_resume.dir, sizeof(g_resume.dir), "%s", g_games[g_game].dir);
+  delay(1200);
   esp_restart();
+}
+
+bool resumeValid() {
+  return g_resume.magic == kResumeMagic && esp_reset_reason() == ESP_RST_SW &&
+         (g_resume.size == 2 || g_resume.size == 3) && memchr(g_resume.dir, 0, sizeof(g_resume.dir));
+}
+
+bool hasPak(const char *dir, const char *pak) {
+  char path[112];
+  struct stat st;
+  snprintf(path, sizeof(path), "%s%s/%s/%s", sdcard::mountPoint(), kBaseDir, dir, pak);
+  return stat(path, &st) == 0 && st.st_size > 100000;
+}
+
+// The names the two mission packs go by; anything else is known by its folder.
+void titleFor(const char *dir, char *out, size_t size) {
+  if (!strcmp(dir, "id1")) snprintf(out, size, "QUAKE");
+  else if (!strcmp(dir, "hipnotic")) snprintf(out, size, "SCOURGE OF ARMAGON");
+  else if (!strcmp(dir, "rogue")) snprintf(out, size, "DISSOLUTION OF ETERNITY");
+  else {
+    snprintf(out, size, "%s", dir);
+    for (char *c = out; *c; c++) *c = (char)toupper((unsigned char)*c);
+  }
+}
+
+// Where a folder goes in the row: Quake, the mission packs in the order they
+// came out, then the rest by name.
+int gameRank(const char *dir) {
+  if (!strcmp(dir, "id1")) return 0;
+  if (!strcmp(dir, "hipnotic")) return 1;
+  if (!strcmp(dir, "rogue")) return 2;
+  return 3;
+}
+
+void setStatus() {
+  if (!sdcard::mounted()) {
+    snprintf(g_status, sizeof(g_status), "No card. Quake's pak files go in /quake/id1 on one.");
+  } else if (!g_have_pak) {
+    snprintf(g_status, sizeof(g_status), "Put pak0.pak in /quake/id1 on the card.");
+  } else if (g_game > 0) {
+    snprintf(g_status, sizeof(g_status), "Runs from /quake/%s on the card, on top of Quake itself.",
+             g_games[g_game].dir);
+  } else if (!g_have_pak1) {
+    snprintf(g_status, sizeof(g_status), "Shareware episode found (pak0.pak).");
+  } else {
+    snprintf(g_status, sizeof(g_status), "All four episodes found (pak0.pak, pak1.pak).");
+  }
 }
 
 void lookForPaks() {
   g_have_pak = g_have_pak1 = false;
+  g_game_count = 1;
+  g_game = 0;
+  snprintf(g_games[0].dir, sizeof(g_games[0].dir), "id1");
+  titleFor("id1", g_games[0].title, sizeof(g_games[0].title));
   if (!sdcard::mounted()) {
-    snprintf(g_status, sizeof(g_status), "No card. Quake's pak files go in /quake/id1 on one.");
+    setStatus();
     return;
   }
-  char path[96];
-  struct stat st;
-  snprintf(path, sizeof(path), "%s%s/id1/pak0.pak", sdcard::mountPoint(), kBaseDir);
-  g_have_pak = stat(path, &st) == 0 && st.st_size > 1000000;
-  snprintf(path, sizeof(path), "%s%s/id1/pak1.pak", sdcard::mountPoint(), kBaseDir);
-  g_have_pak1 = stat(path, &st) == 0 && st.st_size > 1000000;
-  if (!g_have_pak) snprintf(g_status, sizeof(g_status), "Put pak0.pak in /quake/id1 on the card.");
-  else if (!g_have_pak1) snprintf(g_status, sizeof(g_status), "Shareware episode found (pak0.pak).");
-  else snprintf(g_status, sizeof(g_status), "All four episodes found (pak0.pak, pak1.pak).");
+  g_have_pak = hasPak("id1", "pak0.pak");
+  g_have_pak1 = hasPak("id1", "pak1.pak");
+  // The other games: the engine refuses anything but id1 without the
+  // registered pak, so they are only looked for when it is there.
+  if (g_have_pak && g_have_pak1) {
+    char path[96];
+    snprintf(path, sizeof(path), "%s%s", sdcard::mountPoint(), kBaseDir);
+    if (DIR *d = opendir(path)) {
+      while (struct dirent *e = readdir(d)) {
+        if (g_game_count >= kMaxGames) break;
+        if (e->d_name[0] == '.' || strlen(e->d_name) >= sizeof(g_games[0].dir)) continue;
+        char dir[24];
+        snprintf(dir, sizeof(dir), "%s", e->d_name);
+        for (char *c = dir; *c; c++) *c = (char)tolower((unsigned char)*c);
+        if (!strcmp(dir, "id1") || !hasPak(e->d_name, "pak0.pak")) continue;
+        // Kept in order as they are found.
+        int at = g_game_count;
+        while (at > 1 && (gameRank(dir) < gameRank(g_games[at - 1].dir) ||
+                          (gameRank(dir) == gameRank(g_games[at - 1].dir) &&
+                           strcmp(dir, g_games[at - 1].dir) < 0))) {
+          g_games[at] = g_games[at - 1];
+          at--;
+        }
+        snprintf(g_games[at].dir, sizeof(g_games[at].dir), "%s", dir);
+        titleFor(dir, g_games[at].title, sizeof(g_games[at].title));
+        g_game_count++;
+      }
+      closedir(d);
+    }
+  }
+  // The one chosen last time, if it is still on the card.
+  for (int i = 0; i < g_game_count; i++) {
+    if (!strcmp(g_games[i].dir, g_wanted)) g_game = i;
+  }
+  setStatus();
 }
 
 bool startVideo() {
@@ -317,7 +431,11 @@ void reportInternal(const char *where) {
 bool start(int size) {
   g_size = size;
   g_error[0] = '\0';
-  if (g_engine == Engine::Dead) restartConsole("Restarting to start Quake again...");
+  if (g_engine == Engine::Dead) restartInto("Restarting to start Quake again...");
+  if (g_engine == Engine::Running && strcmp(g_game_dir, g_games[g_game].dir) != 0) {
+    Host_WriteConfiguration();   // the game being left keeps its options
+    restartInto("Restarting to change game...");
+  }
   if (!startVideo()) return false;
   if (g_engine == Engine::Running) return true;   // it was waiting where it was left
 
@@ -329,8 +447,22 @@ bool start(int size) {
     return false;
   }
   snprintf(g_basedir, sizeof(g_basedir), "%s%s", sdcard::mountPoint(), kBaseDir);
+  // The game: nothing for Quake itself; the mission packs have switches of
+  // their own, which also turn on their status bars; anything else is -game.
+  snprintf(g_game_dir, sizeof(g_game_dir), "%s", g_games[g_game].dir);
+  g_engine_game = g_game;
+  g_argc = 3;
+  if (!strcmp(g_game_dir, "hipnotic") || !strcmp(g_game_dir, "rogue")) {
+    snprintf(g_game_flag, sizeof(g_game_flag), "-%s", g_game_dir);
+    g_argv[g_argc++] = g_game_flag;
+  } else if (g_game > 0) {
+    snprintf(g_game_flag, sizeof(g_game_flag), "-game");
+    g_argv[g_argc++] = g_game_flag;
+    g_argv[g_argc++] = g_game_dir;
+  }
+  g_argv[g_argc] = nullptr;
   const uint32_t t0 = millis();
-  Serial.printf("quake: starting in %s\n", g_basedir);
+  Serial.printf("quake: starting %s in %s\n", g_game_dir, g_basedir);
   if (!runEngine(Cmd::Create)) {
     g_engine = Engine::Dead;
     Serial.printf("quake: engine error at start: %s\n", g_error);
@@ -458,7 +590,7 @@ void runFrame(uint32_t now_ms) {
 
 // ---- the screen before the game ---------------------------------------------
 
-enum : int { kActTouch = 1, kActFull = 2, kActBack = 3 };
+enum : int { kActTouch = 1, kActFull = 2, kActBack = 3, kActGame = 4 };
 
 void drawPicking() {
   auto &g = uikit::gfx();
@@ -472,8 +604,24 @@ void drawPicking() {
   uikit::drawLabel(g_status, 48, 110, g_have_pak ? kMuted : kDanger, &fonts::FreeSans12pt7b);
   if (g_error[0]) uikit::drawLabel(g_error, 48, 150, kDanger, &fonts::FreeSans12pt7b);
 
+  // The games, when there is more than Quake itself: one row, the chosen one
+  // filled in.
+  const bool row = g_game_count > 1;
+  if (row) {
+    const int gap = 14, w = (kW - 96 - gap * (g_game_count - 1)) / g_game_count;
+    for (int i = 0; i < g_game_count; i++) {
+      const Rect r{48 + i * (w + gap), 150, w, 64};
+      const bool on = i == g_game;
+      uikit::drawButton(r, g_games[i].title, on ? kAccent : kSurfaceLift, on ? kOnFill : kText,
+                        g_game_count > 3 ? &fonts::FreeSansBold9pt7b : &fonts::FreeSansBold12pt7b);
+      uikit::addTarget(r, kActGame, i);
+    }
+  }
+  const bool other = g_engine == Engine::Running && strcmp(g_game_dir, g_games[g_game].dir) != 0;
+
   if (g_have_pak) {
-    const Rect touch{48, 230, 560, 150}, full{kW - 48 - 560, 230, 560, 150};
+    const int top = row ? 250 : 230;
+    const Rect touch{48, top, 560, 150}, full{kW - 48 - 560, top, 560, 150};
     uikit::drawButton(touch, "PLAY  -  TOUCH PAD", kSurfaceLift, kText, &fonts::FreeSansBold18pt7b);
     uikit::drawButton(full, "PLAY  -  GAMEPAD", kGood, kOnFill, &fonts::FreeSansBold18pt7b);
     uikit::addTarget(touch, kActTouch);
@@ -488,22 +636,53 @@ void drawPicking() {
         "Hold SELECT and START together to come back here; the game waits where it was.",
     };
     for (int i = 0; i < 3; i++) {
-      uikit::drawLabel(lines[i], 48, 470 + i * 34, kMuted, &fonts::FreeSans12pt7b);
+      uikit::drawLabel(lines[i], 48, top + 240 + i * 34, kMuted, &fonts::FreeSans12pt7b);
+    }
+    if (other) {
+      char note[96];
+      char waiting[32];
+      titleFor(g_game_dir, waiting, sizeof(waiting));
+      snprintf(note, sizeof(note), "%s is waiting. Playing this one restarts the console first.", waiting);
+      uikit::drawLabel(note, 48, top + 240 + 3 * 34 + 8, kText, &fonts::FreeSans12pt7b);
     }
   }
   uikit::present();
+}
+
+// PLAY, from a tap or on the way back from a restart.
+void play(int size) {
+  uikit::drawLabel("Loading...", kW / 2, 684, kText, &fonts::FreeSansBold18pt7b, middle_center);
+  uikit::present();
+  if (start(size)) {
+    g_mode = Mode::Playing;
+    g_menu_down = true;  // the tap that launched it must not also exit
+  } else {
+    audio::reject();
+  }
+  g_dirty = true;
 }
 
 }  // namespace
 
 bool available() { return true; }
 
+bool resumePending() { return resumeValid(); }
+
 void begin() {
   g_mode = Mode::Picking;
   settings_store::loadPadMap(&g_padmap);
   g_quit_hold = 0;
   g_menu_down = false;
+  settings_store::loadQuakeGame(g_wanted, sizeof(g_wanted));
+  // Back from a restart that was asked for here: the same game, straight in.
+  g_autostart = 0;
+  if (resumeValid()) {
+    snprintf(g_wanted, sizeof(g_wanted), "%s", g_resume.dir);
+    g_autostart = g_resume.size;
+  }
+  g_resume.magic = 0;
   lookForPaks();
+  if (g_autostart && (!g_have_pak || strcmp(g_games[g_game].dir, g_wanted) != 0)) g_autostart = 0;
   g_dirty = true;
 }
 
@@ -534,9 +713,15 @@ void tick(uint32_t now_ms) {
     runFrame(now_ms);
     return;
   }
-  if (!g_dirty) return;
-  g_dirty = false;
-  drawPicking();
+  if (g_dirty) {
+    g_dirty = false;
+    drawPicking();
+  }
+  if (g_autostart) {
+    const int size = g_autostart;
+    g_autostart = 0;
+    play(size);
+  }
 }
 
 void handleTap(int x, int y, uint32_t) {
@@ -547,16 +732,19 @@ void handleTap(int x, int y, uint32_t) {
     app::requestExit();
     return;
   }
+  if (action == kActGame) {
+    if (param < 0 || param >= g_game_count || param == g_game) return;
+    audio::select();
+    g_game = param;
+    snprintf(g_wanted, sizeof(g_wanted), "%s", g_games[g_game].dir);
+    settings_store::saveQuakeGame(g_wanted);
+    setStatus();
+    g_dirty = true;
+    return;
+  }
   if (action != kActTouch && action != kActFull) return;
   audio::select();
-  uikit::drawLabel("Loading...", kW / 2, 640, kText, &fonts::FreeSansBold18pt7b, middle_center);
-  if (start(action == kActFull ? 3 : 2)) {
-    g_mode = Mode::Playing;
-    g_menu_down = true;  // the tap that launched it must not also exit
-  } else {
-    audio::reject();
-  }
-  g_dirty = true;
+  play(action == kActFull ? 3 : 2);
 }
 
 }  // namespace quake_ui

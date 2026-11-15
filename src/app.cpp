@@ -373,6 +373,11 @@ const Entry kEntries[] = {
      "pak0.pak is the shareware episode, and pak1.pak beside it adds the\n"
      "other three. No game data is shipped with this device.\n"
      "\n"
+     "With both paks there, the mission packs play too: their pak0.pak files\n"
+     "go in /quake/hipnotic and /quake/rogue, and any other game made for\n"
+     "the original engine in a folder of its own beside them. Changing from\n"
+     "one game to another restarts the console.\n"
+     "\n"
      "TOUCH PAD plays with the pad on the screen. GAMEPAD fills the height\n"
      "and expects the built-in pad or a USB one.\n"
      "\n"
@@ -381,7 +386,7 @@ const Entry kEntries[] = {
      "opens the game's own menu, where saving and loading are.\n"
      "\n"
      "Hold SELECT and START together to come back here; the game waits where\n"
-     "it was. Its saves and settings go in /quake/id1 on the card."},
+     "it was. Saves and settings go in each game's own folder on the card."},
 };
 
 constexpr int kEntryCount = (int)(sizeof(kEntries) / sizeof(kEntries[0]));
@@ -1348,6 +1353,8 @@ void begin(std::vector<Pack> *packs, const content::LoadReport &report) {
   g_report = report;
   g_current = GameId::Menu;
   g_dirty = true;
+  // Quake restarts the console to change game, and wants to be come back to.
+  if (quake_ui::resumePending()) launch(GameId::Quake);
 }
 
 GameId current() { return g_current; }

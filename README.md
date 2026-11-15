@@ -334,7 +334,18 @@ sideways, X or SELECT changes weapon, Y runs, START opens the game's own
 menu, which is where saving and loading are. Holding SELECT and START
 together comes back to the console; the game waits where it was, and its
 options are written to `config.cfg` on the way out. Saves and that file go
-in `/quake/id1`.
+in the game's own folder, `/quake/id1` for Quake itself.
+
+**The mission packs** run too, once both of Quake's paks are there (the
+engine refuses anything but id1 without the registered one). Each is a folder
+beside `id1` with its own `pak0.pak`: `/quake/hipnotic` for Scourge of
+Armagon and `/quake/rogue` for Dissolution of Eternity, which get their own
+status bars, and any other folder with a `pak0.pak` in it is offered as a
+game under its folder's name and started with `-game`. The Quake screen shows
+one button per game. The engine takes its game on the command line and cannot
+be started twice, so changing from one to another restarts the console, which
+comes straight back into the game that was asked for. Up to four games fit in
+the row.
 
 The engine is [quakegeneric](third_party/quakegeneric/), id's source behind a
 seven-function seam, by way of Espressif's ESP32-P4 port; the seam is

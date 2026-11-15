@@ -18,6 +18,9 @@ void invalidate();
 void tick(uint32_t now_ms);
 void handleTap(int x, int y, uint32_t now_ms);
 bool playing();
+// True once after a restart the Quake screen asked for (a change of game):
+// the launcher opens Quake straight away and it carries on from there.
+bool resumePending();
 // NES-style buttons for a number of frames, from the serial port: the way a
 // host drives a game it cannot touch.
 void injectPad(uint8_t buttons, uint32_t frames);

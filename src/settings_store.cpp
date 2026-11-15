@@ -381,6 +381,23 @@ void saveBusWiring(const busmap::Wiring &wiring) {
   g_prefs.end();
 }
 
+void loadQuakeGame(char *out, size_t size) {
+  if (!out || !size) return;
+  if (!g_prefs.begin(kNamespace, true)) return;
+  if (g_prefs.isKey("q_game")) {
+    const String dir = g_prefs.getString("q_game", "");
+    if (dir.length() && dir.length() < size) snprintf(out, size, "%s", dir.c_str());
+  }
+  g_prefs.end();
+}
+
+void saveQuakeGame(const char *dir) {
+  if (!dir) return;
+  if (!g_prefs.begin(kNamespace, false)) return;
+  g_prefs.putString("q_game", dir);
+  g_prefs.end();
+}
+
 void loadSolitaire(SolitaireSettings *out) {
   if (!out) return;
   if (!g_prefs.begin(kNamespace, true)) return;
