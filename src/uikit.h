@@ -46,6 +46,9 @@ void present();
 // is to draw it somewhere readable. Every screen goes through gfx(), so this
 // one hook captures all of them.
 void setSurface(LovyanGFX *surface);
+// True while drawing goes to the panel itself rather than to a surface set
+// above (a screenshot is rendered that way, and must not touch the glass).
+bool onPanel();
 
 // The finger, as the shell sees it. Reads the panel unless a synthetic
 // gesture is in progress (see overrideTouch), so a drag injected over serial

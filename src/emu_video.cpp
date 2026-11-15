@@ -277,6 +277,78 @@ void placeAt(int x, int y) {
   g_geom.y = y;
 }
 
+bool copyToPanel(const uint16_t *src, int pic_w, int pic_h, int sx, int sy,
+                 int w, int h, int x, int y, bool byte_swapped) {
+  if (!g_ppa || !g_fb || !src || w <= 0 || h <= 0) return false;
+  if (sx < 0 || sy < 0 || sx + w > pic_w || sy + h > pic_h) return false;
+  if (x < 0 || y < 0 || x + w > logicalW() || y + h > logicalH()) return false;
+  ppa_srm_oper_config_t op = {};
+  op.in.buffer = src;
+  op.in.pic_w = pic_w;
+  op.in.pic_h = pic_h;
+  op.in.block_w = w;
+  op.in.block_h = h;
+  op.in.block_offset_x = sx;
+  op.in.block_offset_y = sy;
+  op.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+  op.out.buffer = g_fb;
+  op.out.buffer_size = g_fb_stride * g_panel_h;
+  op.out.pic_w = g_panel_w;
+  op.out.pic_h = g_panel_h;
+  op.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+  switch (g_fb_rot) {   // as blitPpa
+    case 0:
+      op.out.block_offset_x = x;
+      op.out.block_offset_y = y;
+      op.rotation_angle = PPA_SRM_ROTATION_ANGLE_0;
+      break;
+    case 2:
+      op.out.block_offset_x = g_panel_w - x - w;
+      op.out.block_offset_y = g_panel_h - y - h;
+      op.rotation_angle = PPA_SRM_ROTATION_ANGLE_180;
+      break;
+    case 1:
+      op.out.block_offset_x = g_panel_w - y - h;
+      op.out.block_offset_y = x;
+      op.rotation_angle = PPA_SRM_ROTATION_ANGLE_270;
+      break;
+    default:  // 3
+      op.out.block_offset_x = y;
+      op.out.block_offset_y = g_panel_h - x - w;
+      op.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
+      break;
+  }
+  op.scale_x = 1.0f;
+  op.scale_y = 1.0f;
+  op.byte_swap = byte_swapped;
+  op.mode = PPA_TRANS_MODE_BLOCKING;
+  waitIdle();
+  return ppa_do_scale_rotate_mirror(g_ppa, &op) == ESP_OK;
+}
+
+void forgetPanelCache(int x, int y, int w, int h) {
+  if (!g_fb || w <= 0 || h <= 0) return;
+  // The panel rows the area touches, whichever way up the screen is.
+  int row0, row1;
+  switch (g_fb_rot) {
+    case 0: row0 = y; row1 = y + h; break;
+    case 2: row0 = g_panel_h - y - h; row1 = g_panel_h - y; break;
+    case 1: row0 = x; row1 = x + w; break;
+    default: row0 = g_panel_h - x - w; row1 = g_panel_h - x; break;
+  }
+  if (row0 < 0) row0 = 0;
+  if (row1 > g_panel_h) row1 = g_panel_h;
+  if (row1 <= row0) return;
+  // Whole cache lines, which is what an invalidate has to be given. The
+  // framebuffer starts on one and is a whole number of them long.
+  const size_t line = 128;
+  const size_t total = g_fb_stride * (size_t)g_panel_h;
+  size_t a = (size_t)row0 * g_fb_stride / line * line;
+  size_t b = ((size_t)row1 * g_fb_stride + line - 1) / line * line;
+  if (b > total) b = total;
+  esp_cache_msync(g_fb + a, b - a, ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+}
+
 Geometry geometry() { return g_geom; }
 bool hardware() { return g_ppa != nullptr; }
 uint32_t lastUs() { return g_last_us; }

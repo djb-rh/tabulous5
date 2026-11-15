@@ -31,6 +31,7 @@ LovyanGFX &gfx() {
 }
 
 void setSurface(LovyanGFX *surface) { g_surface = surface; }
+bool onPanel() { return g_surface == nullptr; }
 
 void present() {}  // nothing to flush: we draw straight at the panel
 

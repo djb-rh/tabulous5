@@ -60,5 +60,24 @@ bool hardware();
 // Microseconds the last present() took.
 uint32_t lastUs();
 
+// A finished picture copied to the panel as it is, unscaled, by the same
+// hardware: a w x h block at (sx, sy) of `src`, which is pic_w x pic_h RGB565,
+// to the logical position (x, y). `byte_swapped` says the picture is in the
+// byte order an LGFX sprite keeps (the panel's is the other). The source has
+// to be cache-line aligned and already flushed to memory. False if there is
+// no scaler or it refuses the block; nothing is drawn then.
+//
+// This is what lets a scrolling list move without flicker: a row drawn once
+// off screen arrives in one piece, where drawing it in place shows every
+// layer going down.
+bool copyToPanel(const uint16_t *src, int pic_w, int pic_h, int sx, int sy,
+                 int w, int h, int x, int y, bool byte_swapped);
+// The scaler writes the panel's memory behind the CPU's back, so after
+// copies the CPU's cache has to forget what it held of that part of the
+// screen: otherwise the next thing drawn there the ordinary way writes whole
+// cache lines back, stale neighbours and all. Call it once the copies are
+// done, with the logical area they covered.
+void forgetPanelCache(int x, int y, int w, int h);
+
 }  // namespace emu_video
 }  // namespace tabulous

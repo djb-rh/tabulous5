@@ -10,6 +10,8 @@
 #include "snes_ui.h"
 
 #include <M5Unified.h>
+#include <esp_cache.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 
 #include <cstring>
@@ -18,6 +20,7 @@
 #include "battery.h"
 #include "power.h"
 #include "contentserver.h"
+#include "emu_video.h"
 #include "fivehead.h"
 #include "fivehead_ui.h"
 #include "minesweeper.h"
@@ -493,53 +496,157 @@ void drawBattery() {
                    middle_right);
 }
 
+// One launcher row, at (x, y): the blob, its mark, its two lines and the ?.
+// Drawing only. It is called to paint a row into its off-screen picture, and
+// to paint it straight to a surface when that is not available.
+void drawMenuRow(int i, int x, int y) {
+  const Entry &e = kEntries[i];
+  const Rect blob{x, y, kListW, kBlobH};
+
+  // Gradient plus a darker shelf along the bottom edge, so the blob reads as
+  // something you press. The panel is 16-bit, so this resolves to a handful
+  // of bands however finely it is interpolated — see fillRoundRectShaded.
+  // Radius 16, not 22: the shelf IS the bottom cap, so the radius sets how
+  // thick it is, and at 22 it rose far enough to cut through the blurb and
+  // the foot of the mark.
+  uikit::fillRoundRectShaded(blob.x, blob.y, blob.w, blob.h, 16, e.color,
+                             shade(e.color, 80), shade(e.color, 58), 5);
+  const uint16_t ink = inkFor(e.color);
+
+  // The mark, then the text pushed right to clear it. Text starts at the
+  // same x whether or not a game has a mark, so the column stays straight.
+  // Everything sits above the shelf line at blob.h - 16.
+  glyphs::draw(e.mark, blob.x + 26, blob.y + 12, 72, ink, rgb(e.color));
+
+  uikit::drawLabel(e.name, blob.x + 122, blob.y + 10, ink,
+                   &fonts::FreeSansBold24pt7b);
+  uikit::drawLabel(e.blurb, blob.x + 122, blob.y + 58, ink,
+                   &fonts::FreeSans12pt7b);
+
+  // A question mark rather than the word "About": it has to sit inside the
+  // blob without competing with the game's name.
+  const Rect q = aboutRect(blob);
+  uikit::fillRoundRectFast(q.x, q.y, q.w, q.h, 34, rgb(shade(e.color, 62)));
+  uikit::drawLabel("?", q.x + q.w / 2, q.y + q.h / 2, ink,
+                   &fonts::FreeSansBold24pt7b, middle_center);
+}
+
+// The rows as finished pictures.
+//
+// A row is a gradient, then a mark, two lines of text and a button on top of
+// it. Drawn in place on every scroll step, each of those layers is on the
+// glass for a moment before the next covers it, and the list shimmers while
+// it moves. So each row is drawn once, into a picture of its own in the
+// external RAM (the row and the gap under it, on the background colour), and
+// scrolling copies finished pictures to the panel with the P4's scaler: a
+// whole row arrives at once, in well under a millisecond.
+//
+// Keyed by entry, not by position, so reordering costs nothing. Thrown away
+// on every full repaint (the theme may have changed) and freed when a game
+// is launched, which is when the memory is wanted elsewhere.
+constexpr int kRowPicW = kListW, kRowPicH = kBlobPitch;
+constexpr size_t kRowPicBytes = ((size_t)kRowPicW * kRowPicH * 2 + 127) & ~(size_t)127;
+uint16_t *g_row_pic[settings_store::kMaxMenuEntries] = {nullptr};
+bool g_row_pic_ok[settings_store::kMaxMenuEntries] = {false};
+
+void forgetMenuRows(bool free_memory) {
+  for (int i = 0; i < settings_store::kMaxMenuEntries; i++) {
+    g_row_pic_ok[i] = false;
+    if (free_memory && g_row_pic[i]) {
+      heap_caps_free(g_row_pic[i]);
+      g_row_pic[i] = nullptr;
+    }
+  }
+}
+
+const uint16_t *menuRowPicture(int entry) {
+  if (entry < 0 || entry >= settings_store::kMaxMenuEntries) return nullptr;
+  if (g_row_pic_ok[entry]) return g_row_pic[entry];
+  if (!g_row_pic[entry]) {
+    g_row_pic[entry] = (uint16_t *)heap_caps_aligned_alloc(128, kRowPicBytes, MALLOC_CAP_SPIRAM);
+  }
+  if (!g_row_pic[entry]) return nullptr;
+  {
+    LGFX_Sprite pic;
+    pic.setColorDepth(16);
+    pic.setBuffer(g_row_pic[entry], kRowPicW, kRowPicH, 16);
+    uikit::setSurface(&pic);
+    pic.fillRect(0, 0, kRowPicW, kRowPicH, kBg);
+    drawMenuRow(entry, 0, 0);
+    uikit::setSurface(nullptr);
+  }
+  // The scaler reads memory, not the CPU's cache.
+  esp_cache_msync(g_row_pic[entry], kRowPicBytes,
+                  ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+  g_row_pic_ok[entry] = true;
+  return g_row_pic[entry];
+}
+
+// The list from its pictures. False if that cannot be done (no scaler, no
+// memory), in which case nothing useful has been drawn and the caller paints
+// the list the ordinary way.
+bool copyMenuRows(const Rect &vp) {
+  if (!emu_video::begin() || !emu_video::hardware()) return false;
+  const int offset = g_menu_scroll.offset();
+  int first = offset / kBlobPitch;
+  if (first < 0) first = 0;
+  int y = vp.y + first * kBlobPitch - offset;
+  const int bottom = vp.y + vp.h;
+  for (int slot = first; y < bottom; slot++, y += kBlobPitch) {
+    const int entry = visibleEntry(slot);
+    if (entry < 0) break;
+    const uint16_t *pic = menuRowPicture(entry);
+    if (!pic) return false;
+    const int top = y > vp.y ? y : vp.y;
+    const int end = y + kRowPicH < bottom ? y + kRowPicH : bottom;
+    if (end <= top) continue;
+    if (emu_video::copyToPanel(pic, kRowPicW, kRowPicH, 0, top - y, kRowPicW, end - top, vp.x, top, true)) {
+      continue;
+    }
+    // A sliver the scaler would not take: the CPU puts it there, once the
+    // cache has let go of what the scaler has written so far.
+    emu_video::forgetPanelCache(vp.x, vp.y, vp.w, vp.h);
+    uikit::gfx().pushImage(vp.x, top, kRowPicW, end - top,
+                           (const lgfx::swap565_t *)(pic + (size_t)(top - y) * kRowPicW));
+  }
+  emu_video::forgetPanelCache(vp.x, vp.y, vp.w, vp.h);
+  if (y < bottom) uikit::gfx().fillRect(vp.x, y, vp.w, bottom - y, kBg);
+  return true;
+}
+
 // The rows at their scrolled positions, clipped to the viewport. Called on
 // every scroll step as well as from the full repaint, so it touches nothing
 // outside the list and re-registers only the list's own targets.
 void drawMenuList() {
   const Rect vp = g_menu_scroll.viewport();
   uikit::removeTargetsIn(vp);
-  scroller::drawRows(g_menu_scroll, kMargin, kListW, kBlobPitch, kBlobH, 16,
-                     visibleCount(), kBg, [&](int slot, int y) {
-    const int i = visibleEntry(slot);
-    if (i < 0) return;
-    const Entry &e = kEntries[i];
-    const Rect blob{kMargin, y, kListW, kBlobH};
+  // Pictures when drawing to the glass; in place when the screen is being
+  // rendered somewhere else (a screenshot) or the pictures cannot be had.
+  if (!(uikit::onPanel() && vp.x == kMargin && vp.w == kListW && copyMenuRows(vp))) {
+    scroller::drawRows(g_menu_scroll, kMargin, kListW, kBlobPitch, kBlobH, 16,
+                       visibleCount(), kBg, [&](int slot, int y) {
+      const int i = visibleEntry(slot);
+      if (i >= 0) drawMenuRow(i, kMargin, y);
+    });
+  }
 
-    // Gradient plus a darker shelf along the bottom edge, so the blob reads as
-    // something you press. The panel is 16-bit, so this resolves to a handful
-    // of bands however finely it is interpolated — see fillRoundRectShaded.
-    // Radius 16, not 22: the shelf IS the bottom cap, so the radius sets how
-    // thick it is, and at 22 it rose far enough to cut through the blurb and
-    // the foot of the mark.
-    uikit::fillRoundRectShaded(blob.x, blob.y, blob.w, blob.h, 16, e.color,
-                               shade(e.color, 80), shade(e.color, 58), 5);
-    const uint16_t ink = inkFor(e.color);
-
-    // The mark, then the text pushed right to clear it. Text starts at the
-    // same x whether or not a game has a mark, so the column stays straight.
-    // Everything sits above the shelf line at blob.h - 16.
-    glyphs::draw(e.mark, blob.x + 26, blob.y + 12, 72, ink, rgb(e.color));
-
-    uikit::drawLabel(e.name, blob.x + 122, blob.y + 10, ink,
-                     &fonts::FreeSansBold24pt7b);
-    uikit::drawLabel(e.blurb, blob.x + 122, blob.y + 58, ink,
-                     &fonts::FreeSans12pt7b);
-
-    // A question mark rather than the word "About": it has to sit inside the
-    // blob without competing with the game's name.
-    const Rect q = aboutRect(blob);
-    uikit::fillRoundRectFast(q.x, q.y, q.w, q.h, 34, rgb(shade(e.color, 62)));
-    uikit::drawLabel("?", q.x + q.w / 2, q.y + q.h / 2, ink,
-                     &fonts::FreeSansBold24pt7b, middle_center);
-
-    // ORDER MATTERS: findTarget() searches in reverse, so the LAST target
-    // registered wins an overlap. The ? sits inside the blob, so the blob must
-    // be registered first and the ? second. Both are cut to the viewport: a
-    // row half off the bottom must not take taps from the footer under it.
-    uikit::addTarget(blob.clip(vp), (int)Action::Launch, i);
-    uikit::addTarget(q.clip(vp), (int)Action::About, i);
-  });
+  // The targets, for the rows now in view. ORDER MATTERS: findTarget()
+  // searches in reverse, so the LAST target registered wins an overlap. The
+  // ? sits inside the blob, so the blob must be registered first and the ?
+  // second. Both are cut to the viewport: a row half off the bottom must not
+  // take taps from the footer under it.
+  {
+    int first = g_menu_scroll.offset() / kBlobPitch;
+    if (first < 0) first = 0;
+    int y = vp.y + first * kBlobPitch - g_menu_scroll.offset();
+    for (int slot = first; y < vp.y + vp.h; slot++, y += kBlobPitch) {
+      const int i = visibleEntry(slot);
+      if (i < 0) break;
+      const Rect blob{kMargin, y, kListW, kBlobH};
+      uikit::addTarget(blob.clip(vp), (int)Action::Launch, i);
+      uikit::addTarget(aboutRect(blob).clip(vp), (int)Action::About, i);
+    }
+  }
   g_menu_scroll.drawBar(kSurface, kMuted);
 }
 
@@ -562,6 +669,7 @@ void drawClock() {
 void drawMenu() {
   auto &g = uikit::gfx();
   g.fillScreen(kBg);
+  forgetMenuRows(false);   // the theme may have changed since they were drawn
 
   g_list_top = drawWordmark(kW / 2, 12) + 18;
   drawBattery();
@@ -1150,6 +1258,7 @@ void repaint() {
 
 void launch(GameId id) {
   g_current = id;
+  forgetMenuRows(true);   // 3 MB of external RAM the game may want
   if (id == GameId::PhraseCraze) {
     Settings s;
     settings_store::load(&s);
