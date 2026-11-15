@@ -226,7 +226,7 @@ void namco_fast_init(namco_t* sys, sz80* cpu, const namco_fast_desc_t* desc) {
     cpu->port_out = _fast_out;
 }
 
-void namco_fast_exec(namco_t* sys, sz80* cpu, uint32_t micro_seconds) {
+void namco_fast_run(namco_t* sys, sz80* cpu, uint32_t micro_seconds) {
     const uint32_t num_ticks = clk_us_to_ticks(NAMCO_CPU_CLOCK, micro_seconds);
     uint32_t done = 0;
     bool irq = false;
@@ -255,5 +255,13 @@ void namco_fast_exec(namco_t* sys, sz80* cpu, uint32_t micro_seconds) {
         }
         done += used;
     }
+}
+
+void namco_fast_decode(namco_t* sys) {
     _namco_decode_video(sys);
+}
+
+void namco_fast_exec(namco_t* sys, sz80* cpu, uint32_t micro_seconds) {
+    namco_fast_run(sys, cpu, micro_seconds);
+    namco_fast_decode(sys);
 }

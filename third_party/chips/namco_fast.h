@@ -56,6 +56,14 @@ void namco_fast_init(namco_t* sys, sz80* cpu, const namco_fast_desc_t* desc);
 /* Runs the board for a stretch of machine time. */
 void namco_fast_exec(namco_t* sys, sz80* cpu, uint32_t micro_seconds);
 
+/* The same in two halves, for a host that paints the picture on another
+ * core: run the machine for the time given, which touches no pixel, and then
+ * draw the frame it ended on into sys->fb. The host runs the first half while
+ * the frame before is still being painted, and waits for the painter before
+ * the second. */
+void namco_fast_run(namco_t* sys, sz80* cpu, uint32_t micro_seconds);
+void namco_fast_decode(namco_t* sys);
+
 #ifdef __cplusplus
 }
 #endif

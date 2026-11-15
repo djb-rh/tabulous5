@@ -2,6 +2,9 @@
 
 #include <LittleFS.h>
 #include <M5Unified.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
 
@@ -143,15 +146,24 @@ uint16_t g_palette[32];
 // so a frame's worth of samples arrives inside namco_exec().
 constexpr uint32_t kFrameUs = 16667;
 constexpr int kAudioRate = 44100;
-// Room for two frames' worth: the machine is driven by however long the last
-// frame actually took, and on this hardware that is nearer a thirtieth of a
-// second than a sixtieth.
-constexpr int kAudioFrames = kAudioRate / 25;
 constexpr int kAudioChannel = 1;
-constexpr int kAudioBufs = 4;
+// The sound chip's samples go into a ring, and the speaker is handed blocks
+// out of it whenever it has room. A frame's worth used to go straight to the
+// speaker, one block a frame, thrown away if the speaker was still busy and
+// leaving it silent if the frame ran late: every hiccup in the frame rate
+// was a click, and at 56 frames a second that was several a second.
+constexpr int kRing = 8192;           // samples; a power of two
+constexpr int kBlock = 512;           // handed over at a time: 12 ms
+constexpr int kAudioBufs = 4;         // the speaker reads a block after the call returns
+constexpr int kRingTarget = 1536;     // what the ring is kept near: 35 ms
+int16_t *g_ring = nullptr;
 int16_t *g_audio[kAudioBufs] = {nullptr};
 int g_audio_which = 0;
-volatile int g_audio_have = 0;  // samples waiting in the current buffer
+volatile uint32_t g_ring_w = 0, g_ring_r = 0;  // both run on; the difference is what waits
+volatile bool g_audio_primed = false; // the ring has reached its target
+float g_fill_avg = (float)kRingTarget;
+volatile uint32_t g_audio_rate = kAudioRate;
+uint32_t g_audio_dry = 0, g_audio_lost = 0;
 
 uint8_t g_pad = 0, g_pad_drawn = 0xFF;
 bool g_menu_down = false;
@@ -162,22 +174,123 @@ uint32_t g_us_emu = 0, g_us_convert = 0, g_us_push = 0;
 // ---- what the machine asks of us -----------------------------------------
 
 void onAudio(const float *samples, int num_samples, void *) {
-  int16_t *out = g_audio[g_audio_which];
-  if (!out) return;
-  const int room = kAudioFrames - g_audio_have;
-  const int n = num_samples < room ? num_samples : room;
-  for (int i = 0; i < n; i++) {
+  if (!g_ring) return;
+  for (int i = 0; i < num_samples; i++) {
+    if (g_ring_w - g_ring_r >= (uint32_t)kRing) {   // full: nothing is reading
+      g_audio_lost += (uint32_t)(num_samples - i);
+      return;
+    }
     float v = samples[i];
     if (v > 1.0f) v = 1.0f;
     if (v < -1.0f) v = -1.0f;
-    out[g_audio_have + i] = (int16_t)(v * 32000.0f);
+    g_ring[g_ring_w & (kRing - 1)] = (int16_t)(v * 32000.0f);
+    g_ring_w = g_ring_w + 1;
   }
-  g_audio_have += n;
+}
+
+// The machine makes 44,100 samples for every second of its own time, and the
+// speaker plays 44,100 a second of real time. Those two clocks are never
+// quite the same, and when the console cannot keep the machine at full speed
+// they are several percent apart; so the rate each block is played at leans
+// a little towards whatever keeps the ring at its target. At full speed that
+// is a few hertz either way. A machine running slow plays a shade flat
+// instead of breaking up.
+//
+// Called once a frame, after the frame's samples have arrived, so the ring
+// is always measured at the same point in its sawtooth.
+void steerAudio() {
+  if (!g_ring) return;
+  const uint32_t fill = g_ring_w - g_ring_r;
+  if (!g_audio_primed) {
+    if (fill < (uint32_t)kRingTarget) return;
+    g_fill_avg = (float)fill;
+    g_audio_primed = true;
+  }
+  g_fill_avg += ((float)fill - g_fill_avg) / 8.0f;
+  float rate = (float)kAudioRate + 1.5f * (g_fill_avg - (float)kRingTarget);
+  if (rate < kAudioRate * 0.92f) rate = kAudioRate * 0.92f;
+  if (rate > kAudioRate * 1.04f) rate = kAudioRate * 1.04f;
+  g_audio_rate = (uint32_t)rate;
+}
+
+// Hands the speaker blocks whenever it has room, on core 0 and on its own
+// clock: the speaker holds two blocks, 23 ms, which is less than a late
+// frame, so this cannot wait for the frame loop to come round.
+TaskHandle_t g_sound = nullptr;
+volatile bool g_audio_live = false;
+void soundTask(void *) {
+  for (;;) {
+    while (g_audio_live && g_audio_primed && audio::enabled() &&
+           M5.Speaker.isPlaying(kAudioChannel) < 2) {
+      if (g_ring_w - g_ring_r < (uint32_t)kBlock) {
+        if (M5.Speaker.isPlaying(kAudioChannel) == 0) {   // ran dry: build up again
+          g_audio_dry++;
+          g_audio_primed = false;
+        }
+        break;
+      }
+      int16_t *dst = g_audio[g_audio_which];
+      if (!dst) break;
+      const uint32_t r = g_ring_r;
+      for (int i = 0; i < kBlock; i++) dst[i] = g_ring[(r + i) & (kRing - 1)];
+      g_ring_r = r + kBlock;
+      M5.Speaker.playRaw(dst, (size_t)kBlock, g_audio_rate, false, 1, kAudioChannel);
+      g_audio_which = (g_audio_which + 1) % kAudioBufs;
+    }
+    // Sound off: nobody is listening, so the ring is kept empty.
+    if (g_audio_live && !audio::enabled()) g_ring_r = g_ring_w;
+    delay(4);
+  }
+}
+
+// The painter: core 0, one frame at a time. Turning the machine's picture
+// into the panel's colours and handing it to the scaler is three milliseconds
+// that need nothing from the machine, and with them on this core a frame
+// took eighteen where it has sixteen and two thirds. The machine runs its
+// next frame meanwhile, which touches no pixel; it draws that frame's picture
+// only once g_paint_done says this one is out of the painter's hands.
+void convert();
+TaskHandle_t g_painter = nullptr;
+SemaphoreHandle_t g_paint_go = nullptr, g_paint_done = nullptr;
+
+void painterTask(void *) {
+  for (;;) {
+    xSemaphoreTake(g_paint_go, portMAX_DELAY);
+    if (g_sys) {
+      const uint32_t t0 = micros();
+      convert();
+      g_us_convert += micros() - t0;
+      emu_video::present();
+      g_us_push += emu_video::lastUs();
+    }
+    xSemaphoreGive(g_paint_done);
+  }
+}
+
+void startPainter() {
+  if (!g_sound) xTaskCreatePinnedToCore(soundTask, "arcade_snd", 3072, nullptr, 3, &g_sound, 0);
+  if (g_painter) return;
+  g_paint_go = xSemaphoreCreateBinary();
+  g_paint_done = xSemaphoreCreateBinary();
+  if (!g_paint_go || !g_paint_done) return;
+  xSemaphoreGive(g_paint_done);
+  if (xTaskCreatePinnedToCore(painterTask, "arcade_paint", 4096, nullptr, 2, &g_painter, 0) != pdPASS) {
+    g_painter = nullptr;
+  }
+}
+
+// Blocks until the painter has nothing in hand.
+void painterIdle() {
+  if (!g_painter) return;
+  xSemaphoreTake(g_paint_done, portMAX_DELAY);
+  xSemaphoreGive(g_paint_done);
 }
 
 // ---- play ----------------------------------------------------------------
 
 void releaseCore() {
+  g_audio_live = false;
+  painterIdle();   // before the picture and the machine go
   joypad_ui::endPlay();
   M5.Speaker.stop();
   if (g_sys) {
@@ -261,10 +374,15 @@ bool load(int index) {
   }
   for (int i = 0; i < kAudioBufs; i++) {
     if (!g_audio[i]) {
-      g_audio[i] = (int16_t *)heap_caps_malloc(kAudioFrames * sizeof(int16_t),
+      g_audio[i] = (int16_t *)heap_caps_malloc(kBlock * sizeof(int16_t),
                                                MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
   }
+  if (!g_ring) {
+    g_ring = (int16_t *)heap_caps_malloc(kRing * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!g_ring) g_ring = (int16_t *)heap_caps_malloc(kRing * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
+  startPainter();
 
   namco_desc_t desc = {};
   desc.audio.callback.func = onAudio;
@@ -366,7 +484,11 @@ bool load(int index) {
   g_pad_drawn = 0xFF;
   g_quit_hold = 0;
   g_audio_which = 0;
-  g_audio_have = 0;
+  g_ring_w = 0;
+  g_ring_r = 0;
+  g_audio_primed = false;
+  g_audio_dry = g_audio_lost = 0;
+  g_audio_live = true;
   g_frames = 0;
   g_fps_at = millis();
   g_next_frame_us = micros();
@@ -514,24 +636,26 @@ void runFrame(uint32_t now_ms) {
   namco_input_set(g_sys, wanted);
   namco_input_clear(g_sys, ~wanted & 0x3FFF);
 
-  // One frame of machine time per pass.
-  g_audio_have = 0;
+  // One frame of machine time per pass. The machine runs while the frame
+  // before is still being painted, and only draws its own picture once the
+  // painter has let go of that one.
   const uint32_t t_emu = micros();
-  namco_fast_exec(g_sys, &g_cpu, kFrameUs);
+  namco_fast_run(g_sys, &g_cpu, kFrameUs);
+  if (g_painter) xSemaphoreTake(g_paint_done, portMAX_DELAY);
+  namco_fast_decode(g_sys);
   g_us_emu += micros() - t_emu;
 
-  const uint32_t t_conv = micros();
-  convert();
-  g_us_convert += micros() - t_conv;
-  emu_video::present();
-  g_us_push += emu_video::lastUs();
-
-  if (audio::enabled() && g_audio_have > 0 && g_audio[g_audio_which] &&
-      M5.Speaker.isPlaying(kAudioChannel) < 2) {
-    M5.Speaker.playRaw(g_audio[g_audio_which], (size_t)g_audio_have, kAudioRate, false, 1,
-                       kAudioChannel);
-    g_audio_which = (g_audio_which + 1) % kAudioBufs;
+  if (g_painter) {
+    xSemaphoreGive(g_paint_go);
+  } else {   // no second task: do it here
+    const uint32_t t_conv = micros();
+    convert();
+    g_us_convert += micros() - t_conv;
+    emu_video::present();
+    g_us_push += emu_video::lastUs();
   }
+
+  steerAudio();
 
   drawPlayChrome(false);
 
@@ -539,9 +663,11 @@ void runFrame(uint32_t now_ms) {
   if (now_ms - g_fps_at >= 1000) {
     g_fps = g_frames * 1000 / (now_ms - g_fps_at);
     const uint32_t n = g_fps ? g_fps : 1;
-    Serial.printf("arcade %lu fps  emulate=%luus convert=%luus push=%luus\n",
+    Serial.printf("arcade %lu fps  emulate=%luus convert=%luus push=%luus  sound %luHz ring=%lu dry=%lu lost=%lu\n",
                   (unsigned long)g_fps, (unsigned long)(g_us_emu / n),
-                  (unsigned long)(g_us_convert / n), (unsigned long)(g_us_push / n));
+                  (unsigned long)(g_us_convert / n), (unsigned long)(g_us_push / n),
+                  (unsigned long)g_audio_rate, (unsigned long)(g_ring_w - g_ring_r),
+                  (unsigned long)g_audio_dry, (unsigned long)g_audio_lost);
     g_frames = 0;
     g_fps_at = now_ms;
     g_us_emu = g_us_convert = g_us_push = 0;
