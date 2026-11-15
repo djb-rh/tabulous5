@@ -102,7 +102,9 @@ enum class Cmd : uint8_t { Create, Tick };
 Cmd g_cmd = Cmd::Tick;
 bool g_cmd_failed = false;
 double g_tick_seconds = 0;
-constexpr uint32_t kTaskStack = 200 * 1024;
+// 200 KB is what Espressif gave it, and the shareware demos leave 20 of
+// that; the registered maps are bigger, and this memory is not scarce.
+constexpr uint32_t kTaskStack = 320 * 1024;
 
 void quakeTask(void *) {
   for (;;) {
