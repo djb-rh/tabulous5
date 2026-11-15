@@ -27,6 +27,7 @@
 #include "app.h"
 #include "gb_ui.h"
 #include "doom_ui.h"
+#include "quake_ui.h"
 #include "nes_ui.h"
 #include "pacman_ui.h"
 #include "phrase_game.h"
@@ -468,7 +469,14 @@ void loop() {
         const uint32_t frames = (uint32_t)arg.substring(comma + 1).toInt();
         nes_ui::injectPad(bits, frames);
         doom_ui::injectPad(bits, frames);
+        quake_ui::injectPad(bits, frames);
       }
+    }
+    // "Q<line>": a line for Quake's own console, e.g. Qtimedemo demo1.
+    if (cmd == 'Q') {
+      String arg = Serial.readStringUntil('\n');
+      arg.trim();
+      quake_ui::console(arg.c_str());
     }
     // "t<x>,<y>" injects a tap, so a screen several taps deep can be reached
     // and captured without hands on the panel. Same entry point a real touch
@@ -672,7 +680,8 @@ void loop() {
       app::current() != app::GameId::GameBoy &&
       app::current() != app::GameId::Snes &&
       app::current() != app::GameId::Arcade &&
-      app::current() != app::GameId::Doom) {
+      app::current() != app::GameId::Doom &&
+      app::current() != app::GameId::Quake) {
     Serial.printf("slow loop %u ms: m5=%u tap=%u orient=%u audio=%u tick=%u\n",
                   (unsigned)(total / 1000), (unsigned)((p0 - loop_start) / 1000),
                   (unsigned)((p1 - p0) / 1000), (unsigned)((p2 - p1) / 1000),

@@ -33,6 +33,11 @@ void placeAt(int x, int y);
 // and 2.5x is what makes a 288-line arcade picture exactly fill the panel.
 // Returns false if there is no memory for the frames, or if a fractional
 // magnification is asked for on a machine that has no hardware scaler.
+// Where the picture's own buffers go. Internal memory by default, which the
+// CPU fallback wants; a caller with a better use for that memory (Quake's
+// depth and frame buffers) asks for the external RAM instead, which the
+// scaler reads just as happily. Set before configure(); it stays set.
+void framesInExternalRam(bool external);
 bool configure(int src_w, int src_h, float scale);
 // The same with different magnifications across and down, for a picture
 // whose pixels were never square: Doom's 320x200 was drawn for a 4:3 screen.

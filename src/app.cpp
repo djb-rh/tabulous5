@@ -1,6 +1,8 @@
 #include "app.h"
 
 #include "doom_ui.h"
+#include "quake_ui.h"
+#include "quake_ui.h"
 #include "glyphs.h"
 #include "joshua_ui.h"
 #include "joypad_ui.h"
@@ -364,6 +366,22 @@ const Entry kEntries[] = {
      "\n"
      "Hold SELECT and START together to come back here; the game waits where\n"
      "it was. Its saves and settings file go in /doom on the card."},
+
+    {"Quake", "The 1996 one. Bring your own pak files.", 0x6B4A2B,
+     glyphs::Glyph::Doom, GameId::Quake,
+     "Runs Quake from its pak files in /quake/id1 on a FAT32 microSD card:\n"
+     "pak0.pak is the shareware episode, and pak1.pak beside it adds the\n"
+     "other three. No game data is shipped with this device.\n"
+     "\n"
+     "TOUCH PAD plays with the pad on the screen. GAMEPAD fills the height\n"
+     "and expects the built-in pad or a USB one.\n"
+     "\n"
+     "The D-pad walks and turns. B fires; A jumps, and chooses in the menus.\n"
+     "L and R step sideways, X or SELECT changes weapon, Y runs, and START\n"
+     "opens the game's own menu, where saving and loading are.\n"
+     "\n"
+     "Hold SELECT and START together to come back here; the game waits where\n"
+     "it was. Its saves and settings go in /quake/id1 on the card."},
 };
 
 constexpr int kEntryCount = (int)(sizeof(kEntries) / sizeof(kEntries[0]));
@@ -1286,6 +1304,9 @@ void launch(GameId id) {
   } else if (id == GameId::Doom) {
     doom_ui::begin();
     doom_ui::invalidate();
+  } else if (id == GameId::Quake) {
+    quake_ui::begin();
+    quake_ui::invalidate();
   } else if (id == GameId::Solitaire) {
     solitaire_ui::begin(&g_solitaire);
     solitaire_ui::invalidate();
@@ -1317,6 +1338,7 @@ void begin(std::vector<Pack> *packs, const content::LoadReport &report) {
       const GameId id = kEntries[g_menu.order[i]].game;
       if (id == GameId::Snes && !snes_ui::available()) continue;
       if (id == GameId::Doom && !doom_ui::available()) continue;
+      if (id == GameId::Quake && !quake_ui::available()) continue;
       g_menu.order[kept++] = g_menu.order[i];
     }
     g_menu.count = kept;
@@ -1376,6 +1398,7 @@ bool wantsOrientation() {
     case GameId::Snes:
     case GameId::Arcade:
     case GameId::Doom:
+    case GameId::Quake:
       return false;
     default:
       return true;  // the shell, where taps are rare
@@ -1396,6 +1419,7 @@ void invalidate() {
   if (g_current == GameId::Solitaire) solitaire_ui::invalidate();
   if (g_current == GameId::Joshua) joshua_ui::invalidate();
   if (g_current == GameId::Doom) doom_ui::invalidate();
+  if (g_current == GameId::Quake) quake_ui::invalidate();
 }
 
 void requestExit() {
@@ -1504,6 +1528,7 @@ void tick(uint32_t now_ms) {
   else if (g_current == GameId::Snes) snes_ui::tick(now_ms);
   else if (g_current == GameId::Arcade) pacman_ui::tick(now_ms);
   else if (g_current == GameId::Doom) doom_ui::tick(now_ms);
+  else if (g_current == GameId::Quake) quake_ui::tick(now_ms);
 }
 
 namespace {
@@ -1765,6 +1790,8 @@ void handleTap(int x, int y, uint32_t now_ms) {
     pacman_ui::handleTap(x, y, now_ms);
   else if (g_current == GameId::Doom)
     doom_ui::handleTap(x, y, now_ms);
+  else if (g_current == GameId::Quake)
+    quake_ui::handleTap(x, y, now_ms);
 }
 
 }  // namespace app

@@ -35,6 +35,7 @@ ppa_client_handle_t g_ppa = nullptr;
 volatile bool g_ppa_busy = false;
 
 uint16_t *g_buf[2] = {nullptr, nullptr};
+bool g_frames_external = false;
 int g_cur = 0;
 int g_src_w = 0, g_src_h = 0;
 float g_scale = 0.0f, g_scale_y = 0.0f;
@@ -192,6 +193,11 @@ bool begin() {
   return g_fb != nullptr;
 }
 
+void framesInExternalRam(bool external) {
+  if (external != g_frames_external) release();   // whatever is held is in the wrong place
+  g_frames_external = external;
+}
+
 bool configure(int src_w, int src_h, float scale) {
   return configure(src_w, src_h, scale, scale);
 }
@@ -218,7 +224,9 @@ bool configure(int src_w, int src_h, float scale, float scale_y) {
   // run at all.
   for (uint16_t *&b : g_buf) {
     if (b) continue;
-    b = (uint16_t *)heap_caps_aligned_alloc(128, bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!g_frames_external) {
+      b = (uint16_t *)heap_caps_aligned_alloc(128, bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
     if (!b) b = (uint16_t *)heap_caps_aligned_alloc(128, bytes, MALLOC_CAP_SPIRAM);
   }
   if (!g_buf[0]) return false;
