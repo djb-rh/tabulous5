@@ -305,6 +305,10 @@ shorted to ground (lit with nothing pressed) or not making contact (never
 lit) can be seen. A console with nothing on its header reads twelve idle
 lines and is unchanged.
 
+The pad's caps carry no legends, so once it is wired the About page of every
+game played with it shows a picture of it with each button named
+(`src/pad_picture.cpp`, drawn to scale from the gamepad board's own numbers).
+
 Once the console has a pad of its own that pad is player one, and a USB pad
 becomes **player two** on the NES and the SNES, and in the arcade when the
 cabinet is set to a cocktail table. Everywhere else, and on a console
@@ -548,6 +552,9 @@ reason to set it: Pac-Tetris's versus mode needs a credit each and the
 two-player start, and draws the second player's well upside down, for
 someone sitting opposite. Without a second pad leave it on upright, or the
 second player in an ordinary two-player game has no stick.
+That far side has no button of its own, so Pac-Tetris gives its player UP to
+rotate; packed with `--far-b-up`, the far pad's B presses that side's UP as
+well, and both players have a rotate under the same thumb.
 
 Note that the board runs a power-on self test for about nine seconds before it
 starts reading its inputs, so a coin dropped in the first few seconds is

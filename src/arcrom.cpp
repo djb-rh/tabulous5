@@ -60,6 +60,7 @@ bool parse(const uint8_t *data, size_t len, Info *out, const char **why) {
     info.eight_way = data[26] == 1;
     info.uses_button = data[27] == 1;
     info.start_fires = data[28] == 1;
+    info.far_b_is_up = data[29] == 1;
     if (data[25] > 1) return fail(why, "unknown add-on board");
   } else {
     return fail(why, "made by a different version of mkarcade");

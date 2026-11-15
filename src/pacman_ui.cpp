@@ -133,6 +133,7 @@ bool g_eight_way = false;
 bool g_buttons_as_stick = false;
 // The first start button is also the game's action button (arcrom.h).
 bool g_start_fires = false;
+bool g_far_b_is_up = false;
 uint8_t g_inject_pad = 0;
 uint32_t g_inject_frames = 0;
 uint8_t g_inject_pad2 = 0;
@@ -467,6 +468,7 @@ bool load(int index) {
 
   g_eight_way = info.eight_way;
   g_start_fires = info.start_fires;
+  g_far_b_is_up = info.far_b_is_up;
   g_buttons_as_stick = !info.eight_way && !info.uses_button && !info.start_fires;
   g_gate.reset();
   g_stand_up = info.upright_monitor;
@@ -614,6 +616,9 @@ uint32_t toFarSide(uint8_t pad) {
   if (pad & joypad::kRight) m |= NAMCO_INPUT_P2_RIGHT;
   if (pad & joypad::kSelect) m |= NAMCO_INPUT_P1_COIN;
   if (pad & (joypad::kStart | joypad::kA)) m |= NAMCO_INPUT_P2_START;
+  // Added after the stick's plate, like a button and unlike a direction: it
+  // can go down with left or right held, which a four-way stick's UP cannot.
+  if (g_far_b_is_up && (pad & joypad::kB)) m |= NAMCO_INPUT_P2_UP;
   return m;
 }
 

@@ -6,6 +6,8 @@
 #include "glyphs.h"
 #include "joshua_ui.h"
 #include "joypad_ui.h"
+#include "buspad.h"
+#include "pad_picture.h"
 #include "gb_ui.h"
 #include "nes_ui.h"
 #include "pacman_ui.h"
@@ -738,8 +740,23 @@ void drawAbout() {
     auto &g = uikit::gfx();
     g.setFont(&fonts::FreeSans12pt7b);
     g.setTextSize(1);
-    const int width = kW - 2 * kMargin;
     int y = 124;
+    // On a console with a pad of its own, the pages of the games played with
+    // it carry a picture of that pad with its buttons named: the caps have no
+    // legends and the copy below talks about A, B, L and R. It sits top right
+    // and the text runs round it.
+    const bool pad_game = e.game == GameId::Nes || e.game == GameId::GameBoy || e.game == GameId::Snes ||
+                          e.game == GameId::Arcade || e.game == GameId::Doom || e.game == GameId::Quake ||
+                          e.game == GameId::Joypad;
+    const bool picture = pad_game && buspad::wired();
+    const int pic_x = kW - kMargin - pad_picture::kWidth, pic_y = 112;
+    if (picture) {
+      pad_picture::draw(pic_x, pic_y);
+      g.setFont(&fonts::FreeSans12pt7b);   // the picture's labels left a smaller one set, and the lines below are measured with it
+    }
+    const auto widthAt = [&](int line_y) {
+      return picture && line_y < pic_y + pad_picture::kHeight + 4 ? pic_x - kMargin - 28 : kW - 2 * kMargin;
+    };
     char line[192];
     int len = 0;          // what is on the line so far
     int fits = 0;         // ...up to the last word boundary that fit
@@ -779,7 +796,7 @@ void drawAbout() {
         if (len > 0 && len < (int)sizeof(line) - 2) line[len++] = ' ';
         for (int i = 0; i < wlen && len < (int)sizeof(line) - 1; i++) line[len++] = w[i];
         line[len] = '\0';
-        if (g.textWidth(line) > width && start > 0) {
+        if (g.textWidth(line) > widthAt(y) && start > 0) {
           len = start;      // this word does not fit; put it on the next line
           flush(false);
           p = w;            // and read it again

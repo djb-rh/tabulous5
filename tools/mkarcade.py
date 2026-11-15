@@ -21,6 +21,9 @@ or from a folder of the loose files:
 
 --start-fires is for games that read the first start button as their action
 button in play, the board having no other: the pad's B presses it too.
+--far-b-up is for a game played by two at once across a cocktail table, where
+the far side has only its stick and UP is that player's action (Pac-Tetris:
+rotate): the far pad's B presses that side's UP.
 
 The console emulates the 1980 Namco Pac-Man board, and a great many games
 shipped on that one board. tools/arcade_games.json lists every set MAME says
@@ -370,6 +373,7 @@ def build(game, zip_path):
     header[26] = 1 if game.get("eight_way") else 0
     header[27] = 1 if game.get("uses_button") else 0
     header[28] = 1 if game.get("start_fires") else 0
+    header[29] = 1 if game.get("far_b_is_up") else 0
     header[12:16] = struct.pack("<I", len(payload))
     for i, (frm, to) in enumerate(fixups):
         header[16 + 2 * i] = frm
@@ -401,6 +405,8 @@ def main():
                     "built on that set's board")
     ap.add_argument("--start-fires", action="store_true",
                     help="with --title: the first start button is the action button too")
+    ap.add_argument("--far-b-up", action="store_true",
+                    help="with --title: on a cocktail table, the far pad's B is that side's UP")
     ap.add_argument("romsets", nargs="?", help="folder of MAME zips, or one zip")
     ap.add_argument("out_dir", nargs="?", help="where to write the .arc files")
     args = ap.parse_args()
@@ -420,12 +426,12 @@ def main():
     wanted = [g for g in games if args.all or g["set"] == args.set]
     if not wanted:
         sys.exit("no set called %r; try --list" % args.set)
-    if (args.title or args.start_fires) and (args.all or not args.title):
-        ap.error("--title goes with --set, and --start-fires with --title")
+    if (args.title or args.start_fires or args.far_b_up) and (args.all or not args.title):
+        ap.error("--title goes with --set, and --start-fires and --far-b-up with --title")
     if args.title:
         # The borrowed board's layout, the game's own name; whatever its chips
         # hold, there is nothing to check them against.
-        wanted = [dict(wanted[0], title=args.title, start_fires=args.start_fires,
+        wanted = [dict(wanted[0], title=args.title, start_fires=args.start_fires, far_b_is_up=args.far_b_up,
                        uses_button=args.start_fires or wanted[0].get("uses_button", False))]
 
     os.makedirs(args.out_dir, exist_ok=True)

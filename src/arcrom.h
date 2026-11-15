@@ -75,6 +75,12 @@ struct Info {
   // pad's B is that button as well as START.
   bool start_fires = false;
 
+  // A cocktail table's far side has a stick and nothing else, so a game for
+  // two at once gives that player's action to a direction: in Pac-Tetris UP
+  // is their rotate. Set, the far pad's B presses that side's UP, so both
+  // players have a button under the same thumb.
+  bool far_b_is_up = false;
+
   bool daughtercard = false;
   size_t alt_cpu = 0, alt_cpu_high = 0;
   uint8_t vector_fixups = 0;
