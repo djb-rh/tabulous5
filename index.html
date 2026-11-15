@@ -15,7 +15,7 @@ button.install{background:#2f81f7;color:#fff;border:0;border-radius:8px;padding:
 button.install:hover{filter:brightness(1.1)}
 </style></head><body><main>
 <h1>Tabulous5</h1>
-<p>Firmware v1.3.0: a party, puzzle and emulation console for the M5Stack Tab5 — nine games from
+<p>Firmware v1.4.0: a party, puzzle and emulation console for the M5Stack Tab5 — games from
 PhraseCraze to Doom. Source, docs and licence (GPL-3.0) on
 <a href="https://github.com/djb-rh/tabulous5">GitHub</a>.</p>
 <img src="home.png" alt="The launcher">
@@ -27,12 +27,23 @@ PhraseCraze to Doom. Source, docs and licence (GPL-3.0) on
 <li>Connect the Tab5's <b>USB-C</b> port to the computer, then <b>press the Tab5's power button once</b> with the
 cable attached. If it is already running Tabulous5 it keeps its USB data lines off unless it was started on a
 computer, and that press is a restart.</li>
-<li>Click <b>Install</b> below and choose the Tab5's port (it is usually called <b>USB JTAG/serial debug unit</b>).</li>
+<li>Pick an image below, click its button and choose the Tab5's port (it is usually called
+<b>USB JTAG/serial debug unit</b>).</li>
 </ol>
+<p>There are two images because Doom and the SNES emulator do not fit in the Tab5's fast memory together: with
+both in, SNES games ran at a third of their speed. Everything else is in both, and one can be installed over the
+other at any time.</p>
+<p><b>Standard</b>: everything except Doom.</p>
 <esp-web-install-button manifest="manifest.json">
-<button slot="activate" class="install">Install Tabulous5 v1.3.0</button>
+<button slot="activate" class="install">Install Tabulous5 v1.4.0</button>
 <span slot="unsupported"><b>This browser cannot flash devices.</b> Use Chrome or Edge on a desktop computer.</span>
 <span slot="not-allowed"><b>The page must be opened over https.</b></span>
+</esp-web-install-button>
+<p><b>Doom</b>: everything except the SNES, with Doom.</p>
+<esp-web-install-button manifest="manifest-doom.json">
+<button slot="activate" class="install">Install Tabulous5 v1.4.0 with Doom</button>
+<span slot="unsupported"></span>
+<span slot="not-allowed"></span>
 </esp-web-install-button>
 <p>If no port shows up or the install fails: hold the Tab5's power button until the screen goes dark to put it in
 download mode, then try again. Installing replaces whatever firmware the Tab5 had; the word packs, sounds and
