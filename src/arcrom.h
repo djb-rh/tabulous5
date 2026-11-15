@@ -70,6 +70,11 @@ struct Info {
   // which is what frees a gamepad's face buttons to be a second stick.
   bool uses_button = false;
 
+  // Home-made games for this board want an action button and the board has
+  // none, so they read the first start button for it during play. Set, a
+  // pad's B is that button as well as START.
+  bool start_fires = false;
+
   bool daughtercard = false;
   size_t alt_cpu = 0, alt_cpu_high = 0;
   uint8_t vector_fixups = 0;

@@ -442,6 +442,20 @@ That writes a `.arc` file per game, skipping any whose romset is not there;
 `pio run -t uploadfs` — they are 25 to 42 KB each. **No ROMs come with this
 project.**
 
+**Games written for the board.** People still write new games for Pac-Man
+hardware, and they come as a set with Pac-Man's own chip names so MAME will
+load them. Those are packed from Pac-Man's layout under a title of their own,
+from the zip or from a folder of the loose files:
+
+```bash
+tools/mkarcade.py --set pacman --title "Gold Runner" --start-fires ~/gold-runner/roms /Volumes/CARD/arcade
+```
+
+`--start-fires` is for the ones that want an action button. The board has
+none, so they read the first start button for it during play; with the flag,
+the pad's B presses that button as well as START does. Leave it off for games
+steered by the stick alone.
+
 A chip is found in the zip by its checksum, not its name: merged romsets store
 each distinct file once, under whichever game named it first, so a clone's
 folder holds only the files that differ and the rest sit elsewhere under other

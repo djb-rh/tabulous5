@@ -87,6 +87,16 @@ void test_the_monitor_is_sideways_unless_the_file_says_otherwise() {
   TEST_ASSERT_TRUE(info.upright_monitor);
 }
 
+void test_start_is_the_action_button_only_when_the_file_says_so() {
+  auto file = v2(0, 0);
+  Info info;
+  TEST_ASSERT_TRUE(parse(file.data(), file.size(), &info));
+  TEST_ASSERT_FALSE(info.start_fires);   // as in every file made before the byte meant anything
+  file[28] = 1;
+  TEST_ASSERT_TRUE(parse(file.data(), file.size(), &info));
+  TEST_ASSERT_TRUE(info.start_fires);
+}
+
 void test_the_kit_puts_a_second_program_before_the_tiles() {
   auto f = v2(4, 0, true);
   Info info;
@@ -184,6 +194,7 @@ int main() {
   RUN_TEST(test_regions_follow_each_other);
   RUN_TEST(test_upper_program_rom_pushes_the_later_regions_along);
   RUN_TEST(test_the_monitor_is_sideways_unless_the_file_says_otherwise);
+  RUN_TEST(test_start_is_the_action_button_only_when_the_file_says_so);
   RUN_TEST(test_the_kit_puts_a_second_program_before_the_tiles);
   RUN_TEST(test_vector_fixups_are_read_back);
   RUN_TEST(test_the_header_alone_says_how_long_the_file_is);

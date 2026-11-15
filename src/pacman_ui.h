@@ -21,5 +21,9 @@ void tick(uint32_t now_ms);
 void handleTap(int x, int y, uint32_t now_ms);
 bool playing();
 
+// NES-style buttons for a number of frames, from the serial port: the way a
+// host drives a game it cannot touch.
+void injectPad(uint8_t buttons, uint32_t frames);
+
 }  // namespace pacman_ui
 }  // namespace tabulous

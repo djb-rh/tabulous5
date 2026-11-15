@@ -125,6 +125,10 @@ bool g_eight_way = false;
 // Whether this cabinet's control panel leaves the gamepad's face buttons with
 // nothing to do. When it does, they become a second stick -- see padmap.h.
 bool g_buttons_as_stick = false;
+// The first start button is also the game's action button (arcrom.h).
+bool g_start_fires = false;
+uint8_t g_inject_pad = 0;
+uint32_t g_inject_frames = 0;
 int g_quit_hold = 0;
 float g_scale = 2.0f;
 bool g_portrait = true;
@@ -453,7 +457,8 @@ bool load(int index) {
   }
 
   g_eight_way = info.eight_way;
-  g_buttons_as_stick = !info.eight_way && !info.uses_button;
+  g_start_fires = info.start_fires;
+  g_buttons_as_stick = !info.eight_way && !info.uses_button && !info.start_fires;
   g_gate.reset();
   g_stand_up = info.upright_monitor;
   g_shown_w = g_stand_up ? kRasterH : kRasterW;
@@ -584,6 +589,7 @@ uint32_t toCabinet(uint8_t pad) {
   if (pad & joypad::kSelect) m |= NAMCO_INPUT_P1_COIN;
   if (pad & joypad::kStart) m |= NAMCO_INPUT_P1_START;
   if (pad & joypad::kA) m |= NAMCO_INPUT_P2_START;
+  if (g_start_fires && (pad & joypad::kB)) m |= NAMCO_INPUT_P1_START;
   return m;
 }
 
@@ -614,6 +620,10 @@ void runFrame(uint32_t now_ms) {
     } else {
       g_pad |= from_bus;
     }
+  }
+  if (g_inject_frames) {
+    g_pad |= g_inject_pad;
+    g_inject_frames--;
   }
   if ((g_pad & (joypad::kSelect | joypad::kStart)) == (joypad::kSelect | joypad::kStart)) {
     if (++g_quit_hold >= 40) menu_held = true;
@@ -824,6 +834,11 @@ void onBrowser(rom_browser::Result r, int index) {
   }
 }
 }  // namespace
+
+void injectPad(uint8_t buttons, uint32_t frames) {
+  g_inject_pad = buttons;
+  g_inject_frames = frames;
+}
 
 }  // namespace pacman_ui
 }  // namespace tabulous

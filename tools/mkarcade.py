@@ -11,6 +11,17 @@ the set, into a single .arc file laid out exactly as the emulator wants it.
     tools/mkarcade.py --set pacman ~/path/to/MAME*/        /tmp/out
     tools/mkarcade.py --list
 
+A game somebody wrote for the board themselves comes as a set with the same
+chip names as the game whose board it borrows, and no place in MAME's list.
+It is packed from that game's layout, under a title of its own, from a zip
+or from a folder of the loose files:
+
+    tools/mkarcade.py --set pacman --title "Gold Runner" --start-fires \
+                      ~/Downloads/goldrunner/pacman      /Volumes/CARD/arcade
+
+--start-fires is for games that read the first start button as their action
+button in play, the board having no other: the pad's B presses it too.
+
 The console emulates the 1980 Namco Pac-Man board, and a great many games
 shipped on that one board. tools/arcade_games.json lists every set MAME says
 will run on it unmodified, and --all builds each one whose romset is present.
@@ -37,6 +48,7 @@ import os
 import struct
 import sys
 import zipfile
+import zlib
 
 MAGIC = b"TAB5ARC1"
 SYSTEM_PACMAN = 0
@@ -206,6 +218,39 @@ def load_table():
         return json.load(f)["games"]
 
 
+class Folder:
+    """A folder of loose chip files, read the way a zip is."""
+
+    class _Member:
+        def __init__(self, path):
+            self.filename = path
+            self.file_size = os.path.getsize(path)
+            with open(path, "rb") as f:
+                self.CRC = zlib.crc32(f.read())
+
+    def __init__(self, path):
+        self._members = [Folder._Member(os.path.join(root, name))
+                         for root, _dirs, names in os.walk(path) for name in sorted(names)
+                         if not name.startswith(".")]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def infolist(self):
+        return self._members
+
+    def read(self, member):
+        with open(member.filename, "rb") as f:
+            return f.read()
+
+
+def open_set(path):
+    return Folder(path) if os.path.isdir(path) else zipfile.ZipFile(path)
+
+
 def index(zf):
     """The zip's members, by checksum and by name, for finding one chip."""
     by_crc, by_name = {}, {}
@@ -256,7 +301,7 @@ def build(game, zip_path):
     """The finished file's bytes, or None and the reason it could not be made."""
     why = []
     if game.get("daughtercard") == "mspacman":
-        with zipfile.ZipFile(zip_path) as zf:
+        with open_set(zip_path) as zf:
             members = index(zf)
             raw = read_sparse(zf, game["cpu"], members, 0x10000, why)
             gfx = read_region(zf, game["gfx"], members, why)
@@ -281,7 +326,7 @@ def build(game, zip_path):
         header[27] = 1 if game.get("uses_button") else 0
         return bytes(header) + payload, None
 
-    with zipfile.ZipFile(zip_path) as zf:
+    with open_set(zip_path) as zf:
         members = index(zf)
         cpu = read_region(zf, game["cpu"], members, why)
         high = (read_region(zf, game["cpu_high"], members, why)
@@ -324,6 +369,7 @@ def build(game, zip_path):
     # file written before this byte meant anything already says.
     header[26] = 1 if game.get("eight_way") else 0
     header[27] = 1 if game.get("uses_button") else 0
+    header[28] = 1 if game.get("start_fires") else 0
     header[12:16] = struct.pack("<I", len(payload))
     for i, (frm, to) in enumerate(fixups):
         header[16 + 2 * i] = frm
@@ -333,6 +379,10 @@ def build(game, zip_path):
 
 def find_zip(where, name):
     if os.path.isfile(where):
+        return where
+    # A folder of loose chips rather than a folder of zips.
+    if os.path.isdir(where) and not glob.glob(os.path.join(where, "*.zip")) \
+            and not os.path.isdir(os.path.join(where, name)):
         return where
     for root in glob.glob(where):
         candidate = os.path.join(root, name + ".zip")
@@ -347,6 +397,10 @@ def main():
                     help="build every game whose romset is present")
     ap.add_argument("--set", metavar="NAME", help="build one MAME set")
     ap.add_argument("--list", action="store_true", help="list the sets we can build")
+    ap.add_argument("--title", help="with --set: the name to give a home-made game "
+                    "built on that set's board")
+    ap.add_argument("--start-fires", action="store_true",
+                    help="with --title: the first start button is the action button too")
     ap.add_argument("romsets", nargs="?", help="folder of MAME zips, or one zip")
     ap.add_argument("out_dir", nargs="?", help="where to write the .arc files")
     args = ap.parse_args()
@@ -366,6 +420,13 @@ def main():
     wanted = [g for g in games if args.all or g["set"] == args.set]
     if not wanted:
         sys.exit("no set called %r; try --list" % args.set)
+    if (args.title or args.start_fires) and (args.all or not args.title):
+        ap.error("--title goes with --set, and --start-fires with --title")
+    if args.title:
+        # The borrowed board's layout, the game's own name; whatever its chips
+        # hold, there is nothing to check them against.
+        wanted = [dict(wanted[0], title=args.title, start_fires=args.start_fires,
+                       uses_button=args.start_fires or wanted[0].get("uses_button", False))]
 
     os.makedirs(args.out_dir, exist_ok=True)
     made, missing, failed = 0, 0, []

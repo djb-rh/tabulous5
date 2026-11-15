@@ -470,6 +470,7 @@ void loop() {
         nes_ui::injectPad(bits, frames);
         doom_ui::injectPad(bits, frames);
         quake_ui::injectPad(bits, frames);
+        pacman_ui::injectPad(bits, frames);
       }
     }
     // "Q<line>": a line for Quake's own console, e.g. Qtimedemo demo1.
