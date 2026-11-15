@@ -82,6 +82,82 @@ bool findTarget(int x, int y, int *action, int *param) {
   return false;
 }
 
+// Row inset for a rounded rectangle: 0 through the straight middle, growing to
+// r at the extreme rows of each cap. Only the few shelf rows need it.
+int cornerInset(int row, int h, int r) {
+  int d = 0;
+  if (row < r) d = r - row;
+  else if (row >= h - r) d = r - (h - 1 - row);
+  else return 0;
+  const int inside = r * r - d * d;
+  if (inside <= 0) return r;
+  return r - (int)lroundf(sqrtf((float)inside));
+}
+
+namespace {
+
+// The corner fill a scrolling list has asked for; see uikit.h.
+Rect g_corner_rect;
+int g_corner_r = 0;
+uint16_t g_corner_bg = 0;
+bool g_corner_set = false, g_corner_taken = false;
+
+bool takesCornerFill(int x, int y, int w, int h, int r) {
+  if (!g_corner_set || g_corner_taken) return false;
+  if (x != g_corner_rect.x || y != g_corner_rect.y || w != g_corner_rect.w ||
+      h != g_corner_rect.h || r != g_corner_r) return false;
+  g_corner_taken = true;
+  return true;
+}
+
+// The r x r squares at the two ends of a cap, a row at a time: the part
+// outside the curve in `bg`, the part inside it in `colour`. Each pixel once.
+void fillCapCorners(int x, int y, int w, int h, int r, uint16_t colour, uint16_t bg, bool top) {
+  auto &g = gfx();
+  for (int k = 0; k < r; k++) {
+    const int row = top ? k : h - r + k;
+    const int inset = cornerInset(row, h, r);
+    const int yy = y + row;
+    if (inset > 0) {
+      g.fillRect(x, yy, inset, 1, bg);
+      g.fillRect(x + w - inset, yy, inset, 1, bg);
+    }
+    if (inset < r) {
+      g.fillRect(x + inset, yy, r - inset, 1, colour);
+      g.fillRect(x + w - r, yy, r - inset, 1, colour);
+    }
+  }
+}
+
+}  // namespace
+
+void setCornerFill(const Rect &rect, int r, uint16_t bg) {
+  g_corner_rect = rect;
+  g_corner_r = r;
+  g_corner_bg = bg;
+  g_corner_set = true;
+  g_corner_taken = false;
+}
+
+bool clearCornerFill() {
+  const bool taken = g_corner_taken;
+  g_corner_set = g_corner_taken = false;
+  return taken;
+}
+
+void fillCornersOutside(const Rect &rect, int r, uint16_t bg) {
+  auto &g = gfx();
+  for (int k = 0; k < r; k++) {
+    for (int end = 0; end < 2; end++) {
+      const int row = end == 0 ? k : rect.h - r + k;
+      const int inset = cornerInset(row, rect.h, r);
+      if (inset <= 0) continue;
+      g.fillRect(rect.x, rect.y + row, inset, 1, bg);
+      g.fillRect(rect.x + rect.w - inset, rect.y + row, inset, 1, bg);
+    }
+  }
+}
+
 void fillRoundRectFast(int x, int y, int w, int h, int r, uint16_t colour) {
   auto &g = gfx();
   if (r * 2 > w) r = w / 2;
@@ -95,6 +171,11 @@ void fillRoundRectFast(int x, int y, int w, int h, int r, uint16_t colour) {
   g.fillRect(x, y + r, w, h - 2 * r, colour);
   g.fillRect(x + r, y, w - 2 * r, r, colour);
   g.fillRect(x + r, y + h - r, w - 2 * r, r, colour);
+  if (takesCornerFill(x, y, w, h, r)) {
+    fillCapCorners(x, y, w, h, r, colour, g_corner_bg, true);
+    fillCapCorners(x, y, w, h, r, colour, g_corner_bg, false);
+    return;
+  }
   g.fillCircle(x + r, y + r, r, colour);
   g.fillCircle(x + w - r - 1, y + r, r, colour);
   g.fillCircle(x + r, y + h - r - 1, r, colour);
@@ -114,27 +195,20 @@ uint32_t lerp888(uint32_t a, uint32_t b, int num, int den) {
   return out;
 }
 
-// Row inset for a rounded rectangle: 0 through the straight middle, growing to
-// r at the extreme rows of each cap. Only the few shelf rows need it.
-int cornerInset(int row, int h, int r) {
-  int d = 0;
-  if (row < r) d = r - row;
-  else if (row >= h - r) d = r - (h - 1 - row);
-  else return 0;
-  const int inside = r * r - d * d;
-  if (inside <= 0) return r;
-  return r - (int)lroundf(sqrtf((float)inside));
-}
-
 uint16_t to565(uint32_t rgb888) {
   return gfx().color565((rgb888 >> 16) & 0xFF, (rgb888 >> 8) & 0xFF,
                         rgb888 & 0xFF);
 }
 
 // Cap of a rounded rect: the straight span plus its two corner circles.
-void fillCap(int x, int y, int w, int h, int r, uint16_t colour, bool top) {
+void fillCap(int x, int y, int w, int h, int r, uint16_t colour, bool top,
+             const uint16_t *corner_bg = nullptr) {
   auto &g = gfx();
   g.fillRect(x + r, top ? y : y + h - r, w - 2 * r, r, colour);
+  if (corner_bg) {
+    fillCapCorners(x, y, w, h, r, colour, *corner_bg, top);
+    return;
+  }
   const int cy = top ? y + r : y + h - r - 1;
   g.fillCircle(x + r, cy, r, colour);
   g.fillCircle(x + w - r - 1, cy, r, colour);
@@ -164,9 +238,10 @@ void fillRoundRectShaded(int x, int y, int w, int h, int r, uint32_t top,
   // Tying the shelf to the bottom cap instead was tried and looked wrong: the
   // radius then sets the shelf's thickness, which made it a 16 px band with a
   // hard cliff into it rather than an edge.
-  fillCap(x, y, w, h, r, to565(lerp888(top, bottom, r / 2, h - 1)), true);
+  const uint16_t *corner_bg = takesCornerFill(x, y, w, h, r) ? &g_corner_bg : nullptr;
+  fillCap(x, y, w, h, r, to565(lerp888(top, bottom, r / 2, h - 1)), true, corner_bg);
   fillCap(x, y, w, h, r, to565(lerp888(top, bottom, h - 1 - r / 2, h - 1)),
-          false);
+          false, corner_bg);
 
   // The straight middle, one fill per distinct panel colour. A ~20% darkening
   // over 120 px passes through about seven values in RGB565, so this emits

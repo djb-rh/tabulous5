@@ -215,14 +215,52 @@ void Scroller::drawBar(uint16_t track_colour, uint16_t thumb_colour) const {
   const int r = kBarW / 2;
   int ty, th;
   thumbGeometry(&ty, &th);
-  // The track in two pieces around the thumb rather than under it, so the
-  // thumb is never blanked and redrawn as it moves.
-  const int top_h = ty - track_.y + r;
-  if (top_h > 0) uikit::fillRoundRectFast(x, track_.y, kBarW, top_h, r, track_colour);
-  const int bot_y = ty + th - r;
-  const int bot_h = track_.y + track_.h - bot_y;
-  if (bot_h > 0) uikit::fillRoundRectFast(x, bot_y, kBarW, bot_h, r, track_colour);
-  uikit::fillRoundRectFast(x, ty, kBarW, th, r, thumb_colour);
+  // Every pixel of the bar written once, in its final colour. The bar is
+  // redrawn on each scroll step straight onto the panel, so anything painted
+  // and then painted over shows: the earlier version drew the track's two
+  // pieces with rounded ends that ran under the thumb and then drew the
+  // thumb on top, and the thumb's ends flickered all the way down.
+  //
+  // The straight stretches go down as whole rectangles; only the rows where
+  // an edge curves (the track's two ends, the thumb's two ends) are drawn a
+  // row at a time, each as up to three spans: track, thumb, track.
+  auto &g = uikit::gfx();
+  g.startWrite();
+  const int y0 = track_.y, y1 = track_.y + track_.h;
+  int run_y = y0, run_kind = -1;   // 0 = track, 1 = thumb; a run of straight rows
+  const auto flush = [&](int upto) {
+    if (run_kind >= 0 && upto > run_y) {
+      g.fillRect(x, run_y, kBarW, upto - run_y, run_kind ? thumb_colour : track_colour);
+    }
+    run_kind = -1;
+  };
+  for (int yy = y0; yy < y1; yy++) {
+    const bool in_thumb = yy >= ty && yy < ty + th;
+    const int track_in = uikit::cornerInset(yy - y0, track_.h, r);
+    const int thumb_in = in_thumb ? uikit::cornerInset(yy - ty, th, r) : 0;
+    if (track_in == 0 && thumb_in == 0) {
+      const int kind = in_thumb ? 1 : 0;
+      if (kind != run_kind) {
+        flush(yy);
+        run_kind = kind;
+        run_y = yy;
+      }
+      continue;
+    }
+    flush(yy);
+    if (!in_thumb) {
+      if (kBarW - 2 * track_in > 0) g.fillRect(x + track_in, yy, kBarW - 2 * track_in, 1, track_colour);
+      continue;
+    }
+    const int in = thumb_in > track_in ? thumb_in : track_in;
+    if (in > track_in) {
+      g.fillRect(x + track_in, yy, in - track_in, 1, track_colour);
+      g.fillRect(x + kBarW - in, yy, in - track_in, 1, track_colour);
+    }
+    if (kBarW - 2 * in > 0) g.fillRect(x + in, yy, kBarW - 2 * in, 1, thumb_colour);
+  }
+  flush(y1);
+  g.endWrite();
 }
 
 void drawRows(const Scroller &s, int row_x, int row_w, int pitch, int row_h,
@@ -245,14 +283,14 @@ void drawRows(const Scroller &s, int row_x, int row_w, int pitch, int row_h,
   if (y > vp.y) g.fillRect(row_x, vp.y, row_w, y - vp.y, bg);
   int i = first;
   for (; i < count && y < vp.y + vp.h; i++, y += pitch) {
-    if (corner_r > 0) {
-      const int r = corner_r;
-      g.fillRect(row_x, y, r, r, bg);
-      g.fillRect(right - r, y, r, r, bg);
-      g.fillRect(row_x, y + row_h - r, r, r, bg);
-      g.fillRect(right - r, y + row_h - r, r, r, bg);
-    }
+    // The background behind the row's rounded corners goes down in the
+    // same pass as the row itself, not before it: see uikit::setCornerFill.
+    // A row drawn some other way gets the outside of its corners painted
+    // afterwards, which is still each of those pixels once.
+    const uikit::Rect whole{row_x, y, row_w, row_h};
+    if (corner_r > 0) uikit::setCornerFill(whole, corner_r, bg);
     draw_row(i, y);
+    if (corner_r > 0 && !uikit::clearCornerFill()) uikit::fillCornersOutside(whole, corner_r, bg);
     if (pitch > row_h) g.fillRect(row_x, y + row_h, row_w, pitch - row_h, bg);
   }
   if (y < vp.y + vp.h) g.fillRect(row_x, y, row_w, vp.y + vp.h - y, bg);

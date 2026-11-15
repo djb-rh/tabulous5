@@ -54,7 +54,8 @@ const char *const kAttractPrompt = "WOULD YOU LIKE TO PLAY A GAME?";
 const char *const kAttractAnswer = "TIC TAC TOE";
 const char *const kPlayersPrompt = "HOW MANY PLAYERS?";
 const char *const kOptions[3] = {"ZERO", "ONE", "TWO"};
-const char *const kNotToPlay = "THE ONLY WAY TO WIN\nIS NOT TO PLAY";
+// WOPR's last words in the film, as it put them on the screen.
+const char *const kNotToPlay = "A STRANGE GAME.\nTHE ONLY WINNING MOVE IS\nNOT TO PLAY.";
 const char *const kStalemate = "STALEMATE.\nTHE ONLY WAY TO WIN\nIS NOT TO PLAY";
 char g_winner_text[16];
 

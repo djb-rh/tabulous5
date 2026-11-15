@@ -100,6 +100,25 @@ void fillRoundRectFast(int x, int y, int w, int h, int r, uint16_t colour);
 void fillRoundRectShaded(int x, int y, int w, int h, int r, uint32_t top,
                          uint32_t bottom, uint32_t shelf, int shelf_h);
 
+// A list that scrolls repaints every row on every step, straight onto a panel
+// that is being scanned out the whole time. If the square behind a row's
+// corner is cleared to the background first and the rounded shape drawn over
+// it, the pixels inside the curve are background for an instant on every
+// step, and the corners flicker.
+//
+// So, while a corner fill is set, a rounded rectangle drawn at exactly that
+// rect and radius paints the pixels outside its curve with `bg` in the same
+// pass as the pixels inside it: every pixel is written once. clearCornerFill()
+// says whether a shape took it; if none did (a row drawn some other way),
+// fillCornersOutside() paints just the outside of the curve afterwards.
+void setCornerFill(const Rect &rect, int r, uint16_t bg);
+bool clearCornerFill();
+void fillCornersOutside(const Rect &rect, int r, uint16_t bg);
+
+// How far in from the side a rounded rectangle's edge is on `row` (0 at the
+// top): 0 through the straight middle, growing to r at the extreme rows.
+int cornerInset(int row, int h, int r);
+
 void drawButton(const Rect &r, const char *label, uint16_t bg, uint16_t fg,
                 const lgfx::IFont *font = &fonts::FreeSansBold18pt7b);
 
