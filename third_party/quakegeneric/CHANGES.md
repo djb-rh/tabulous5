@@ -36,6 +36,10 @@ Espressif changed for the P4 is kept. What Tabulous5 changed on top:
 * `snd_tabulous.c` (new) — the sound device: a ring of 16-bit mono samples at
   11025 Hz that the engine mixes into, and `QG_AudioPump()`, which the
   platform's audio task calls to hand the speaker the next block.
+* `qg_defaults.c` (new) — this console's first-run settings: the brightness
+  (`gamma 0.7`), applied once and remembered in an archived variable,
+  `tab5_defaults`, so the Options slider is the player's from then on. Also
+  `QG_InMenu()`, by which the platform writes `config.cfg` when the menu closes.
 * Not built: `net_bsd.c`, `net_udp.c`, `net_dgrm.c` (there is no network play;
   `net_none.c` and the loopback driver are used), and the other platforms'
   `quakegeneric_*.c`.

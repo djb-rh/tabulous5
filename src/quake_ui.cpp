@@ -41,6 +41,9 @@ extern "C" {
 #include "../third_party/quakegeneric/source/quakegeneric.h"
 void Cbuf_AddText(char *text);   // the engine's command buffer
 void Host_WriteConfiguration(void);   // config.cfg: bindings and options
+void QG_DefaultsInit(void);      // qg_defaults.c: this console's own first-run settings
+int QG_DefaultsApply(void);
+int QG_InMenu(void);
 void QG_AudioPump(void);         // snd_tabulous.c: hands the speaker what it has room for
 unsigned QG_AudioBlocks(void);
 int QG_AudioPeak(void);
@@ -223,6 +226,8 @@ uint32_t g_frames = 0, g_fps_at = 0, g_convert_us = 0;
 uint8_t g_inject_pad = 0;
 uint32_t g_inject_frames = 0;
 uint32_t g_last_us = 0;
+uint32_t g_ticks = 0;   // frames the engine has run since it started
+bool g_was_in_menu = false;
 
 void paintFrame(const uint8_t *src) {
   uint16_t *fb = emu_video::frame();
@@ -385,6 +390,21 @@ void lookForPaks() {
   setStatus();
 }
 
+// Quake is a dark game, and a pale surround swamps it; so whatever the
+// console's theme, the screen round the picture is the dark one while the
+// game is up, and the theme comes back on the way out.
+bool g_theme_was_light = false, g_theme_held = false;
+void darkSurround(bool on) {
+  if (on && !g_theme_held) {
+    g_theme_was_light = theme::isLight();
+    g_theme_held = true;
+    theme::setLight(false);
+  } else if (!on && g_theme_held) {
+    g_theme_held = false;
+    theme::setLight(g_theme_was_light);
+  }
+}
+
 bool startVideo() {
   joypad_ui::setLabels("WEAPON", "MENU", "JUMP", "FIRE");
   // The picture's 16-bit copies go in the external RAM: internal memory is
@@ -399,6 +419,7 @@ bool startVideo() {
     snprintf(g_error, sizeof(g_error), "no room for the picture");
     return false;
   }
+  darkSurround(true);
   g_pad = 0;
   g_pad_drawn = 0xFF;
   g_quit_hold = 0;
@@ -406,6 +427,13 @@ bool startVideo() {
   g_fps_at = millis();
   g_last_us = micros();
   return true;
+}
+
+// The picture given back, when the engine did not come up behind it.
+void stopVideo() {
+  joypad_ui::endPlay();
+  emu_video::framesInExternalRam(false);
+  darkSurround(false);
 }
 
 void leavePlay() {
@@ -416,6 +444,7 @@ void leavePlay() {
   if (g_engine == Engine::Running) Host_WriteConfiguration();
   joypad_ui::endPlay();
   emu_video::framesInExternalRam(false);
+  darkSurround(false);
   M5.Speaker.stop();
   g_mode = Mode::Picking;
   g_dirty = true;
@@ -443,7 +472,7 @@ bool start(int size) {
   reportInternal("before the engine");
   if (!QG_ExtRamInit()) {
     snprintf(g_error, sizeof(g_error), "out of memory for the engine's tables");
-    joypad_ui::endPlay();
+    stopVideo();
     return false;
   }
   snprintf(g_basedir, sizeof(g_basedir), "%s%s", sdcard::mountPoint(), kBaseDir);
@@ -466,10 +495,14 @@ bool start(int size) {
   if (!runEngine(Cmd::Create)) {
     g_engine = Engine::Dead;
     Serial.printf("quake: engine error at start: %s\n", g_error);
-    joypad_ui::endPlay();
+    stopVideo();
     return false;
   }
   g_engine = Engine::Running;
+  // Registered now, before the first frame reads config.cfg; applied a few
+  // frames in, once it has (runFrame).
+  QG_DefaultsInit();
+  g_ticks = 0;
   Serial.printf("quake: up in %lu ms, stack left %u\n", (unsigned long)(millis() - t0),
                 (unsigned)uxTaskGetStackHighWaterMark(g_task));
   reportInternal("with the engine up");
@@ -571,6 +604,15 @@ void runFrame(uint32_t now_ms) {
     leavePlay();
     return;
   }
+  // The first frame runs quake.rc, and with it config.cfg; after that the
+  // engine knows whether this card has had its first-run settings.
+  if (++g_ticks == 3 && QG_DefaultsApply()) Host_WriteConfiguration();
+  // The engine writes its options only when it quits, and this one is far
+  // more often switched off than quit. So they are written whenever its menu
+  // closes, which is where they are changed.
+  const bool in_menu = QG_InMenu() != 0;
+  if (g_was_in_menu && !in_menu && g_ticks > 3) Host_WriteConfiguration();
+  g_was_in_menu = in_menu;
   drawPlayChrome(false);
 
   if (now_ms - g_fps_at >= 2000) {

@@ -332,9 +332,15 @@ one; **TOUCH PAD** plays at 500x375 with the pad on the screen. The D-pad
 walks and turns, B fires, A jumps (and chooses, in the menus), L and R step
 sideways, X or SELECT changes weapon, Y runs, START opens the game's own
 menu, which is where saving and loading are. Holding SELECT and START
-together comes back to the console; the game waits where it was, and its
-options are written to `config.cfg` on the way out. Saves and that file go
+together comes back to the console; the game waits where it was. Its
+options are written to `config.cfg` whenever its menu closes and on the way
+out, so they survive the console being switched off. Saves and that file go
 in the game's own folder, `/quake/id1` for Quake itself.
+
+Quake is a dark game, so the screen round the picture is the dark theme's
+while it is up, whatever the console is set to, and the first time a card is
+played here the game's brightness is raised from id's default (Options →
+Brightness; `gamma 0.7`). That happens once: after it, the slider is yours.
 
 **The mission packs** run too, once both of Quake's paks are there (the
 engine refuses anything but id1 without the registered one). Each is a folder
