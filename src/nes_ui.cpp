@@ -24,6 +24,7 @@
 #include "padmap.h"
 #include "sdcard.h"
 #include "settings_store.h"
+#include "snes_ui.h"
 #include "theme.h"
 #include "uikit.h"
 #include "buspad.h"
@@ -270,6 +271,22 @@ IRAM_ATTR void drawChunk(uint8_t *buffer, uint32_t size) {
   g_chunk_row += rows;
 }
 
+// After a game: the sound buffers went into the block the SNES lent, and
+// would sit in the middle of it for the rest of the session, so they go
+// first, and the audio task's stack is given a moment to be collected. Then
+// the SNES takes its 128 KB again. If it cannot (something else has landed
+// there) its core falls back to the external RAM by itself, only slower.
+void lendBackWorkRam() {
+  for (int i = 0; i < kAudioBufs; i++) {
+    heap_caps_free(g_audio[i]);
+    g_audio[i] = nullptr;
+  }
+  heap_caps_free(g_ring);
+  g_ring = nullptr;
+  delay(30);
+  snes_ui::reserveWorkRamEarly();
+}
+
 bool load(int index) {
   releaseCore();
   rom_browser::probeItem(index);
@@ -293,30 +310,9 @@ bool load(int index) {
     return false;
   }
 
-  g_scale = rom_browser::scale();
-  g_cpu = new Cpu6502();
-  if (!g_cpu) { rom_browser::setError("out of memory for core"); releaseCore(); return false; }
-  g_cpu->bus.insertCartridge(g_cart);
-  g_cpu->bus.ppu.setDrawCallback(drawChunk);
-  for (int i = 0; i < kAudioBufs; i++) {
-    if (!g_audio[i]) {
-      g_audio[i] = (int16_t *)heap_caps_malloc(kAudioBufSamples * sizeof(int16_t),
-                                               MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    }
-  }
-  if (!g_ring) {
-    g_ring = (int16_t *)heap_caps_malloc(kRing * sizeof(int16_t),
-                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  }
-  if (!g_ring) { rom_browser::setError("out of memory for audio"); releaseCore(); return false; }
-  g_audio_which = 0;
-  g_ring_w = g_ring_r = 0;
-  g_audio_dropped = 0;
-  g_audio_made = 0;
-  g_dc_x = g_dc_y = g_lp = 0;
-  Apu2A03::setAudioCallback(onAudio);
-  g_cpu->apu.setVolume(80);
-
+  // What is allocated once and kept goes first, while the SNES still holds
+  // its block: anything permanent that landed inside that block would stop
+  // the SNES ever taking it back.
   // Move the speaker's own task to core 0 as well. Measured: the loop takes
   // 15.7 ms but frames arrive 21 ms apart with only 0.4 ms spent outside
   // tick() — so 5.3 ms a frame was core 1 being preempted, and the speaker
@@ -331,6 +327,43 @@ bool load(int index) {
       M5.Speaker.begin();
     }
   }
+
+  emu_video::begin();
+
+  snes_ui::yieldWorkRamReserve();   // see the audio buffers below
+  g_scale = rom_browser::scale();
+  g_cpu = new Cpu6502();
+  if (!g_cpu) { rom_browser::setError("out of memory for core"); releaseCore(); return false; }
+  g_cpu->bus.insertCartridge(g_cart);
+  g_cpu->bus.ppu.setDrawCallback(drawChunk);
+  // These have to be internal memory: 24 KB of it, with one block of 16.
+  // (The ring was tried in the external RAM; the sound path then made 5,000
+  // samples a second instead of 44,000.) With the SNES core's 128 KB
+  // reservation held and the USB host stack up, about 30 KB of internal
+  // memory is left with no block over 21, and a game opened and then stopped
+  // at "out of memory for audio", a kilobyte short. So the SNES hands its
+  // block back while a NES game runs, as it does for the arcade board and
+  // Doom, and leaving the game gives it back: see lendBackWorkRam().
+  bool audio_ok = true;
+  for (int i = 0; i < kAudioBufs; i++) {
+    if (!g_audio[i]) {
+      g_audio[i] = (int16_t *)heap_caps_malloc(kAudioBufSamples * sizeof(int16_t),
+                                               MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (!g_audio[i]) audio_ok = false;
+  }
+  if (!g_ring) {
+    g_ring = (int16_t *)heap_caps_malloc(kRing * sizeof(int16_t),
+                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  }
+  if (!g_ring || !audio_ok) { rom_browser::setError("out of memory for audio"); releaseCore(); return false; }
+  g_audio_which = 0;
+  g_ring_w = g_ring_r = 0;
+  g_audio_dropped = 0;
+  g_audio_made = 0;
+  g_dc_x = g_dc_y = g_lp = 0;
+  Apu2A03::setAudioCallback(onAudio);
+  g_cpu->apu.setVolume(80);
 
   // Core 0: the Arduino loop this emulator runs in lives on core 1, so the APU
   // gets a core to itself rather than competing with the CPU and PPU.
@@ -409,6 +442,7 @@ void runFrame(uint32_t now_ms) {
   if (menu_held && !g_menu_down) {
     g_menu_down = true;
     releaseCore();
+    lendBackWorkRam();
     g_mode = Mode::Picking;
     // Repaint the list, not just this screen. The emulator draws straight into
     // the panel's framebuffer, so nothing the console does afterwards is seen

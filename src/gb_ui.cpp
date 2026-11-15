@@ -39,6 +39,7 @@ static void audio_write(uint16_t addr, uint8_t val) {
 #include "padmap.h"
 #include "rom_browser.h"
 #include "settings_store.h"
+#include "snes_ui.h"
 #include "theme.h"
 #include "uikit.h"
 #include "buspad.h"
@@ -199,6 +200,18 @@ void releaseCore() {
   g_ram_dirty = false;
 }
 
+// After a game: the sound buffers went into the block the SNES lent, so
+// they go first, and then the SNES takes its 128 KB again. If it cannot,
+// its core falls back to the external RAM by itself, only slower.
+void lendBackWorkRam() {
+  for (int i = 0; i < kAudioBufs; i++) {
+    heap_caps_free(g_audio[i]);
+    g_audio[i] = nullptr;
+  }
+  delay(30);
+  snes_ui::reserveWorkRamEarly();
+}
+
 // The one system-specific part of choosing a cartridge.
 void probeRom(fs::FS &fs, rom_index::Item *it) {
   uint8_t head[0x150];
@@ -262,6 +275,13 @@ bool load(int index) {
                 e.source == rom_index::kCard ? "card" : "flash",
                 (unsigned long)(millis() - t0));
 
+  // The SNES core's 128 KB reservation leaves this machine almost no
+  // internal memory to run in, so it is lent here for the length of a game,
+  // as the arcade board, Doom and the NES borrow it, and handed back on the
+  // way out (lendBackWorkRam). What is allocated once and kept goes first,
+  // so that nothing permanent lands inside the block.
+  emu_video::begin();
+  snes_ui::yieldWorkRamReserve();
   g_gb = (struct gb_s *)heap_caps_malloc(sizeof(struct gb_s),
                                          MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (!g_gb) {
@@ -375,6 +395,7 @@ void runFrame(uint32_t now_ms) {
   if (menu_held && !g_menu_down) {
     g_menu_down = true;
     releaseCore();
+    lendBackWorkRam();
     g_mode = Mode::Picking;
     rom_browser::invalidate();
     return;
