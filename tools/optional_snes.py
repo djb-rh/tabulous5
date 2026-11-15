@@ -97,10 +97,18 @@ def apply_patches(core_dir):
     return True
 
 
-unpack_archive()
-core_dir = find_core_dir(CORE) if os.path.isdir(CORE) else None
+# An environment can also leave the core out on purpose (custom_snes = no in
+# platformio.ini): Doom and the SNES do not fit in internal memory together,
+# so the Doom build goes without it.
+WANTED = env.GetProjectOption("custom_snes", "yes").strip().lower() not in ("no", "0", "false", "off")  # noqa: F821
 
-if not core_dir:
+if WANTED:
+    unpack_archive()
+core_dir = find_core_dir(CORE) if WANTED and os.path.isdir(CORE) else None
+
+if not WANTED:
+    say("left out of this build (custom_snes = no)")
+elif not core_dir:
     say("not found, building without SNES (see third_party/snes9x/README.md)")
 else:
     if apply_patches(core_dir):

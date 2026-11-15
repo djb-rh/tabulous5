@@ -304,7 +304,11 @@ const Entry kEntries[] = {
      "its own encrypted program in and out. That kit is emulated, so the real\n"
      "game and its speedup hack run here, not only the bootlegs."},
 
-#if defined(HAVE_SNES)
+    // Always in the table, built in or not, and Doom below likewise: the
+    // saved menu order and the hidden mask are keyed by entry index, so a
+    // table that changed length with the build would rearrange the menu of
+    // any console moved from one build to the other. begin() drops the
+    // entries this firmware cannot run.
     {"SNES", "Super Nintendo, if you brought the core.", 0x4C3B8F,
      glyphs::Glyph::Snes, GameId::Snes,
      "Runs SNES ROMs from /snes on a FAT32 microSD card.\n"
@@ -320,7 +324,6 @@ const Entry kEntries[] = {
      "buttons - a real SNES game usually wants them, so 3x GAMEPAD and a USB\n"
      "controller is the better way to play. Hold SELECT and START to come\n"
      "back."},
-#endif
 
     // Appended, not slotted in beside the puzzles: the saved menu order and
     // the hidden mask are keyed by entry index, so inserting above anything
@@ -1196,6 +1199,19 @@ void launch(GameId id) {
 
 void begin(std::vector<Pack> *packs, const content::LoadReport &report) {
   settings_store::loadMenu(&g_menu, (uint8_t)kEntryCount);
+  // Doom and the SNES do not fit in internal memory together, so a build has
+  // one or the other (platformio.ini). The one it lacks leaves the menu here
+  // rather than the table, which keeps every other entry's index what it was.
+  {
+    uint8_t kept = 0;
+    for (uint8_t i = 0; i < g_menu.count; i++) {
+      const GameId id = kEntries[g_menu.order[i]].game;
+      if (id == GameId::Snes && !snes_ui::available()) continue;
+      if (id == GameId::Doom && !doom_ui::available()) continue;
+      g_menu.order[kept++] = g_menu.order[i];
+    }
+    g_menu.count = kept;
+  }
   settings_store::load(&g_console);
   g_packs = packs;
   g_report = report;

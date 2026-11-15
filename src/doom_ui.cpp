@@ -1,5 +1,25 @@
 #include "doom_ui.h"
 
+#if !defined(HAVE_DOOM)
+
+// Built without the engine: the tab5 environment leaves Doom out so that the
+// SNES has the internal memory it needs. Everything else builds and behaves
+// exactly as it would have. See platformio.ini.
+namespace tabulous {
+namespace doom_ui {
+bool available() { return false; }
+void begin() {}
+void rescan() {}
+void invalidate() {}
+void tick(uint32_t) {}
+void handleTap(int, int, uint32_t) {}
+bool playing() { return false; }
+void injectPad(uint8_t, uint32_t) {}
+}  // namespace doom_ui
+}  // namespace tabulous
+
+#else
+
 #include <LittleFS.h>
 #include <M5Unified.h>
 #include <esp_system.h>
@@ -490,6 +510,8 @@ void runFrame(uint32_t now_ms) {
 
 }  // namespace
 
+bool available() { return true; }
+
 void begin() {
   g_mode = Mode::Picking;
   g_pwad_iwad.clear();
@@ -700,3 +722,5 @@ int dg_putchar(int c) {
 }
 
 }  // extern "C"
+
+#endif  // HAVE_DOOM

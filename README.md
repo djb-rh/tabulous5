@@ -67,8 +67,10 @@ for esptool or any other flasher.
 
 The web install puts the firmware on and nothing else: the word packs and
 sounds it keeps on its own flash are set up on first boot, and the emulators
-read from the card. `tools/release.sh <version>` builds the image and the
-installer into `dist/` and `site/`; `tools/publish_site.sh <version>` pushes
+read from the card. There are two images, standard (everything except Doom)
+and Doom (everything except the SNES): see Environments below for why.
+`tools/release.sh <version>` builds both and the installer into `dist/` and
+`site/`; `tools/publish_site.sh <version>` pushes
 `site/` as the `gh-pages` branch that GitHub Pages serves.
 
 ## Build
@@ -95,8 +97,27 @@ Then:
 
 | env | what it is |
 |---|---|
-| `spike` | Phase 0 hardware smoke test. The default; flash this first. |
+| `tab5` | The console: everything except Doom. The default. |
+| `tab5-doom` | The console with Doom and without the SNES. |
+| `spike` | Phase 0 hardware smoke test. |
 | `native` | Host build of the pure logic, for `pio test`. No hardware needed. |
+
+**Why two console builds.** Doom and the SNES do not fit in the P4's internal
+memory together. Flash is 15% used and the 32 MB of external RAM is nearly
+empty; the short supply is internal RAM, about 215 KB of heap at boot. Doom's
+engine keeps 37 KB of it in some 900 small statics whether or not Doom is
+running, the SNES core keeps 69 KB, and a SNES game wants 128 KB more for its
+work RAM. With both linked in a SNES game was left 3 KB of internal memory,
+and Super Mario World fell from 60 frames a second to 18 as soon as anything
+was happening. With Doom left out it holds 60. The launcher's table is the
+same in both builds, so a console moved from one to the other keeps its menu
+order; the entry it cannot run is simply not shown.
+
+The NES and the Game Boy had the same squeeze from the other side: with the
+SNES's 128 KB reservation held and the USB host stack running, a NES game
+stopped at "out of memory for audio" and the Game Boy ran at 8 frames a
+second. They now borrow that reservation for the length of a game and hand
+it back on the way out, as the arcade board and Doom do.
 
 The game's own device environment gets added once the UI exists; the rules and
 content code it will use are already in `src/` and covered by `test/test_game`.
@@ -266,6 +287,22 @@ Any generic HID pad should work — the console reads the pad's own report
 descriptor rather than matching vendor IDs. The GP100's SNES layout is mapped
 out of the box (X and Y double as A and B); **Gamepad Test → MAP PAD** teaches
 any other pad in four presses.
+
+**A built-in pad.** Twelve of the M5-Bus header's pins are free, and an SNES
+pad has twelve buttons: each can be a plain switch from a pin to ground (G2
+G3 G4 G6 G7 G16 G17 G45 G47 G48 G51 G52, with the P4's own pull-ups). The
+A printed gamepad housing for the Tab5 is built that way. Which
+button is on which pin is taught rather than fixed: **Gamepad Test → WIRE
+PAD** asks for each button in turn and records the line that moved; SKIP
+passes over one that does nothing, and the rest still work. The twelve lamps
+along the top of that screen show the raw lines at all times, so a wire
+shorted to ground (lit with nothing pressed) or not making contact (never
+lit) can be seen. A console with nothing on its header reads twelve idle
+lines and is unchanged.
+
+Once the console has a pad of its own that pad is player one, and a USB pad
+becomes **player two** on the NES and the SNES. Everywhere else, and on a
+console without a built-in pad, a USB pad is player one as before.
 
 Why it is fast: the core emits RGB565 scanlines into internal RAM and the
 P4's Pixel Processing Accelerator scales and rotates them straight into the

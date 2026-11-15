@@ -18,6 +18,9 @@ namespace doom_ui {
 
 constexpr const char *kFavouritesFile = "/doom_favs.txt";
 
+// False when this firmware was built without the engine (see platformio.ini:
+// Doom and the SNES do not fit in internal memory together).
+bool available();
 void begin();
 void rescan();
 void invalidate();
