@@ -28,6 +28,7 @@ enum class Glyph : uint8_t {
   Snes,    // the one with the slot on top
   TicTacToe,  // Joshua -- a won board, X down the diagonal
   Doom,       // the one-eyed floating one
+  Quake,      // the ring with a nail through it
 };
 
 // Draws into a square of `size` at (x, y). `ink` is the mark, `ground` is the

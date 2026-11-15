@@ -15,6 +15,7 @@ its 1280x720 touch panel.
 | **Solitaire** | Klondike, draw one or three, with undo and an auto-play button. |
 | **Joshua** | Tic-tac-toe on WOPR's terminal. Zero, one or two players; the computer never loses. |
 | **Doom** | The 1993 engine, from your own WAD on the card, on the touch pad or a USB gamepad. |
+| **Quake** | The 1996 engine, from your own pak files, with sound, in a build of its own. |
 | **NES** | Cartridges from a microSD card, with sound, on the touch screen or a USB gamepad. |
 
 Word lists are plain text files you edit from a browser over Wi-Fi. Sounds are
@@ -99,11 +100,15 @@ Then:
 |---|---|
 | `tab5` | The console: everything except Doom. The default. |
 | `tab5-doom` | The console with Doom and without the SNES. |
+| `tab5-quake` | The console with Quake, and without Doom or the SNES. |
 | `spike` | Phase 0 hardware smoke test. |
 | `native` | Host build of the pure logic, for `pio test`. No hardware needed. |
 
-**Why two console builds.** Doom and the SNES do not fit in the P4's internal
-memory together. Flash is 15% used and the 32 MB of external RAM is nearly
+**Why the big engines each get a build.** Doom and the SNES do not fit in the
+P4's internal memory together, and Quake cannot share an image with Doom at
+all: the two id engines use the same function names (`R_Init`, `M_Init`,
+`R_SetupFrame` and dozens more) and will not link into one program without
+renaming one of them wholesale. Flash is 15% used and the 32 MB of external RAM is nearly
 empty; the short supply is internal RAM, about 215 KB of heap at boot. Doom's
 engine keeps 37 KB of it in some 900 small statics whether or not Doom is
 running, the SNES core keeps 69 KB, and a SNES game wants 128 KB more for its
@@ -315,6 +320,36 @@ anything else is listed with the reason it will not run. The card stays in
 whatever layout you give it — one open in a folder of thousands of files costs
 ~110 ms on the 4-bit bus, which is fine for a pick and would not be for a
 scan, so the scan uses `readdir` and reads no file headers until you pick.
+
+## Quake
+
+Menu → **Quake**, in the `tab5-quake` build. Put the game's pak files in
+`/quake/id1` on the card: `pak0.pak` is the shareware episode, and `pak1.pak`
+beside it adds the other three. No game data is shipped.
+
+**GAMEPAD** fills the height (960x700) and expects the built-in pad or a USB
+one; **TOUCH PAD** plays at 500x375 with the pad on the screen. The D-pad
+walks and turns, B fires, A jumps (and chooses, in the menus), L and R step
+sideways, X or SELECT changes weapon, Y runs, START opens the game's own
+menu, which is where saving and loading are. Holding SELECT and START
+together comes back to the console; the game waits where it was, and its
+options are written to `config.cfg` on the way out. Saves and that file go
+in `/quake/id1`.
+
+The engine is [quakegeneric](third_party/quakegeneric/), id's source behind a
+seven-function seam, by way of Espressif's ESP32-P4 port; the seam is
+`src/quake_ui.cpp`, and what had to change in the engine to build here is in
+[third_party/quakegeneric/CHANGES.md](third_party/quakegeneric/CHANGES.md).
+It draws at the game's own 320x200, stretched to 4:3 by the scaler. Quake's
+`timedemo demo1` on the shareware pak, with sound, runs at **33.9 frames a
+second**; the first build that ran at all managed 27.8. What made the
+difference, in order: the engine at `-O3`, the frame converted to the panel's
+colours and handed to the scaler on the other core while the next one is
+drawn, and the native resolution. Where the depth buffer lives made almost
+none, which says the limit is the CPU and not the external RAM.
+
+The engine's console takes a line from the serial port (`Qtimedemo demo1`,
+`Qmap e1m1`), which is how those numbers were taken.
 
 ## Doom
 

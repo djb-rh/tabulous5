@@ -30,10 +30,10 @@ computer, and that press is a restart.</li>
 <li>Pick an image below, click its button and choose the Tab5's port (it is usually called
 <b>USB JTAG/serial debug unit</b>).</li>
 </ol>
-<p>There are two images because Doom and the SNES emulator do not fit in the Tab5's fast memory together: with
-both in, SNES games ran at a third of their speed. Everything else is in both, and one can be installed over the
-other at any time.</p>
-<p><b>Standard</b>: everything except Doom.</p>
+<p>There are three images because the big engines do not fit in one: Doom and the SNES emulator together leave
+SNES games a third of their speed, and Quake cannot share a program with Doom at all. Everything else is in all
+three, and one can be installed over another at any time.</p>
+<p><b>Standard</b>: everything except Doom and Quake.</p>
 <esp-web-install-button manifest="manifest.json">
 <button slot="activate" class="install">Install Tabulous5 @VER@</button>
 <span slot="unsupported"><b>This browser cannot flash devices.</b> Use Chrome or Edge on a desktop computer.</span>
@@ -45,6 +45,12 @@ other at any time.</p>
 <span slot="unsupported"></span>
 <span slot="not-allowed"></span>
 </esp-web-install-button>
+<p><b>Quake</b>: Quake, without the SNES or Doom.</p>
+<esp-web-install-button manifest="manifest-quake.json">
+<button slot="activate" class="install">Install Tabulous5 @VER@ with Quake</button>
+<span slot="unsupported"></span>
+<span slot="not-allowed"></span>
+</esp-web-install-button>
 <p>If no port shows up or the install fails: hold the Tab5's power button until the screen goes dark to put it in
 download mode, then try again. Installing replaces whatever firmware the Tab5 had; the word packs, sounds and
 settings it keeps on its own flash are set up fresh on first boot.</p>
@@ -53,7 +59,7 @@ settings it keeps on its own flash are set up fresh on first boot.</p>
 <h2>2. Games from a card</h2>
 <div class="box"><ol>
 <li>The party and puzzle games need nothing more. The emulators and Doom read from a <b>FAT32</b> microSD card:
-folders <code>/nes</code>, <code>/gb</code>, <code>/arcade</code>, <code>/snes</code> and <code>/doom</code>, with your own
+folders <code>/nes</code>, <code>/gb</code>, <code>/arcade</code>, <code>/snes</code>, <code>/doom</code> and <code>/quake/id1</code>, with your own
 files in them. Nothing of that kind is shipped.</li>
 <li>Word packs and sounds can be edited from a browser: <b>SETTINGS → EDIT CONTENT OVER WI-FI</b>, once
 the network is named in the firmware's <code>secrets.h</code> or by joining the console's own hotspot.</li>

@@ -368,7 +368,7 @@ const Entry kEntries[] = {
      "it was. Its saves and settings file go in /doom on the card."},
 
     {"Quake", "The 1996 one. Bring your own pak files.", 0x6B4A2B,
-     glyphs::Glyph::Doom, GameId::Quake,
+     glyphs::Glyph::Quake, GameId::Quake,
      "Runs Quake from its pak files in /quake/id1 on a FAT32 microSD card:\n"
      "pak0.pak is the shareware episode, and pak1.pak beside it adds the\n"
      "other three. No game data is shipped with this device.\n"

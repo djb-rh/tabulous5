@@ -36,6 +36,7 @@ extern "C" {
 #include "../third_party/quakegeneric/source/qg_extram.h"
 #include "../third_party/quakegeneric/source/quakegeneric.h"
 void Cbuf_AddText(char *text);   // the engine's command buffer
+void Host_WriteConfiguration(void);   // config.cfg: bindings and options
 void QG_AudioPump(void);         // snd_tabulous.c: hands the speaker what it has room for
 unsigned QG_AudioBlocks(void);
 int QG_AudioPeak(void);
@@ -274,9 +275,10 @@ bool startVideo() {
   // worth far more to the engine's depth and frame buffers.
   emu_video::framesInExternalRam(true);
   // 320x200 on a 4:3 screen: three across and three and a half down for the
-  // full height (960x700), two and 2.375 with the pad on the screen (640x475).
-  // The scaler's factors are sixteenths, and these land on whole pixels.
-  const float sx = g_size >= 3 ? 3.0f : 2.0f, sy = g_size >= 3 ? 3.5f : 2.375f;
+  // full height (960x700); with the pad on the screen, 500x375, which is what
+  // fits between the D-pad and the buttons. The scaler's factors are
+  // sixteenths, and these land on whole pixels.
+  const float sx = g_size >= 3 ? 3.0f : 1.5625f, sy = g_size >= 3 ? 3.5f : 1.875f;
   if (!joypad_ui::beginPlay(false, QUAKEGENERIC_RES_X, QUAKEGENERIC_RES_Y, sx, sy)) {
     snprintf(g_error, sizeof(g_error), "no room for the picture");
     return false;
@@ -293,6 +295,9 @@ bool startVideo() {
 void leavePlay() {
   setKeys(0);  // every key up, or the game keeps walking while it waits
   painterIdle();   // before the picture's buffers go
+  // The engine writes its options out when it quits, and this one is never
+  // quit, only left; so they are written on the way out of the picture.
+  if (g_engine == Engine::Running) Host_WriteConfiguration();
   joypad_ui::endPlay();
   emu_video::framesInExternalRam(false);
   M5.Speaker.stop();
@@ -471,7 +476,7 @@ void drawPicking() {
     uikit::drawButton(full, "PLAY  -  GAMEPAD", kGood, kOnFill, &fonts::FreeSansBold18pt7b);
     uikit::addTarget(touch, kActTouch);
     uikit::addTarget(full, kActFull);
-    uikit::drawLabel("640 x 475 with the pad on the screen", touch.x + touch.w / 2, touch.y + touch.h + 26,
+    uikit::drawLabel("500 x 375 with the pad on the screen", touch.x + touch.w / 2, touch.y + touch.h + 26,
                      kMuted, &fonts::FreeSans9pt7b, middle_center);
     uikit::drawLabel("960 x 700, for the built-in pad or a USB one", full.x + full.w / 2, full.y + full.h + 26,
                      kMuted, &fonts::FreeSans9pt7b, middle_center);

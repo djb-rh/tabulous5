@@ -209,6 +209,19 @@ void doom(const Box &b, uint16_t ink, uint16_t ground) {
   }
 }
 
+// The game's own mark: a broken ring with a nail driven down through it.
+void quake(const Box &b, uint16_t ink, uint16_t ground) {
+  auto &g = uikit::gfx();
+  g.fillCircle(b.px(36), b.py(31), b.f(27), ink);
+  g.fillCircle(b.px(36), b.py(31), b.f(18), ground);
+  // The gap at the top that makes it a Q rather than an O.
+  g.fillRect(b.px(31), b.py(2), b.f(10), b.f(12), ground);
+  // The nail: a flat head inside the ring, a shaft that tapers to a point
+  // well below it.
+  g.fillRect(b.px(27), b.py(20), b.f(18), b.f(6), ink);
+  g.fillTriangle(b.px(31), b.py(26), b.px(41), b.py(26), b.px(36), b.py(70), ink);
+}
+
 }  // namespace
 
 void draw(Glyph glyph, int x, int y, int size, uint16_t ink, uint16_t ground) {
@@ -225,6 +238,7 @@ void draw(Glyph glyph, int x, int y, int size, uint16_t ink, uint16_t ground) {
     case Glyph::Snes: snes(b, ink, ground); break;
     case Glyph::TicTacToe: tictactoe(b, ink, ground); break;
     case Glyph::Doom: doom(b, ink, ground); break;
+    case Glyph::Quake: quake(b, ink, ground); break;
     case Glyph::None: break;
   }
 }
