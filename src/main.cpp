@@ -473,6 +473,15 @@ void loop() {
         pacman_ui::injectPad(bits, frames);
       }
     }
+    // "J<hex>,<frames>": the same for the arcade's second player.
+    if (cmd == 'J') {
+      const String arg = Serial.readStringUntil('\n');
+      const int comma = arg.indexOf(',');
+      if (comma > 0) {
+        pacman_ui::injectPad2((uint8_t)strtol(arg.substring(0, comma).c_str(), nullptr, 16),
+                              (uint32_t)arg.substring(comma + 1).toInt());
+      }
+    }
     // "Q<line>": a line for Quake's own console, e.g. Qtimedemo demo1.
     if (cmd == 'Q') {
       String arg = Serial.readStringUntil('\n');

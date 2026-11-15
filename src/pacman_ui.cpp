@@ -112,6 +112,11 @@ constexpr Dip kDips[] = {
     {"Ghost names", 0x80, 7, 2, {"Alternate", "Normal", "", ""}},
 };
 constexpr int kDipCount = (int)(sizeof(kDips) / sizeof(kDips[0]));
+// One more row on that panel, which on the board is a strap and not a switch:
+// which cabinet it is in. It reaches the game as the top bit of the second
+// input port, low for a cocktail table.
+constexpr int kCabinetAction = 300;
+constexpr uint8_t kIn1Cocktail = 0x80;
 Mode g_mode = Mode::Picking;
 bool g_dirty = true;
 
@@ -121,6 +126,7 @@ padmap::Map g_padmap;
 // three had. See fourway.h: without it, turning a corner means letting go of
 // the old direction before pressing the new one, exactly, every time.
 fourway::Gate g_gate(joypad::kUp, joypad::kDown, joypad::kLeft, joypad::kRight);
+fourway::Gate g_gate2(joypad::kUp, joypad::kDown, joypad::kLeft, joypad::kRight);   // the far side's stick
 bool g_eight_way = false;
 // Whether this cabinet's control panel leaves the gamepad's face buttons with
 // nothing to do. When it does, they become a second stick -- see padmap.h.
@@ -129,6 +135,9 @@ bool g_buttons_as_stick = false;
 bool g_start_fires = false;
 uint8_t g_inject_pad = 0;
 uint32_t g_inject_frames = 0;
+uint8_t g_inject_pad2 = 0;
+uint32_t g_inject_frames2 = 0;
+uint8_t g_pad2 = 0;   // the second player's, on a cocktail table
 int g_quit_hold = 0;
 float g_scale = 2.0f;
 bool g_portrait = true;
@@ -535,24 +544,25 @@ void drawDips() {
                    middle_left);
   // ASCII only: these fonts have no dash of any width, and anything else
   // comes out as an empty box.
-  uikit::drawLabel("as on the board. Read when a game starts.", kMargin, 84, kMuted,
-                   &fonts::FreeSans12pt7b, middle_left);
+  uikit::drawLabel("as on the board. Read when a game starts. Cocktail: the USB pad is player two's stick.",
+                   kMargin, 84, kMuted, &fonts::FreeSans12pt7b, middle_left);
 
   const Rect done{kW - kMargin - 190, 18, 190, 62};
   uikit::drawButton(done, "DONE", kGood, kOnFill, &fonts::FreeSansBold12pt7b);
   uikit::addTarget(done, 100, 0);
 
-  const int row_h = 92, gap = 10, top = 118;
-  for (int i = 0; i < kDipCount; i++) {
-    const Dip &d = kDips[i];
+  const int row_h = 80, gap = 8, top = 112;
+  for (int i = 0; i <= kDipCount; i++) {
+    const bool cabinet = i == kDipCount;
     const Rect row{kMargin, top + i * (row_h + gap), kW - 2 * kMargin, row_h};
     uikit::fillRoundRectFast(row.x, row.y, row.w, row.h, 12, kSurfaceLift);
-    uikit::drawLabel(d.name, row.x + 28, row.y + row_h / 2, kText,
+    uikit::drawLabel(cabinet ? "Cabinet" : kDips[i].name, row.x + 28, row.y + row_h / 2, kText,
                      &fonts::FreeSansBold18pt7b, middle_left);
-    const int v = (g_settings.dsw1 & d.mask) >> d.shift;
-    uikit::drawLabel(d.values[v], row.x + row.w - 32, row.y + row_h / 2, kAccent,
+    const char *value = cabinet ? (g_settings.cocktail ? "Cocktail table" : "Upright")
+                                : kDips[i].values[(g_settings.dsw1 & kDips[i].mask) >> kDips[i].shift];
+    uikit::drawLabel(value, row.x + row.w - 32, row.y + row_h / 2, kAccent,
                      &fonts::FreeSansBold18pt7b, middle_right);
-    uikit::addTarget(row, 200 + i, 0);
+    uikit::addTarget(row, cabinet ? kCabinetAction : 200 + i, 0);
   }
 }
 
@@ -593,13 +603,33 @@ uint32_t toCabinet(uint8_t pad) {
   return m;
 }
 
+// The stick on the far side of a cocktail table. That side has nothing else:
+// the coin door and both start buttons are shared. A pad has them anyway, so
+// its SELECT is a coin and its START and A are the two-player start.
+uint32_t toFarSide(uint8_t pad) {
+  uint32_t m = 0;
+  if (pad & joypad::kUp) m |= NAMCO_INPUT_P2_UP;
+  if (pad & joypad::kDown) m |= NAMCO_INPUT_P2_DOWN;
+  if (pad & joypad::kLeft) m |= NAMCO_INPUT_P2_LEFT;
+  if (pad & joypad::kRight) m |= NAMCO_INPUT_P2_RIGHT;
+  if (pad & joypad::kSelect) m |= NAMCO_INPUT_P1_COIN;
+  if (pad & (joypad::kStart | joypad::kA)) m |= NAMCO_INPUT_P2_START;
+  return m;
+}
+
 void runFrame(uint32_t now_ms) {
   bool menu_held = false;
   g_pad = joypad_ui::pollPad(&menu_held);
   if (g_settings.scale == 5) g_pad = 0;
+  g_pad2 = 0;
   {
     const usbpad::State u = usbpad::state();
-    if (u.connected) {
+    // On a cocktail table the USB pad is the far side's stick, once the
+    // console has a pad of its own for the near side. Otherwise it is the one
+    // stick there is, as it always was.
+    if (u.connected && g_settings.cocktail && buspad::wired()) {
+      g_pad2 = padmap::toNes(u.down, u.x, u.y, g_padmap);
+    } else if (u.connected) {
       const uint8_t from_pad = padmap::toNes(u.down, u.x, u.y, g_padmap);
       if (g_buttons_as_stick) {
         // They are the stick now, and only that: A is the cabinet's second
@@ -625,6 +655,10 @@ void runFrame(uint32_t now_ms) {
     g_pad |= g_inject_pad;
     g_inject_frames--;
   }
+  if (g_inject_frames2) {
+    g_pad2 |= g_inject_pad2;
+    g_inject_frames2--;
+  }
   if ((g_pad & (joypad::kSelect | joypad::kStart)) == (joypad::kSelect | joypad::kStart)) {
     if (++g_quit_hold >= 40) menu_held = true;
   } else {
@@ -642,9 +676,13 @@ void runFrame(uint32_t now_ms) {
   // Through the plate first, so the board sees what a four-way stick could
   // actually have sent it.
   if (!g_eight_way) g_pad = g_gate.filter(g_pad);
-  const uint32_t wanted = toCabinet(g_pad);
+  if (!g_eight_way) g_pad2 = g_gate2.filter(g_pad2);
+  const uint32_t wanted = toCabinet(g_pad) | toFarSide(g_pad2);
   namco_input_set(g_sys, wanted);
   namco_input_clear(g_sys, ~wanted & 0x3FFF);
+  // The cabinet strap, which the input calls above leave alone.
+  if (g_settings.cocktail) g_sys->in1 |= kIn1Cocktail;
+  else g_sys->in1 &= (uint8_t)~kIn1Cocktail;
 
   // One frame of machine time per pass. The machine runs while the frame
   // before is still being painted, and only draws its own picture once the
@@ -779,6 +817,12 @@ void handleTap(int x, int y, uint32_t) {
       rom_browser::invalidate();
       return;
     }
+    if (action == kCabinetAction) {
+      audio::select();
+      g_settings.cocktail = !g_settings.cocktail;
+      g_dirty = true;
+      return;
+    }
     const int i = action - 200;
     if (i >= 0 && i < kDipCount) {
       audio::select();
@@ -834,6 +878,11 @@ void onBrowser(rom_browser::Result r, int index) {
   }
 }
 }  // namespace
+
+void injectPad2(uint8_t buttons, uint32_t frames) {
+  g_inject_pad2 = buttons;
+  g_inject_frames2 = frames;
+}
 
 void injectPad(uint8_t buttons, uint32_t frames) {
   g_inject_pad = buttons;

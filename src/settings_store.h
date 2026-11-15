@@ -94,6 +94,11 @@ struct ArcadeSettings {
   // them. 0xD9 is how a Pac-Man left the factory: one coin a game, three
   // lives, a bonus at 15,000, normal difficulty and the usual ghost names.
   uint8_t dsw1 = 0xD9;
+  // The cabinet strap, which is not one of the eight switches: upright, or a
+  // cocktail table with a second stick on its far side. The board tells the
+  // game which it is in, and a game that cares reads player two from that
+  // second stick.
+  bool cocktail = false;
 };
 void loadArcade(ArcadeSettings *out);
 void saveArcade(const ArcadeSettings &settings);

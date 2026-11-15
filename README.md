@@ -306,8 +306,9 @@ lit) can be seen. A console with nothing on its header reads twelve idle
 lines and is unchanged.
 
 Once the console has a pad of its own that pad is player one, and a USB pad
-becomes **player two** on the NES and the SNES. Everywhere else, and on a
-console without a built-in pad, a USB pad is player one as before.
+becomes **player two** on the NES and the SNES, and in the arcade when the
+cabinet is set to a cocktail table. Everywhere else, and on a console
+without a built-in pad, a USB pad is player one as before.
 
 Why it is fast: the core emits RGB565 scanlines into internal RAM and the
 P4's Pixel Processing Accelerator scales and rotates them straight into the
@@ -533,6 +534,20 @@ first start button; neither is a DIP switch on any of these boards, which is
 the only speed-up any of the Ms. Pac-Man sets here has. Verified by running
 the same scripted game twice, with the button held and not, and diffing the
 frame: it changes play in Ms. Pac-Man Plus and nowhere else.
+
+**Two sticks.** The **DIPS** panel has a sixth row that is not a DIP switch
+on the board but a strap: **Cabinet**, upright or cocktail table. A cocktail
+table has a second stick on its far side, and the board tells the game which
+cabinet it is in. Set to cocktail, on a console with a pad of its own, a USB
+pad is that second stick (its SELECT is a coin, its START and A the
+two-player start), and the built-in pad is the near side. Most games use it
+only to give the second player a stick of their own on their turn; the board
+would also turn the picture over for them, which this does not do, so both
+players read it the same way up. A game written for two at once is the
+reason to set it: Pac-Tetris's versus mode needs a credit each and the
+two-player start, and draws the second player's well upside down, for
+someone sitting opposite. Without a second pad leave it on upright, or the
+second player in an ordinary two-player game has no stick.
 
 Note that the board runs a power-on self test for about nine seconds before it
 starts reading its inputs, so a coin dropped in the first few seconds is

@@ -24,6 +24,7 @@ bool playing();
 // NES-style buttons for a number of frames, from the serial port: the way a
 // host drives a game it cannot touch.
 void injectPad(uint8_t buttons, uint32_t frames);
+void injectPad2(uint8_t buttons, uint32_t frames);   // the second player's stick, on a cocktail table
 
 }  // namespace pacman_ui
 }  // namespace tabulous

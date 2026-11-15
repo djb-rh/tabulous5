@@ -329,6 +329,7 @@ void loadArcade(ArcadeSettings *out) {
   const uint8_t scale = g_prefs.getUChar("arc_scale", out->scale);
   out->portrait = g_prefs.getBool("arc_portrait", out->portrait);
   out->dsw1 = g_prefs.getUChar("arc_dsw1", out->dsw1);
+  out->cocktail = g_prefs.getBool("arc_cocktail", out->cocktail);
   g_prefs.end();
   if (scale == 2 || scale == 5) out->scale = scale;
 }
@@ -338,6 +339,7 @@ void saveArcade(const ArcadeSettings &settings) {
   g_prefs.putUChar("arc_scale", settings.scale);
   g_prefs.putBool("arc_portrait", settings.portrait);
   g_prefs.putUChar("arc_dsw1", settings.dsw1);
+  g_prefs.putBool("arc_cocktail", settings.cocktail);
   g_prefs.end();
 }
 
