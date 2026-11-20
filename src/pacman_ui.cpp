@@ -439,6 +439,11 @@ bool load(int index) {
       rom_browser::setError("out of memory for the Ms. Pac-Man board");
       return false;
     }
+    // The kit answers over all of 0x8000-0xBFFF and its program is shorter than
+    // that: what is left over has to read the same every time, not as whatever
+    // the heap last held (found on the launcher port, where it held another
+    // game's thread stacks and the machine ran at a twelfth of its speed).
+    memset(g_alt_rom, 0, arcrom::kCpuBytes + arcrom::kMaxCpuHighBanks * arcrom::kCpuHighBank);
     memcpy(g_alt_rom, rom + info.alt_cpu, alt_bytes);
     board.rom_alt_low = g_alt_rom;
     board.rom_alt_high = g_alt_rom + arcrom::kCpuBytes;

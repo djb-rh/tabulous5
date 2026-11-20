@@ -1,0 +1,76 @@
+diff --git a/boards/m5stack_tab5/board/board.c b/boards/m5stack_tab5/board/board.c
+index 21bdf92..1a66c47 100644
+--- a/boards/m5stack_tab5/board/board.c
++++ b/boards/m5stack_tab5/board/board.c
+@@ -144,6 +144,63 @@ const bsp_info_t *bsp_info(void)
+     return &s_info;
+ }
+ 
++/* TRIAL ONLY (p4-launcher-test): the test Tab5's SD card is dead, so when no card mounts a RAM disk in PSRAM
++ * stands in for it at the same path. It is empty at every boot. Not for upstream. */
++#include "diskio_impl.h"
++#include "ff.h"
++#include "esp_heap_caps.h"
++#define TRIAL_RD_BYTES   (12u * 1024 * 1024)
++#define TRIAL_RD_SS      512u
++static uint8_t *s_rd;
++static DSTATUS trial_rd_init(BYTE p) { (void)p; return 0; }
++static DSTATUS trial_rd_status(BYTE p) { (void)p; return 0; }
++static DRESULT trial_rd_read(BYTE p, BYTE *buf, LBA_t sector, UINT count)
++{
++    (void)p;
++    if ((uint64_t)(sector + count) * TRIAL_RD_SS > TRIAL_RD_BYTES) return RES_PARERR;
++    memcpy(buf, s_rd + (size_t)sector * TRIAL_RD_SS, (size_t)count * TRIAL_RD_SS);
++    return RES_OK;
++}
++static DRESULT trial_rd_write(BYTE p, const BYTE *buf, LBA_t sector, UINT count)
++{
++    (void)p;
++    if ((uint64_t)(sector + count) * TRIAL_RD_SS > TRIAL_RD_BYTES) return RES_PARERR;
++    memcpy(s_rd + (size_t)sector * TRIAL_RD_SS, buf, (size_t)count * TRIAL_RD_SS);
++    return RES_OK;
++}
++static DRESULT trial_rd_ioctl(BYTE p, BYTE cmd, void *buff)
++{
++    (void)p;
++    switch (cmd) {
++    case CTRL_SYNC: return RES_OK;
++    case GET_SECTOR_COUNT: *(LBA_t *)buff = TRIAL_RD_BYTES / TRIAL_RD_SS; return RES_OK;
++    case GET_SECTOR_SIZE: *(WORD *)buff = TRIAL_RD_SS; return RES_OK;
++    case GET_BLOCK_SIZE: *(DWORD *)buff = 1; return RES_OK;
++    }
++    return RES_PARERR;
++}
++static esp_err_t trial_ramdisk_mount(const char *mount_point)
++{
++    static const ff_diskio_impl_t impl = { .init = trial_rd_init, .status = trial_rd_status, .read = trial_rd_read,
++                                           .write = trial_rd_write, .ioctl = trial_rd_ioctl };
++    if (!s_rd) s_rd = heap_caps_calloc(1, TRIAL_RD_BYTES, MALLOC_CAP_SPIRAM);
++    if (!s_rd) return ESP_ERR_NO_MEM;
++    BYTE pdrv = 0xFF;
++    if (ff_diskio_get_drive(&pdrv) != ESP_OK) return ESP_FAIL;
++    ff_diskio_register(pdrv, &impl);
++    char drv[3] = { (char)('0' + pdrv), ':', 0 };
++    FATFS *fs = NULL;
++    esp_vfs_fat_conf_t conf = { .base_path = mount_point, .fat_drive = drv, .max_files = 16 };
++    esp_err_t err = esp_vfs_fat_register_cfg(&conf, &fs);
++    if (err != ESP_OK) return err;
++    static BYTE work[4096];
++    const MKFS_PARM opt = { (BYTE)(FM_ANY | FM_SFD), 0, 0, 0, 0 };
++    FRESULT fr = f_mkfs(drv, &opt, work, sizeof(work));
++    if (fr == FR_OK) fr = f_mount(fs, drv, 1);
++    ESP_LOGW(TAG, "TRIAL: no SD card, RAM disk of %u MB at %s on drive %s: mkfs+mount result %d", (unsigned)(TRIAL_RD_BYTES >> 20), mount_point, drv, (int)fr);
++    return fr == FR_OK ? ESP_OK : ESP_FAIL;
++}
++
+ esp_err_t bsp_sdcard_mount(const char *mount_point)
+ {
+     if (s_sd_mounted) return ESP_OK;
+@@ -198,6 +255,7 @@ esp_err_t bsp_sdcard_mount(const char *mount_point)
+         vTaskDelay(pdMS_TO_TICKS(200));
+     }
+     if (pwr) sd_pwr_ctrl_del_on_chip_ldo(pwr);     /* free for a later try */
++    if (trial_ramdisk_mount(mount_point) == ESP_OK) { s_sd_mounted = true; board_set_cap(BSP_CAP_SDCARD); return ESP_OK; }   /* TRIAL ONLY */
+     return err;
+ }
+ 

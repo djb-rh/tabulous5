@@ -72,7 +72,11 @@ extern "C" {
 
 #define NAMCO_MAX_AUDIO_SAMPLES (1024)
 #define NAMCO_DEFAULT_AUDIO_SAMPLES (128)
+// Tabulous5: the picture's line length may be set by the build. Drawing is clipped to NAMCO_DISPLAY_WIDTH, so
+// anything from that up will do; at 288 the picture is 64 KB instead of 114 KB.
+#ifndef NAMCO_FRAMEBUFFER_WIDTH
 #define NAMCO_FRAMEBUFFER_WIDTH (512)
+#endif
 #define NAMCO_FRAMEBUFFER_HEIGHT (224)
 #define NAMCO_FRAMEBUFFER_SIZE_BYTES (NAMCO_FRAMEBUFFER_WIDTH * NAMCO_FRAMEBUFFER_HEIGHT)
 #define NAMCO_DISPLAY_WIDTH     (288)
@@ -180,7 +184,14 @@ typedef struct {
     uint8_t rom_prom[0x0420];       // palette and color lookup ROM
     uint32_t hw_colors[32];         // decoded color palette from palette ROM
     uint8_t palette_cache[512];     // palette indirection table, Pacman: 256 entries , Pengo: 512 entries
+#ifdef NAMCO_FB_SEPARATE
+    // Tabulous5: with NAMCO_FB_SEPARATE the picture is the host's to provide, NAMCO_FRAMEBUFFER_SIZE_BYTES of
+    // it, set after namco_init (which clears this struct). The machine is then 62 KB instead of 177 KB, small
+    // enough for a piece of fast internal RAM where 177 KB is not to be had in one piece.
+    uint8_t *fb;
+#else
     alignas(64) uint8_t fb[NAMCO_FRAMEBUFFER_SIZE_BYTES];   // indices into palette
+#endif
 } namco_t;
 
 // initialize a new namco_t instance

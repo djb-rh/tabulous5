@@ -1,0 +1,300 @@
+diff --git a/boards/m5stack_tab5/board/board_buttons.c b/boards/m5stack_tab5/board/board_buttons.c
+index 00bd500..977408c 100644
+--- a/boards/m5stack_tab5/board/board_buttons.c
++++ b/boards/m5stack_tab5/board/board_buttons.c
+@@ -1,17 +1,122 @@
+ /*
+- * No buttons or paddle on this board: input is USB (and touch). The battery is a 2-cell
+- * pack read by an INA226 (0x41); not reported yet, as the launcher expects one Li-ion cell.
++ * Board buttons: the Tab5 gamepad add-on (github.com/djb-rh/tab5-gamepad), found at start. No paddle. The
++ * battery is a 2-cell pack read by an INA226 (0x41); not reported yet, as the launcher expects one Li-ion cell.
++ *
++ * Rev B is looked for first: a PCA9555 at 0x20 on the EXT socket's own I2C lines (G0 SDA, G1 SCL), which
++ * nothing else on the board uses. It is only ever read, never written, and it is taken for the pad only if
++ * its configuration and polarity registers hold what a PCA9555 has after power-on (all inputs, not inverted),
++ * so something else that happens to answer at 0x20 is left alone. Its interrupt line (G50) is not used: the
++ * input task asks every 5 ms anyway, and two bytes at 400 kHz take a fifth of a millisecond.
++ *
++ * Failing that, rev A: twelve lines on the M5-Bus, if the card has a wiring file for them (tab5pad.h).
++ * Without the file no pin is touched.
+  */
+ #include "board_internal.h"
++#include "tab5pad.h"
++
++#include <stdio.h>
++#include "esp_log.h"
++#include "driver/gpio.h"
++#include "driver/i2c_master.h"
++
++static const char *TAG = "bsp_buttons";
++
++#define PAD_I2C_PORT   0            /* the board's own bus is port 1 */
++#define PAD_I2C_SDA    0
++#define PAD_I2C_SCL    1
++#define PAD_ADDR       0x20
++#define PAD_WIRING     "/sd/config/tab5pad.txt"
++
++static enum { PAD_NONE, PAD_REV_B, PAD_REV_A } s_pad;
++static i2c_master_bus_handle_t s_bus;
++static i2c_master_dev_handle_t s_dev;
++static int8_t s_gpio_of[TAB5PAD_BUTTONS];
++static uint32_t s_last;             /* what the pad said last, kept through a read that fails */
++static int s_errors;
++
++static int pad_level(int gpio) { return gpio_get_level((gpio_num_t)gpio); }
++
++static bool pca_read(uint8_t reg, uint8_t *two)
++{
++    return i2c_master_transmit_receive(s_dev, &reg, 1, two, 2, 20) == ESP_OK;
++}
++
++static bool revb_find(void)
++{
++    i2c_master_bus_config_t cfg = {
++        .i2c_port = PAD_I2C_PORT, .sda_io_num = PAD_I2C_SDA, .scl_io_num = PAD_I2C_SCL,
++        .clk_source = I2C_CLK_SRC_DEFAULT, .glitch_ignore_cnt = 7,
++        .flags.enable_internal_pullup = 1,              /* the pad has its own 4.7 k; these keep an empty socket quiet */
++    };
++    if (i2c_new_master_bus(&cfg, &s_bus) != ESP_OK) return false;
++    bool found = false;
++    if (i2c_master_probe(s_bus, PAD_ADDR, 20) == ESP_OK) {
++        i2c_device_config_t dev = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = PAD_ADDR, .scl_speed_hz = 400000 };
++        if (i2c_master_bus_add_device(s_bus, &dev, &s_dev) == ESP_OK) {
++            uint8_t pol[2] = { 0xFF, 0xFF }, dir[2] = { 0, 0 }, in[2];
++            if (pca_read(4, pol) && pca_read(6, dir) && pol[0] == 0 && pol[1] == 0 && dir[0] == 0xFF && dir[1] == 0xFF && pca_read(0, in)) {
++                found = true;
++                s_last = tab5pad_revb_buttons(in[0], in[1]);
++                ESP_LOGI(TAG, "Tab5 gamepad rev B: PCA9555 at 0x%02X on G%d/G%d, inputs %02X %02X", PAD_ADDR, PAD_I2C_SDA, PAD_I2C_SCL, in[0], in[1]);
++            } else {
++                ESP_LOGW(TAG, "0x%02X on the EXT socket answers but is not a fresh PCA9555 (polarity %02X %02X, direction %02X %02X): left alone",
++                         PAD_ADDR, pol[0], pol[1], dir[0], dir[1]);
++                i2c_master_bus_rm_device(s_dev);
++                s_dev = NULL;
++            }
++        }
++    }
++    if (!found) { i2c_del_master_bus(s_bus); s_bus = NULL; }   /* G0 and G1 go back to being nobody's */
++    return found;
++}
++
++static bool reva_find(void)
++{
++    FILE *f = fopen(PAD_WIRING, "r");
++    if (!f) return false;
++    static char text[1024];
++    size_t n = fread(text, 1, sizeof(text) - 1, f);
++    fclose(f);
++    text[n] = 0;
++    int got = tab5pad_parse(text, s_gpio_of);
++    if (got < 0) { ESP_LOGW(TAG, "%s: line %d is not BUTTON=Gnn for one of the pad's twelve lines; no pad", PAD_WIRING, -got); return false; }
++    if (got == 0) return false;
++    uint64_t mask = 0;
++    for (int i = 0; i < TAB5PAD_BUTTONS; i++) if (s_gpio_of[i] != TAB5PAD_NONE) mask |= 1ULL << s_gpio_of[i];
++    gpio_config_t io = { .pin_bit_mask = mask, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE };
++    if (gpio_config(&io) != ESP_OK) return false;
++    char list[128] = ""; size_t len = 0;
++    for (int i = 0; i < TAB5PAD_BUTTONS && len < sizeof(list) - 16; i++)
++        if (s_gpio_of[i] != TAB5PAD_NONE) len += (size_t)snprintf(list + len, sizeof(list) - len, " %s=G%d", tab5pad_name[i], s_gpio_of[i]);
++    ESP_LOGI(TAG, "Tab5 gamepad rev A: %d buttons from %s:%s", got, PAD_WIRING, list);
++    uint32_t held = tab5pad_reva_buttons(s_gpio_of, pad_level);
++    if (held) ESP_LOGW(TAG, "rev A: buttons %05lx read as held at start (a short, or a finger)", (unsigned long)held);
++    return true;
++}
+ 
+ esp_err_t bsp_buttons_init(void)
+ {
+-    return ESP_ERR_NOT_FOUND;
++    if (revb_find()) s_pad = PAD_REV_B;
++    else if (reva_find()) s_pad = PAD_REV_A;
++    else { ESP_LOGI(TAG, "no Tab5 gamepad: nothing at 0x%02X on the EXT socket, no usable %s", PAD_ADDR, PAD_WIRING); return ESP_ERR_NOT_FOUND; }
++    board_set_cap(BSP_CAP_GPIO_PAD | BSP_CAP_PAD_OWN_PLAYER);   /* a console's own pad: a USB pad is the second player */
++    return ESP_OK;
+ }
+ 
+ uint32_t bsp_buttons_read(void)
+ {
+-    return 0;
++    if (s_pad == PAD_REV_A) return tab5pad_reva_buttons(s_gpio_of, pad_level);
++    if (s_pad != PAD_REV_B) return 0;
++    uint8_t in[2];
++    if (pca_read(0, in)) {
++        s_errors = 0;
++        s_last = tab5pad_revb_buttons(in[0], in[1]);
++    } else if (++s_errors >= 10) {                      /* 50 ms of silence: the pad has gone, and nothing is held */
++        if (s_errors == 10) ESP_LOGW(TAG, "rev B: the pad has stopped answering");
++        s_errors = 10 + 1;
++        s_last = 0;
++    }
++    return s_last;
+ }
+ 
+ int bsp_analog_read(int ch)
+diff --git a/boards/m5stack_tab5/board/tab5pad.h b/boards/m5stack_tab5/board/tab5pad.h
+new file mode 100644
+index 0000000..86f1643
+--- /dev/null
++++ b/boards/m5stack_tab5/board/tab5pad.h
+@@ -0,0 +1,101 @@
++/*
++ * The Tab5 gamepad add-on (github.com/djb-rh/tab5-gamepad): what its two board revisions say, turned into the
++ * standard gamepad bits (BSP_BTN_*, the same as PAPP_BTN_*). No hardware in here, so the host tests can
++ * include it: tests/host/test_tab5pad.c.
++ *
++ * Rev B plugs into the EXT socket and has a PCA9555 at 0x20: twelve inputs with the chip's own pull-ups, low
++ * when pressed. Which bit is which button is fixed by the board's routing (the table in that project's README).
++ *
++ * Rev A is a slab wired by hand to the M5-Bus, twelve lines to ground, in whatever order the wires went on.
++ * So its wiring is a text file on the card, one line a button:
++ *     # /sd/config/tab5pad.txt
++ *     UP=G16
++ *     DOWN=G17
++ *     ...
++ * Buttons: UP DOWN LEFT RIGHT A B X Y L R SELECT START. Only the twelve header lines the pad can be wired to
++ * are accepted, so a slip of the finger cannot turn the SD card's or the display's pins into inputs.
++ */
++#pragma once
++
++#include <stdint.h>
++#include <string.h>
++
++#define TAB5PAD_BUTTONS 12
++#define TAB5PAD_BTN(n)  (1u << (n))
++/* the standard layout's bits, as in bsp.h, spelt out so this file stands alone */
++static const uint32_t tab5pad_bit[TAB5PAD_BUTTONS] = {
++    1u << 16, 1u << 17, 1u << 18, 1u << 19,        /* UP DOWN LEFT RIGHT */
++    1u << 0, 1u << 1, 1u << 2, 1u << 3,            /* A B X Y            */
++    1u << 4, 1u << 5, 1u << 8, 1u << 9,            /* L R SELECT START   */
++};
++static const char *const tab5pad_name[TAB5PAD_BUTTONS] = {
++    "UP", "DOWN", "LEFT", "RIGHT", "A", "B", "X", "Y", "L", "R", "SELECT", "START" };
++
++/* Rev B: where each button is on the PCA9555. 0..7 = P00..P07 (input port 0), 8..15 = P10..P17 (port 1). */
++static const uint8_t tab5pad_revb_pin[TAB5PAD_BUTTONS] = {
++    15, 1, 14, 0,                                  /* UP P17, DOWN P01, LEFT P16, RIGHT P00 */
++    9, 6, 8, 7,                                    /* A P11, B P06, X P10, Y P07            */
++    13, 10, 2, 5,                                  /* L P15, R P12, SELECT P02, START P05   */
++};
++/* The two input ports as read, to buttons: a line is low while its button is down. */
++static inline uint32_t tab5pad_revb_buttons(uint8_t port0, uint8_t port1)
++{
++    const uint16_t down = (uint16_t)~((uint16_t)port0 | ((uint16_t)port1 << 8));
++    uint32_t b = 0;
++    for (int i = 0; i < TAB5PAD_BUTTONS; i++)
++        if (down & (1u << tab5pad_revb_pin[i])) b |= tab5pad_bit[i];
++    return b;
++}
++
++/* Rev A: the M5-Bus lines a pad can be wired to (the twelve Tabulous5 reads). */
++static const int8_t tab5pad_reva_gpio[TAB5PAD_BUTTONS] = { 16, 17, 45, 52, 7, 6, 3, 4, 2, 48, 47, 51 };
++#define TAB5PAD_NONE (-1)
++
++/* Reads the wiring file's text into gpio_of[button] (TAB5PAD_NONE where a button has no line). Returns how
++ * many buttons got a line, or -(line number) of the first line it will not take: an unknown button, a GPIO
++ * that is not one of the twelve, or one already given to another button. */
++static inline int tab5pad_parse(const char *text, int8_t gpio_of[TAB5PAD_BUTTONS])
++{
++    for (int i = 0; i < TAB5PAD_BUTTONS; i++) gpio_of[i] = TAB5PAD_NONE;
++    int line = 0, n = 0;
++    while (*text) {
++        line++;
++        const char *end = text;
++        while (*end && *end != '\n') end++;
++        char buf[48];
++        size_t len = 0;
++        for (const char *p = text; p < end && *p != '#' && len < sizeof(buf) - 1; p++)
++            if (*p != ' ' && *p != '\t' && *p != '\r') buf[len++] = (char)((*p >= 'a' && *p <= 'z') ? *p - 32 : *p);
++        buf[len] = 0;
++        text = *end ? end + 1 : end;
++        if (!len) continue;
++        char *eq = strchr(buf, '=');
++        if (!eq || eq == buf || !eq[1]) return -line;
++        *eq = 0;
++        const char *val = eq + 1;
++        if (!strcmp(buf, "L1")) buf[1] = 0;                    /* L1 and R1 are L and R */
++        if (!strcmp(buf, "R1")) buf[1] = 0;
++        int button = -1;
++        for (int i = 0; i < TAB5PAD_BUTTONS; i++) if (!strcmp(buf, tab5pad_name[i])) button = i;
++        if (button < 0) return -line;
++        if (*val == 'G') val++;
++        int gpio = 0, digits = 0;
++        while (*val >= '0' && *val <= '9' && digits < 3) { gpio = gpio * 10 + (*val++ - '0'); digits++; }
++        if (!digits || *val) return -line;
++        int known = 0;
++        for (int i = 0; i < TAB5PAD_BUTTONS; i++) if (tab5pad_reva_gpio[i] == gpio) known = 1;
++        if (!known) return -line;
++        for (int i = 0; i < TAB5PAD_BUTTONS; i++) if (gpio_of[i] == gpio) return -line;
++        if (gpio_of[button] == TAB5PAD_NONE) n++;
++        gpio_of[button] = (int8_t)gpio;
++    }
++    return n;
++}
++/* level_of(gpio) is 0 while that line is held to ground. */
++static inline uint32_t tab5pad_reva_buttons(const int8_t gpio_of[TAB5PAD_BUTTONS], int (*level_of)(int gpio))
++{
++    uint32_t b = 0;
++    for (int i = 0; i < TAB5PAD_BUTTONS; i++)
++        if (gpio_of[i] != TAB5PAD_NONE && level_of(gpio_of[i]) == 0) b |= tab5pad_bit[i];
++    return b;
++}
+diff --git a/components/bsp/include/bsp.h b/components/bsp/include/bsp.h
+index d562c9c..ff53d29 100644
+--- a/components/bsp/include/bsp.h
++++ b/components/bsp/include/bsp.h
+@@ -26,6 +26,7 @@ extern "C" {
+ #define BSP_CAP_USB_HOST  (1u << 6)
+ #define BSP_CAP_BATTERY   (1u << 7)
+ #define BSP_CAP_RTC       (1u << 8)
++#define BSP_CAP_PAD_OWN_PLAYER (1u << 9)  /* with BSP_CAP_GPIO_PAD: the board's pad is player 1's own, USB pads start at player 2 */
+ 
+ typedef struct {
+     const char *id;            /* "guition_p4_43"                       */
+@@ -93,6 +94,7 @@ void      bsp_audio_volume(int percent);          /* 0 = mute
+  * Buttons on the board (or an add-on found at init), decoded into the
+  * standard gamepad layout: the same bits as PAPP_BTN_* in papp_abi.h.
+  * bsp_buttons_init sets BSP_CAP_GPIO_PAD / BSP_CAP_PADDLE for what it finds
++ * (and BSP_CAP_PAD_OWN_PLAYER where a USB pad is a second player's, not another way to hold the first)
+  * and returns ESP_ERR_NOT_FOUND if there is nothing. Reads are cheap enough
+  * to poll every few ms from a task (not from an ISR). */
+ #define BSP_BTN_A        (1u << 0)
+diff --git a/components/lx_input/lx_input.c b/components/lx_input/lx_input.c
+index b0d7ed5..d6962ca 100644
+--- a/components/lx_input/lx_input.c
++++ b/components/lx_input/lx_input.c
+@@ -45,6 +45,7 @@ static papp_input_event_t s_queue[QUEUE_LEN];
+ static uint32_t s_q_head, s_q_tail;
+ static bool s_board;                        /* board buttons merge into player 1 */
+ static uint32_t s_board_buttons;
++static bool s_board_own;                 /* the board's pad keeps player 1 to itself */
+ static int s_paddle = -1;
+ 
+ #define LOCK()   xSemaphoreTake(s_lock, portMAX_DELAY)
+@@ -175,11 +176,12 @@ int lx_input_pad_attach(const char *name, uint16_t vid, uint16_t pid)
+     bool has_map = from != NULL;
+     LOCK();
+     int player = -1;
+-    for (int i = 0; i < PAPP_MAX_PLAYERS && player < 0; i++)    /* back to its own slot */
++    const int first = s_board_own ? 1 : 0;                      /* player 1 may be the board's own pad */
++    for (int i = first; i < PAPP_MAX_PLAYERS && player < 0; i++)    /* back to its own slot */
+         if (!s_pads[i].attached && s_pads[i].last_vid == vid && s_pads[i].last_pid == pid) player = i;
+-    for (int i = 0; i < PAPP_MAX_PLAYERS && player < 0; i++)    /* else a slot nobody left */
++    for (int i = first; i < PAPP_MAX_PLAYERS && player < 0; i++)    /* else a slot nobody left */
+         if (!s_pads[i].attached && !s_pads[i].last_vid) player = i;
+-    for (int i = 0; i < PAPP_MAX_PLAYERS && player < 0; i++)
++    for (int i = first; i < PAPP_MAX_PLAYERS && player < 0; i++)
+         if (!s_pads[i].attached) player = i;
+     if (player >= 0) {
+         pad_t *p = &s_pads[player];
+@@ -463,10 +465,12 @@ static void board_start(void)
+     if (caps & BSP_CAP_GPIO_PAD) {
+         LOCK();
+         s_board = true;
++        s_board_own = caps & BSP_CAP_PAD_OWN_PLAYER;
+         push_event(PAPP_EV_DEVICE_ADDED, 0, 0, 0);
+         UNLOCK();
+     }
+-    ESP_LOGI(TAG, "board input:%s%s", caps & BSP_CAP_GPIO_PAD ? " GPIO pad (P1)" : "",
++    ESP_LOGI(TAG, "board input:%s%s%s", caps & BSP_CAP_GPIO_PAD ? " GPIO pad (P1)" : "",
++             (caps & BSP_CAP_GPIO_PAD) && (caps & BSP_CAP_PAD_OWN_PLAYER) ? ", USB pads from P2" : "",
+              caps & BSP_CAP_PADDLE ? " paddle" : "");
+     xTaskCreatePinnedToCore(board_task, "lx_btn", 3072, NULL, 6, NULL, 0);
+ }

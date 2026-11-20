@@ -1,0 +1,28 @@
+diff --git a/boards/m5stack_tab5/board/board_display.c b/boards/m5stack_tab5/board/board_display.c
+index 223ba89..49b9aa1 100644
+--- a/boards/m5stack_tab5/board/board_display.c
++++ b/boards/m5stack_tab5/board/board_display.c
+@@ -71,9 +71,20 @@ board_panel_t board_panel(void)
+     if (s_panel_type >= 0) return s_panel_type;
+     s_panel_type = BOARD_PANEL_ILI9881C;
+     i2c_master_bus_handle_t bus = board_i2c_bus();
+-    if (!bus || i2c_master_probe(bus, 0x5D, 50) == ESP_OK || i2c_master_probe(bus, 0x14, 50) == ESP_OK ||
+-        i2c_master_probe(bus, 0x55, 50) != ESP_OK)
+-        return s_panel_type;                    /* GT911 (or nothing found: the original panel) */
++    if (!bus) return s_panel_type;
++    /* TRIAL FIX (p4-launcher-test): on a Tab5 with the ST7121 panel the touch chip at 0x55 did not answer a
++     * single probe on every other restart (it is still coming out of the reset the last boot left it in), and
++     * the board was then driven as an ILI9881C: black screen, no touch. So ask for up to 800 ms before
++     * deciding there is nothing at 0x55. A GT911 answers at once, so the original panel loses no time. */
++    bool st = false;
++    for (int i = 0; i < 16 && !st; i++) {
++        if (i2c_master_probe(bus, 0x5D, 50) == ESP_OK || i2c_master_probe(bus, 0x14, 50) == ESP_OK)
++            return s_panel_type;                /* GT911: the original panel */
++        st = i2c_master_probe(bus, 0x55, 50) == ESP_OK;
++        if (!st) vTaskDelay(pdMS_TO_TICKS(50));
++        else if (i) ESP_LOGW(TAG, "touch at 0x55 answered on try %d", i + 1);
++    }
++    if (!st) return s_panel_type;               /* nothing found: the original panel */
+     s_panel_type = BOARD_PANEL_ST7123;          /* M5Stack's fallback for 0x55 too */
+     i2c_device_config_t cfg = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = 0x55, .scl_speed_hz = 100000 };
+     i2c_master_dev_handle_t dev;
