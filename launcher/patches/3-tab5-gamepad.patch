@@ -6,7 +6,7 @@ index 00bd500..977408c 100644
  /*
 - * No buttons or paddle on this board: input is USB (and touch). The battery is a 2-cell
 - * pack read by an INA226 (0x41); not reported yet, as the launcher expects one Li-ion cell.
-+ * Board buttons: the Tab5 gamepad add-on (github.com/djb-rh/tab5-gamepad), found at start. No paddle. The
++ * Board buttons: the Tab5 gamepad add-on, found at start. No paddle. The
 + * battery is a 2-cell pack read by an INA226 (0x41); not reported yet, as the launcher expects one Li-ion cell.
 + *
 + * Rev B is looked for first: a PCA9555 at 0x20 on the EXT socket's own I2C lines (G0 SDA, G1 SCL), which
@@ -136,7 +136,7 @@ index 0000000..86f1643
 +++ b/boards/m5stack_tab5/board/tab5pad.h
 @@ -0,0 +1,101 @@
 +/*
-+ * The Tab5 gamepad add-on (github.com/djb-rh/tab5-gamepad): what its two board revisions say, turned into the
++ * The Tab5 gamepad add-on: what its two board revisions say, turned into the
 + * standard gamepad bits (BSP_BTN_*, the same as PAPP_BTN_*). No hardware in here, so the host tests can
 + * include it: tests/host/test_tab5pad.c.
 + *

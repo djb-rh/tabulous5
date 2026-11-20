@@ -11,13 +11,45 @@ index f876377..a6d33c2 100644
      WHOLE_ARCHIVE       # implements the bsp.h contract: link every file, callers sit in any component
 diff --git a/boards/m5stack_tab5/board/bmi270_config.h b/boards/m5stack_tab5/board/bmi270_config.h
 new file mode 100644
-index 0000000..b25b1a8
+index 0000000..8a2f804
 --- /dev/null
 +++ b/boards/m5stack_tab5/board/bmi270_config.h
-@@ -0,0 +1,520 @@
+@@ -0,0 +1,552 @@
 +/* The BMI270's configuration file: the sensor has to be given this after every reset before it will measure.
-+ * Bosch Sensortec's own (BMI270 SensorAPI, bmi270_config_file, BSD-3-Clause, Copyright (c) Bosch Sensortec GmbH),
-+ * byte for byte as M5Unified carries it for the same board. */
++ * It is Bosch Sensortec's own, bmi270_config_file from their BMI270 SensorAPI (bmi270.c, v2.86.1), byte for byte,
++ * under their licence:
++ *
++ * Copyright (c) 2023 Bosch Sensortec GmbH. All rights reserved.
++ *
++ * BSD-3-Clause
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ *
++ * 3. Neither the name of the copyright holder nor the names of its
++ *    contributors may be used to endorse or promote products derived from
++ *    this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
++ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
++ * COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
++ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
++ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
++ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
++ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
++ * POSSIBILITY OF SUCH DAMAGE.
++ */
 +#pragma once
 +#include <stdint.h>
 +
@@ -536,7 +568,7 @@ index 0000000..b25b1a8
 +    0x80, 0x2e, 0x00, 0xc1, 0x80, 0x2e, 0x00, 0xc1, 0x80, 0x2e, 0x00, 0xc1, 0x80, 0x2e, 0x00, 0xc1,
 +};
 diff --git a/boards/m5stack_tab5/board/board_buttons.c b/boards/m5stack_tab5/board/board_buttons.c
-index 977408c..7331417 100644
+index 318bb8f..7b3c57a 100644
 --- a/boards/m5stack_tab5/board/board_buttons.c
 +++ b/boards/m5stack_tab5/board/board_buttons.c
 @@ -121,6 +121,7 @@ uint32_t bsp_buttons_read(void)
