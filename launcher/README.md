@@ -90,6 +90,11 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    (`PAPP_ANALOG_ACCEL_X/Y/Z`: 32768 is 0 g, 4096 to the g, the chip's own axes, which is what M5Unified gives on
    this board). Nothing touches the sensor until an app first asks; that first read loads the sensor's
    configuration file and takes a quarter of a second. Applies on top of patch 3.
+5. `5-tab5-keyboard.patch`: M5Stack's clip-on Tab5 Keyboard (I2C 0x6D on the EXT socket, the bus the rev B pad
+   shares), handed to apps as an ordinary keyboard: the same key events and HID usages a USB keyboard gives. Sym,
+   Aa, Ctrl and Alt work as the keys' legends say (Sym gives the second legends, Aa is Shift, two quick Aa taps lock
+   capitals). It can be clipped on and off while the launcher runs. Apps can also ask whether a keyboard is attached
+   (`papp_input_keyboard()`, input interface version 3; older launchers answer no). Applies on top of patch 4.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 

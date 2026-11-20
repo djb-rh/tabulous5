@@ -191,6 +191,7 @@ bool papp_input_key_down(uint16_t u) { (void)u; return false; }
 uint16_t papp_input_modifiers(void) { return 0; }
 bool papp_input_poll_event(papp_input_event_t *ev) { (void)ev; return false; }
 void papp_input_flush(void) {}
+bool papp_input_keyboard(void) { return getenv("PAPP_KEYBOARD") != NULL; }   /* input v3: a keyboard is attached */
 /* The accelerometer, if PAPP_ACCEL scripts one: channels 16..18, 32768 = 0 g, 4096 to the g (launcher patch 4). */
 int papp_input_analog(int ch)
 {
