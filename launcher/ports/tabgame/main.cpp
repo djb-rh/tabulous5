@@ -19,6 +19,25 @@
 #include "uikit.h"
 #include "about_gen.h"        // this game's row of the console's menu table: name, strapline, colour, About text
 
+// The two games that are passed from hand to hand turn the picture over to face whoever holds the console, as on
+// the console: its own code (src/orientation.cpp), reading the accelerometer where the launcher offers one. The
+// rest stay the way up the launcher shows everything.
+static bool g_orientation;
+static void startOrientation()
+{
+  tabulous::Settings s;                                // the flip settings live with PhraseCraze's, as on the console
+  tabulous::settings_store::load(&s);
+  tabulous::orientation::begin();
+  tabulous::orientation::setEnabled(s.auto_rotate);
+  tabulous::orientation::setStableMs(s.flip_delay_ms);
+  g_orientation = true;
+  float x = 0, y = 0, z = 0;
+  if (M5.Imu.isEnabled() && M5.Imu.getAccel(&x, &y, &z))
+    papp_log("accelerometer: %d %d %d thousandths of a g; flip %s, %s\n", (int)(x * 1000), (int)(y * 1000), (int)(z * 1000), s.auto_rotate ? "on" : "off", tabulous::orientation::calibrated() ? "calibrated" : "not calibrated yet (FLIP while holding it teaches it)");
+  else
+    papp_log("accelerometer: not offered by this launcher; the picture turns over only by its FLIP button\n");
+}
+
 #if defined(TABGAME_MINES)
 #include "minesweeper_ui.h"
 #define GAME_ID "tabulous.minesweeper"
@@ -51,6 +70,7 @@ static void startGame()
   tabulous::settings_store::load(&s);
   g_state.begin(&g_packs, s);
   game::begin(&g_state, &g_packs, report);
+  startOrientation();
 }
 #elif defined(TABGAME_FIVEHEAD)
 #include "fivehead_ui.h"
@@ -61,11 +81,12 @@ static std::vector<tabulous::Pack> g_packs;
 static void startGame()
 {
   const tabulous::content::LoadReport report = tabulous::content::loadAll(&g_packs);
-  papp_log(ABOUT_NAME ": %u packs, %u phrases; tilt %s\n", (unsigned)report.packs_loaded, (unsigned)report.phrases_total, M5.Imu.isEnabled() ? "on" : "not offered by this launcher (use the buttons)");
+  papp_log(ABOUT_NAME ": %u packs, %u phrases\n", (unsigned)report.packs_loaded, (unsigned)report.phrases_total);
   tabulous::fivehead::Settings s;
   tabulous::settings_store::loadFive(&s);
   g_state.begin(&g_packs, s);
   game::begin(&g_state, &g_packs, report);
+  startOrientation();
 }
 #else
 #include "joshua_ui.h"
@@ -98,21 +119,6 @@ bool take(Key *) { return false; }
 void dumpLog() {}
 }  // namespace hwkeyboard
 
-// --- turning the picture over when the console is passed across the table. The launcher owns the panel's
-// rotation, so here it stays as it is and the setting does nothing. ---
-namespace orientation {
-void begin() {}
-bool update(uint32_t) { return false; }
-void setEnabled(bool) {}
-bool enabled() { return false; }
-void flipNow() {}
-bool calibrated() { return false; }
-void resetCalibration() {}
-void setStableMs(uint32_t) {}
-uint32_t stableMs() { return 0; }
-uint8_t rotation() { return 0; }
-float lastReading() { return 0; }
-}  // namespace orientation
 }  // namespace tabulous
 
 using namespace tabulous;
@@ -204,6 +210,7 @@ static bool confirmExit()
   return r == 1;
 }
 
+// Two arguments for checking things with nobody at the console. `flipped` starts with the picture turned over.
 // `soundcheck` as the app's argument plays a sample, a tone and a scheduled run of notes before the game starts,
 // so the sound path can be checked from the launcher's log with nobody there to tap.
 static void soundCheck()
@@ -226,6 +233,7 @@ int main(int argc, char **argv)
   papp_log(ABOUT_NAME ": %d of 7 sounds from /sd/tabulous/sfx\n", audio::sampleCount());
   if (argc > 1 && !strcmp(argv[1], "soundcheck")) soundCheck();
   startGame();
+  if (argc > 1 && !strcmp(argv[1], "flipped")) M5.Display.setRotation(1);   // for a look at the picture the other way up
   game::invalidate();
   uint32_t ticks = 0;
   int64_t worst = 0, stat_at = papp_time_us();
@@ -235,6 +243,7 @@ int main(int argc, char **argv)
     int x, y;
     if (pressEdge(&x, &y)) game::handleTap(x, y, now);   // the press edge, as the console's loop does it
     audio::update(now);
+    if (g_orientation && orientation::update(now)) game::invalidate();   // turned over: everything is drawn again
     game::tick(now);
     if (g_want_about) { g_want_about = false; aboutScreen(); game::invalidate(); continue; }
     if (g_want_exit) { g_want_exit = false; if (confirmExit()) g_quit = true; else game::invalidate(); continue; }

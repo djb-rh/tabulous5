@@ -21,7 +21,7 @@ GAMES = {"mines": ("MINES", "minesweeper", "Minesweeper", ["minesweeper", "mines
          "phrase": ("PHRASE", "phrasecraze", "PhraseCraze", ["phrase_game", "round_timer", "phrase_ui", "packpicker", "confetti"]),
          "fivehead": ("FIVEHEAD", "fivehead", "FiveHead", ["fivehead", "fivehead_ui", "packpicker"]),
          "joshua": ("JOSHUA", "joshua", "Joshua", ["joshua_ui"])}
-SHARED = ["uikit", "theme", "textentry", "scoreboard", "highscores", "glyphs", "audio", "wav", "settings_store", "content", "pack"]
+SHARED = ["uikit", "theme", "textentry", "scoreboard", "highscores", "glyphs", "audio", "wav", "settings_store", "content", "pack", "orientation"]
 CXX = ["-std=gnu++17", "-include", "cstdint", "-include", "cmath", "-D_Static_assert=static_assert", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics", "-w"]
 LGFX = ["LGFXBase", "LGFX_Sprite", "lgfx_fonts", "LGFX_Button", "panel/Panel_Device", "misc/pixelcopy",
         "misc/common_function", "misc/SpriteBuffer", "misc/DividedFrameBuffer"]

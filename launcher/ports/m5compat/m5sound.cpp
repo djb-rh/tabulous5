@@ -167,7 +167,7 @@ bool IMU_Class::getAccel(float *x, float *y, float *z)
 {
   const int ax = papp_input_analog(m5compat::kAccelX), ay = papp_input_analog(m5compat::kAccelY), az = papp_input_analog(m5compat::kAccelZ);
   if (ax < 0 || ay < 0 || az < 0) return false;
-  *x = (ax - 32768) / 8192.0f; *y = (ay - 32768) / 8192.0f; *z = (az - 32768) / 8192.0f;
+  *x = (ax - 32768) / 4096.0f; *y = (ay - 32768) / 4096.0f; *z = (az - 32768) / 4096.0f;
   return true;
 }
 }  // namespace m5

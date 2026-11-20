@@ -33,6 +33,6 @@ $CXX -I$out -include host_main.h -c $P/tabgame/main.cpp -o $out/main.o
 $CXX -include host_main.h -c $P/m5compat/m5compat.cpp -o $out/m5compat.o
 $CXX -include host_main.h -c $P/m5compat/m5sound.cpp -o $out/m5sound.o
 objs="$out/host.o $out/main.o $out/m5compat.o $out/m5sound.o"
-for f in uikit theme textentry scoreboard highscores glyphs audio wav settings_store content pack $game; do $CXX -c $T5/src/$f.cpp -o $out/$f.o; objs="$objs $out/$f.o"; done
+for f in uikit theme textentry scoreboard highscores glyphs audio wav settings_store content pack orientation $game; do $CXX -c $T5/src/$f.cpp -o $out/$f.o; objs="$objs $out/$f.o"; done
 clang++ $objs $B/lgfx.a -o $out/app
 echo "built $out/app"

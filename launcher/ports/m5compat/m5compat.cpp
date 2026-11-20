@@ -46,7 +46,7 @@ void bind()
 {
   int stride = 0;
   void *px = papp_disp_lock(g_surf, &stride);
-  if (px && px != g_px) { g_px = px; M5.Display.setBuffer(px, stride ? stride : kW, kH); }
+  if (px && px != g_px) { g_px = px; M5.Display.setBuffer(px, stride ? stride : kW, kH); M5.Display.setRotation(M5.Display.getRotation()); }
 }
 }  // namespace
 
@@ -72,7 +72,11 @@ bool update()
   const int64_t p1 = papp_time_us();
   M5.Touch.count = (uint8_t)(n > 0 ? n : 0);
   M5.Touch.detail.pressed = n > 0;
-  if (n > 0) { M5.Touch.detail.x = (int16_t)pt[0].x; M5.Touch.detail.y = (int16_t)pt[0].y; }
+  if (n > 0) {
+    const bool over = M5.Display.turnedOver();         // the picture is the other way up: so is where the finger is
+    M5.Touch.detail.x = (int16_t)(over ? kW - 1 - pt[0].x : pt[0].x);
+    M5.Touch.detail.y = (int16_t)(over ? kH - 1 - pt[0].y : pt[0].y);
+  }
   // Showing the surface costs 50 ms on the Tab5 (the launcher turns all 1280x720 of it for the panel), during
   // which the finger is not read. So a frame goes out only when the picture has changed: a sample of it, one
   // pixel in 48, is summed each pass, which takes a fraction of a millisecond.

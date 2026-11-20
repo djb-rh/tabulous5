@@ -37,6 +37,7 @@ TESTS = {
     "sudoku":   ("sudoku", [], 15, [(5, "shot", "board", 0)]),
     "solitaire": ("solitaire", [], 15, [(5, "shot", "table", 0)]),
     "sound":    ("joshua", ["soundcheck"], 12, [(8, "shot", "after", 0)]),
+    "flip":     ("phrasecraze", ["flipped"], 12, [(6, "shot", "over", 0)]),
     "phrase":   ("phrasecraze", [], 15, [(5, "shot", "home", 0)]),
     "fivehead": ("fivehead", [], 15, [(5, "shot", "home", 0)]),
     "joshua":   ("joshua", [], 25, [(5, "shot", "typing", 0), (20, "shot", "board", 0)]),

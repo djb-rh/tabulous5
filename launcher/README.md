@@ -12,7 +12,7 @@ builds from this branch. Nothing here changes it, apart from two small fixes to 
 | App | From | State |
 |---|---|---|
 | Arcade (Pac-Man board) | `ports/arcade` + `src/arcrom`, `src/fourway`, `third_party/chips`, `third_party/z80` | 60 fps, no audio underruns; cabinet switches, cocktail table with a second stick, face buttons as a stick |
-| PhraseCraze, FiveHead, Joshua | `ports/tabgame` + the games' own files in `src/` | run, with the console's sounds, settings and word packs |
+| PhraseCraze, FiveHead, Joshua | `ports/tabgame` + the games' own files in `src/` | run, with the console's sounds, settings and word packs; tilt and the picture turning over need patch 4 |
 | Minesweeper, Sudoku, Solitaire | the same | run, score tables kept |
 | NES, Game Boy, SNES, Doom, Quake | the launcher's own apps | NES 60 fps, Game Boy 55, SNES 60 emulated / 30 shown, Doom 35, Quake 20 |
 
@@ -21,11 +21,14 @@ The games' source files are compiled unchanged. `ports/m5compat` stands in for w
 on one launcher audio stream), `Preferences` (a file per namespace under `/sd/tabulous`), `LittleFS` (the folder
 `/sd/tabulous`). `ports/tabgame/main.cpp` is the shell: the About page, the leave confirmation, the main loop.
 
-Not carried over yet:
+**Tilt.** FiveHead is scored by tilting the console and PhraseCraze turns its picture over to face whoever holds
+it, both from the accelerometer, which the stock launcher does not give apps. `patches/4-tab5-accelerometer.patch`
+adds it for the Tab5 (below); the games use the console's own `src/orientation.cpp` and tilt code unchanged. On a
+launcher without the patch FiveHead is played with its GOT IT and PASS buttons and PhraseCraze turns over only
+by its FLIP button.
 
-- **FiveHead's tilt.** The launcher gives apps no accelerometer, so FiveHead is played with its GOT IT and PASS
-  buttons. `m5compat` already reads one if a launcher offers it (three board analog inputs, see `m5sound.cpp`).
-- **PhraseCraze turning the picture over** when the console is passed across the table: same reason.
+Not carried over:
+
 - The on-screen pad, the Gamepad Test, the file manager and the Wi-Fi content server: the launcher has its own
   pad handling, file transfer and settings.
 
@@ -83,6 +86,10 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    was, and on about every other restart the chip was not awake yet: black screen, no touch, sound playing. It
    now asks for up to 800 ms.
 3. `3-tab5-gamepad.patch`: the gamepad, and a board flag that makes USB pads start at player two.
+4. `4-tab5-accelerometer.patch`: the Tab5's BMI270, offered to apps as three more analog inputs
+   (`PAPP_ANALOG_ACCEL_X/Y/Z`: 32768 is 0 g, 4096 to the g, the chip's own axes, which is what M5Unified gives on
+   this board). Nothing touches the sensor until an app first asks; that first read loads the sensor's
+   configuration file and takes a quarter of a second. Applies on top of patch 3.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 
@@ -93,7 +100,7 @@ Wants: ESP-IDF 5.5 (for the launcher and its RISC-V compiler), PlatformIO having
 
 ```bash
 git clone --branch v0.32.0 https://github.com/giltal/ESP32_P4_Launcher ~/Developer/p4-launcher-test/ESP32_P4_Launcher
-launcher/tools/build_launcher.sh          # the launcher, with patches 2 and 3
+launcher/tools/build_launcher.sh          # the launcher, with patches 2, 3 and 4
 python launcher/ports/tabgame/build.py    # the six touch games
 python launcher/ports/arcade/build.py     # the arcade app
 launcher/tools/stage_sd.sh                # lays out sdcard/: apps, icons, word packs, sounds
@@ -120,7 +127,10 @@ A console moving over from the classic firmware keeps its settings and score tab
 - **The Tab5's panel shows 57 pictures a second.** Showing one waits for the panel, so an app that waits for
   every picture runs at 57, sound and all. The arcade app runs the machine at 60 and skips a picture when the
   last is still on its way.
-- **Asking the touch panel where the finger is takes 8 ms**, so it is not something to do in a frame loop.
+- **Asking the touch panel where the finger is took 8 ms** on the console when this was first measured, and
+  0.9 ms ever since the accelerometer was first set up. Which of the two changed it has not been established
+  (the sensor shares the touch controller's bus and keeps its settings across a restart). Either way it is not
+  something to do in a frame loop.
 - Showing a 1280x720 surface takes 43 ms; the touch games show one only when the picture has changed.
 
 ## Two fixes to shared files

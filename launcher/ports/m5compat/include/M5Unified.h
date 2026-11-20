@@ -36,14 +36,26 @@ struct Speaker_Class {
   bool playRaw(const int16_t *pcm, size_t count, uint32_t rate, bool stereo = false, uint32_t repeat = 1,
                int channel = -1, bool stop_current = false);
 };
-// The accelerometer, in g. A launcher that offers it does so as three board analog inputs (see m5compat.cpp);
-// one that does not leaves isEnabled() false and the games fall back to their buttons.
+// The accelerometer, in g, on the chip's own axes as M5Unified gives them on the Tab5. A launcher that offers it
+// does so as three board analog inputs (PAPP_ANALOG_ACCEL_X/Y/Z, our patch 4); one that does not leaves
+// isEnabled() false and the games fall back to their buttons.
 struct IMU_Class {
   bool isEnabled();
   bool getAccel(float *x, float *y, float *z);
 };
+// The screen. On the console the games ask M5GFX for one of the Tab5's two landscape rotations: 3, which is the
+// way up the launcher shows everything, and 1, the other way up (PhraseCraze turns the picture over when the
+// console is passed across the table). Here that is the sprite drawn as it is or turned half a turn, and the
+// finger's position is turned with it (m5compat::update).
+struct Display_Class : lgfx::LGFX_Sprite {
+  void setRotation(uint_fast8_t r) { rot_ = (r & 3) == 1 ? 1 : 3; lgfx::LGFX_Sprite::setRotation(rot_ == 1 ? 2 : 0); }
+  uint8_t getRotation() const { return rot_; }
+  bool turnedOver() const { return rot_ == 1; }
+ private:
+  uint8_t rot_ = 3;
+};
 struct M5Unified {
-  lgfx::LGFX_Sprite Display;
+  Display_Class Display;
   Touch_Class Touch;
   Speaker_Class Speaker;
   IMU_Class Imu;
@@ -78,6 +90,6 @@ uint32_t presents();   // frames shown so far
 void profile(int64_t out[3]);   // microseconds since the last call spent reading the finger, summing the picture, and showing or waiting
 void repaint();        // show the picture on the next pass even if it has not changed (after a launcher overlay)
 // Board analog inputs a Tab5 launcher with the accelerometer patch answers on: 0..65535 with 32768 = 0 g and
-// 8192 counts to the g. -1 from a launcher without it.
+// 4096 counts to the g. -1 from a launcher without it.
 constexpr int kAccelX = 16, kAccelY = 17, kAccelZ = 18;
 }  // namespace m5compat
