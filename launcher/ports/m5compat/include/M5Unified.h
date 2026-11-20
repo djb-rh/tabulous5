@@ -19,6 +19,14 @@ struct TouchDetail {
   int16_t x = 0, y = 0;
   bool pressed = false;
   bool isPressed() const { return pressed; }
+  // M5Unified's finger events, for apps built with M5COMPAT_TOUCH_EVENTS (the Multitool's): an id for each press,
+  // and the pass a finger went down or came up. A finger that has just come up is still counted for that one
+  // pass, as M5Unified does, so wasReleased() can be seen. The games are built without it and never see that.
+  int id = -1;
+  bool was_pressed = false, was_released = false;
+  bool wasPressed() const { return was_pressed; }
+  bool wasReleased() const { return was_released; }
+  bool isReleased() const { return !pressed; }
 };
 struct Touch_Class {
   TouchDetail detail;

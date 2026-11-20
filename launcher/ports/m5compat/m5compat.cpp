@@ -71,6 +71,18 @@ bool update()
   const int n = papp_disp_touch(g_surf, pt, 2);
   const int64_t p1 = papp_time_us();
   M5.Touch.count = (uint8_t)(n > 0 ? n : 0);
+#ifdef M5COMPAT_TOUCH_EVENTS
+  {
+    static bool was_down;
+    static int next_id;
+    const bool down = n > 0;
+    M5.Touch.detail.was_pressed = down && !was_down;
+    M5.Touch.detail.was_released = !down && was_down;
+    if (M5.Touch.detail.was_pressed) M5.Touch.detail.id = next_id++;
+    if (M5.Touch.detail.was_released) M5.Touch.count = 1;   // the finger that came up, this pass only
+    was_down = down;
+  }
+#endif
   M5.Touch.detail.pressed = n > 0;
   if (n > 0) {
     const bool over = M5.Display.turnedOver();         // the picture is the other way up: so is where the finger is
@@ -105,7 +117,10 @@ void end() { m5compat_sound_end(); if (g_surf) papp_disp_surface_destroy(g_surf)
 namespace {
 struct Rec { char key[32]; uint32_t len; uint8_t *data; };
 Rec g_recs[256]; int g_nrec; char g_loaded[24];
-void pathFor(const char *ns, char *out, size_t n) { snprintf(out, n, "/sd/tabulous/%s.prefs", ns); }
+#ifndef M5COMPAT_PREFS_DIR
+#define M5COMPAT_PREFS_DIR "/sd/tabulous"   // the games'; another app's port can keep its own folder
+#endif
+void pathFor(const char *ns, char *out, size_t n) { snprintf(out, n, M5COMPAT_PREFS_DIR "/%s.prefs", ns); }
 void loadNs(const char *ns)
 {
   if (!strcmp(ns, g_loaded)) return;
