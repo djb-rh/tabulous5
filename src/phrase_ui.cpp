@@ -41,6 +41,8 @@ Team g_next_starter = Team::A;
 // alarm; longer becomes a strobe you have to look away from.
 constexpr uint32_t kSlamMs = 560;
 uint32_t g_buzz_started = 0;
+// The full Buzzer screen, with its buttons, has been drawn since the buzz.
+bool g_buzz_settled = false;
 
 // Separate from confetti::active(): this stays set for one frame after the
 // burst ends so the last pieces get erased.
@@ -271,6 +273,7 @@ void drawBuzzer(uint32_t now_ms) {
               &fonts::FreeSansBold24pt7b, middle_center, 3);
     return;
   }
+  g_buzz_settled = true;
 
   g.fillScreen(kBg);
   drawLabel("TIME!", kW / 2, 86, kDanger, &fonts::FreeSansBold24pt7b,
@@ -647,13 +650,18 @@ void tick(uint32_t now_ms) {
     if (g_game->expired(now_ms)) {
       g_game->buzz(now_ms);
       g_buzz_started = now_ms;
+      g_buzz_settled = false;
       audio::buzzer();
       g_dirty = true;
     }
   } else if (g_game->screen() == Screen::Buzzer) {
-    // Keep repainting through the slam, plus one frame to settle on the full
-    // screen underneath it.
-    if (now_ms - g_buzz_started < kSlamMs + 80) g_dirty = true;
+    // Keep repainting through the slam, and until the full screen underneath
+    // it has been drawn once. This used to be "for 80 ms after the slam", on
+    // the understanding that a frame takes less than that: where one took
+    // longer (as a launcher app, where showing a frame is 43 ms on top of
+    // drawing it) the last thing drawn was a frame of the slam, which has no
+    // buttons, and the game sat on TIME! for good.
+    if (!g_buzz_settled) g_dirty = true;
   } else if (g_game->screen() == Screen::GameOver && g_confetti_on) {
     // Deliberately NOT via g_dirty: a full repaint costs ~45 ms and would
     // block the loop for the whole celebration. Erase, put the text back,

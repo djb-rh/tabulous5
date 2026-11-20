@@ -37,6 +37,10 @@ TESTS = {
     "sudoku":   ("sudoku", [], 15, [(5, "shot", "board", 0)]),
     "solitaire": ("solitaire", [], 15, [(5, "shot", "table", 0)]),
     "sound":    ("joshua", ["soundcheck"], 12, [(8, "shot", "after", 0)]),
+    # a whole PhraseCraze round by scripted taps (PLAY, the first category), left to run to the buzzer and past it
+    "buzz":     ("phrasecraze", ["taps=3000:640:497,5000:190:250"], 125, [(8, "shot", "round", 0), (120, "shot", "after", 0)]),
+    # a FiveHead turn by scripted taps: PLAY, then left to run its countdown and its clock
+    "five":     ("fivehead", ["taps=3000:640:485,5000:190:250"], 100, [(8, "shot", "t8", 0), (16, "shot", "t16", 0), (40, "shot", "t40", 0), (95, "shot", "t95", 0)]),
     "flip":     ("phrasecraze", ["flipped"], 12, [(6, "shot", "over", 0)]),
     "phrase":   ("phrasecraze", [], 15, [(5, "shot", "home", 0)]),
     "fivehead": ("fivehead", [], 15, [(5, "shot", "home", 0)]),

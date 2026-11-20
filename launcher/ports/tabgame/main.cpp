@@ -4,6 +4,7 @@
 // file is what the console's shell (src/app.cpp, src/main.cpp) did for them: start the screen, pass on taps and
 // ticks, show the About page, and ask before leaving.
 #include <M5Unified.h>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 #include "papp/papp.h"
@@ -210,7 +211,34 @@ static bool confirmExit()
   return r == 1;
 }
 
-// Two arguments for checking things with nobody at the console. `flipped` starts with the picture turned over.
+// Arguments for checking things with nobody at the console. `taps=2000:640:497,3500:190:250` taps the screen by
+// itself: milliseconds after the game starts, then where, as many as wanted. The finger is back in charge once
+// the last one is done. `flipped` starts with the picture turned over.
+static struct { uint32_t at; int x, y; } g_taps[32];
+static int g_tap_n, g_tap_next = -1;
+static uint32_t g_taps_t0;
+static void loadTaps(const char *spec)
+{
+  while (*spec && g_tap_n < 32) {
+    unsigned at = 0; int x = 0, y = 0, used = 0;
+    if (sscanf(spec, "%u:%d:%d%n", &at, &x, &y, &used) < 3) break;
+    g_taps[g_tap_n].at = at; g_taps[g_tap_n].x = x; g_taps[g_tap_n].y = y; g_tap_n++;
+    spec += used;
+    if (*spec == ',') spec++;
+  }
+  g_tap_next = g_tap_n ? 0 : -1;
+  g_taps_t0 = millis();
+}
+static void playTaps(uint32_t now)
+{
+  if (g_tap_next < 0) return;
+  const uint32_t t = now - g_taps_t0;
+  if (g_tap_next >= g_tap_n) { uikit::overrideTouch(false, false, 0, 0); g_tap_next = -1; return; }
+  const bool down = t >= g_taps[g_tap_next].at && t < g_taps[g_tap_next].at + 150;
+  uikit::overrideTouch(true, down, g_taps[g_tap_next].x, g_taps[g_tap_next].y);
+  if (t >= g_taps[g_tap_next].at + 300) { papp_log(ABOUT_NAME ": tapped %d,%d by itself\n", g_taps[g_tap_next].x, g_taps[g_tap_next].y); g_tap_next++; }
+}
+
 // `soundcheck` as the app's argument plays a sample, a tone and a scheduled run of notes before the game starts,
 // so the sound path can be checked from the launcher's log with nobody there to tap.
 static void soundCheck()
@@ -234,6 +262,7 @@ int main(int argc, char **argv)
   if (argc > 1 && !strcmp(argv[1], "soundcheck")) soundCheck();
   startGame();
   if (argc > 1 && !strcmp(argv[1], "flipped")) M5.Display.setRotation(1);   // for a look at the picture the other way up
+  if (argc > 1 && !strncmp(argv[1], "taps=", 5)) loadTaps(argv[1] + 5);
   game::invalidate();
   uint32_t ticks = 0;
   int64_t worst = 0, stat_at = papp_time_us();
@@ -241,10 +270,28 @@ int main(int argc, char **argv)
     const uint32_t now = millis();
     const int64_t t0 = papp_time_us();
     int x, y;
+    playTaps(now);
     if (pressEdge(&x, &y)) game::handleTap(x, y, now);   // the press edge, as the console's loop does it
     audio::update(now);
     if (g_orientation && orientation::update(now)) game::invalidate();   // turned over: everything is drawn again
     game::tick(now);
+    {   // how many things on the screen can be tapped (and, in PhraseCraze, which screen it is), in the log when
+        // it changes, with how long the last state lasted and the longest gap between passes of this loop in it
+      static int was_screen = -1; static size_t was_targets = (size_t)-1;
+      static uint32_t since, passes, longest, last_pass;
+#if defined(TABGAME_PHRASE)
+      const int scr = (int)g_state.screen();
+#else
+      const int scr = 0;
+#endif
+      const size_t tg = uikit::targetCount();
+      if (now - last_pass > longest) longest = now - last_pass;
+      last_pass = now; passes++;
+      if (scr != was_screen || tg != was_targets) {
+        papp_log(ABOUT_NAME ": screen %d, %u places to tap (the last state lasted %u ms: %u passes of the loop, the longest %u ms)\n", scr, (unsigned)tg, (unsigned)(now - since), (unsigned)passes, (unsigned)longest);
+        was_screen = scr; was_targets = tg; since = now; passes = 0; longest = 0;
+      }
+    }
     if (g_want_about) { g_want_about = false; aboutScreen(); game::invalidate(); continue; }
     if (g_want_exit) { g_want_exit = false; if (confirmExit()) g_quit = true; else game::invalidate(); continue; }
     const int64_t took = papp_time_us() - t0;

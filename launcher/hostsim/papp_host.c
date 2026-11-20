@@ -9,6 +9,8 @@
  *   PAPP_PICK=/path/to/file    what papp_ui_pick_file returns
  *   PAPP_SD=/path              what "/sd" means to host_fopen
  *   PAPP_WAV=out.wav           the first audio stream, as a file
+ *   PAPP_ACCEL=0:0:0:-1000,60:900:0:0   an accelerometer: frame, then x, y, z in thousandths of a g, from that frame on
+ *   PAPP_PRESENT_MS=43         what showing a frame costs (default: 43 for a 1280x720 surface, 3 for a smaller one)
  */
 #include <stdarg.h>
 #include <stdio.h>
@@ -18,6 +20,8 @@
 
 static int64_t g_now_us = 1000000;
 static long g_frame, g_max_frames = 600;
+static long g_present_us;
+static struct { long at; int mg[3]; } g_acc[32]; static int g_acc_n;
 static FILE *g_wav; static uint32_t g_wav_frames, g_wav_rate = 44100, g_wav_ch = 1;
 struct papp_surface { int w, h, bufs, which; uint16_t *px[2]; };
 struct papp_audio_stream { papp_audio_cfg_t cfg; uint64_t written; };
@@ -38,6 +42,8 @@ static void host_setup(void)
     static int done; if (done) return; done = 1;
     const char *e;
     if ((e = getenv("PAPP_FRAMES"))) g_max_frames = atol(e);
+    if ((e = getenv("PAPP_PRESENT_MS"))) g_present_us = atol(e) * 1000;
+    if ((e = getenv("PAPP_ACCEL"))) { char *c = strdup(e); for (char *t = strtok(c, ","); t && g_acc_n < 32; t = strtok(NULL, ",")) if (sscanf(t, "%ld:%d:%d:%d", &g_acc[g_acc_n].at, &g_acc[g_acc_n].mg[0], &g_acc[g_acc_n].mg[1], &g_acc[g_acc_n].mg[2]) == 4) g_acc_n++; }
     if ((e = getenv("PAPP_OUT"))) g_out = e;
     if ((e = getenv("PAPP_SHOTS"))) { char *s = strdup(e); for (char *t = strtok(s, ","); t && g_shot_n < 64; t = strtok(NULL, ",")) g_shots[g_shot_n++] = atol(t); }
     if ((e = getenv("PAPP_INPUT"))) {
@@ -119,7 +125,9 @@ static int presented(papp_surface_t *s, const uint16_t *px)
 {
     g_frame++;
     for (int i = 0; i < g_shot_n; i++) if (g_shots[i] == g_frame) shot(s, px);
-    g_now_us += 3000;                       /* what a present costs on the board, roughly */
+    /* What showing a frame costs on the Tab5: 43 ms for a full 1280x720 surface (the launcher turns all of it for
+     * the panel), a few for an emulator's small one. A game whose timing only works with quick frames shows it here. */
+    g_now_us += g_present_us ? g_present_us : ((long)s->w * s->h >= 1280L * 720 ? 43000 : 3000);
     return 0;
 }
 int papp_disp_present(papp_surface_t *s) { const uint16_t *px = s->px[s->which]; if (s->bufs == 2) s->which ^= 1; return presented(s, px); }
@@ -183,7 +191,15 @@ bool papp_input_key_down(uint16_t u) { (void)u; return false; }
 uint16_t papp_input_modifiers(void) { return 0; }
 bool papp_input_poll_event(papp_input_event_t *ev) { (void)ev; return false; }
 void papp_input_flush(void) {}
-int papp_input_analog(int ch) { (void)ch; return -1; }
+/* The accelerometer, if PAPP_ACCEL scripts one: channels 16..18, 32768 = 0 g, 4096 to the g (launcher patch 4). */
+int papp_input_analog(int ch)
+{
+    host_setup();
+    if (ch < 16 || ch > 18 || !g_acc_n) return -1;
+    int at = 0;
+    for (int i = 0; i < g_acc_n; i++) if (g_acc[i].at <= g_frame) at = i;
+    return 32768 + g_acc[at].mg[ch - 16] * 4096 / 1000;
+}
 /* launcher screens */
 int papp_ui_pick_file(const papp_pick_cfg_t *cfg, papp_pick_result_t *out)
 {
