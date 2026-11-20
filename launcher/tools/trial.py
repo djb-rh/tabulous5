@@ -41,6 +41,9 @@ TESTS = {
     "buzz":     ("phrasecraze", ["taps=3000:640:497,5000:190:250"], 125, [(8, "shot", "round", 0), (120, "shot", "after", 0)]),
     # a FiveHead turn by scripted taps: PLAY, then left to run its countdown and its clock
     "five":     ("fivehead", ["taps=3000:640:485,5000:190:250"], 100, [(8, "shot", "t8", 0), (16, "shot", "t16", 0), (40, "shot", "t40", 0), (95, "shot", "t95", 0)]),
+    # Select+Start held: the launcher's own pause menu over one of our games
+    "homekey":  ("phrasecraze", [], 16, [(5, "pad", "SELECT+START", 1500), (9, "shot", "menu", 0)]),
+    "fiveq":    ("fivehead", ["taps=3000:640:485,5000:190:250"], 20, [(16, "shot", "round", 0)]),
     "flip":     ("phrasecraze", ["flipped"], 12, [(6, "shot", "over", 0)]),
     "phrase":   ("phrasecraze", [], 15, [(5, "shot", "home", 0)]),
     "fivehead": ("fivehead", [], 15, [(5, "shot", "home", 0)]),

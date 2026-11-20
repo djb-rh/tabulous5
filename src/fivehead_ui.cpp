@@ -41,24 +41,8 @@ uint32_t g_flash_until = 0;
 bool g_flash_correct = false;
 std::string g_flash_phrase;
 
-// Tilt gesture state. The device is vertical against a forehead, so gravity is
-// mostly in-plane and `az` (the screen normal) is near zero; tipping the top
-// forward or back swings az decisively one way or the other.
-
-
-// Starts DISARMED. The device is mid-air on its way to a forehead when a round
-// begins, and that motion easily exceeds the trigger — which fired a gesture
-// on the first frame, flashed a verdict over the opening phrase, and silently
-// consumed it. A gesture is only allowed after the device has been seen at
-// rest in the neutral zone, which on a forehead is immediate.
-bool g_armed = false;
-
-// A gesture must be HELD, not merely sampled once. A single noisy reading
-// crossing the threshold was enough to score, which is almost certainly why
-// the device appeared to pass by itself while sitting still.
-constexpr uint32_t kTiltHoldMs = 150;
-uint32_t g_tilt_since = 0;
-bool g_tilt_down = false;
+// The tilt gesture: fivehead.h, TiltDetector. Reset whenever a round starts.
+fivehead::TiltDetector g_tilt;
 
 // The IMU shares the internal I2C bus with the touch controller, so it is
 // sampled at a modest rate rather than every loop iteration.
@@ -456,12 +440,11 @@ void scoreIt(bool correct, uint32_t now_ms) {
   flash(correct, phrase, now_ms);
 }
 
-// Tilt is read from the screen-normal axis, which is near zero while the
-// device is upright against a forehead and swings hard when tipped.
+// Tilt is read from the screen-normal axis, which changes fastest when the
+// device, more or less upright against a forehead, is tipped forward or back.
 void pollTilt(uint32_t now_ms) {
   if (g_game->screen() != fivehead::Screen::Round) return;
   if (!M5.Imu.isEnabled()) return;
-  if (now_ms < g_flash_until) return;
 
   if (now_ms - g_tilt_sampled < kTiltSampleMs) return;
   g_tilt_sampled = now_ms;
@@ -469,29 +452,18 @@ void pollTilt(uint32_t now_ms) {
   float ax = 0, ay = 0, az = 0;
   if (!M5.Imu.getAccel(&ax, &ay, &az)) return;
 
+  // Sampled through the verdict's flash as well, so that coming back to rest
+  // during it re-arms; only no new gesture starts until it is off the screen.
+  const bool had_rest = g_tilt.hasRest();
   const auto prof = fivehead::tiltProfile(g_game->settings().tilt_sensitivity);
-  if (fabsf(az) < prof.neutral_g) {
-    g_armed = true;  // returned to upright; ready for the next gesture
-    g_tilt_since = 0;
-    return;
+  const fivehead::Tilt t = g_tilt.update(az, now_ms, prof, now_ms >= g_flash_until);
+  if (!had_rest && g_tilt.hasRest()) {
+    Serial.printf("fivehead: resting at %d thousandths of a g on the screen's axis\n", (int)(g_tilt.rest() * 1000));
   }
-  if (!g_armed || fabsf(az) < prof.trigger_g) {
-    g_tilt_since = 0;
-    return;
-  }
-
-  const bool down = az > 0;
-  if (g_tilt_since == 0 || down != g_tilt_down) {
-    // Start (or restart) the hold. A gesture that changes direction part-way
-    // through is someone repositioning, not a decision.
-    g_tilt_since = now_ms;
-    g_tilt_down = down;
-    return;
-  }
-  if (now_ms - g_tilt_since < kTiltHoldMs) return;
-
-  g_armed = false;
-  g_tilt_since = 0;
+  if (t == fivehead::Tilt::None) return;
+  const bool down = t == fivehead::Tilt::Down;
+  Serial.printf("fivehead: tipped %s to %d (rest %d, trigger %d)\n", down ? "down" : "up", (int)(az * 1000),
+                (int)(g_tilt.rest() * 1000), (int)(prof.trigger_g * 1000));
   scoreIt(g_game->settings().tilt_swapped ? !down : down, now_ms);
 }
 
@@ -503,7 +475,7 @@ void begin(fivehead::Game *game, std::vector<Pack> *packs,
   g_packs = packs;
   g_report = report;
   g_flash_until = 0;
-  g_armed = false;
+  g_tilt.reset();
   g_dirty = true;
 }
 
@@ -550,8 +522,8 @@ void tick(uint32_t now_ms) {
     if (g_game->readyElapsed(now_ms)) {
       g_game->beginPlay(now_ms);
       audio::select();
-      // Disarmed until the device settles: see g_armed above.
-      g_armed = false;
+      // No gesture until the device has settled: see TiltDetector.
+      g_tilt.reset();
       g_redraw_clock_only = false;
       g_dirty = true;
     }
@@ -653,7 +625,7 @@ void handleTap(int x, int y, uint32_t now_ms) {
       break;
     case Action::PickCategory:
       audio::select();
-      g_armed = false;
+      g_tilt.reset();
       g_game->startRound((size_t)param, now_ms, (uint32_t)esp_random());
       break;
     case Action::Correct: scoreIt(true, now_ms); break;

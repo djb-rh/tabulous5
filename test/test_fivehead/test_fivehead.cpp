@@ -158,6 +158,132 @@ void test_no_repeats_within_a_round() {
 void setUp() {}
 void tearDown() {}
 
+// ---- the tilt gesture ----
+
+// Feeds one reading every 40 ms for `ms`, as the screen does; returns the
+// first gesture seen, and moves `*at` on.
+Tilt feed(TiltDetector *d, float az, uint32_t *at, uint32_t ms, TiltSensitivity s = TiltSensitivity::Light,
+          bool may_fire = true) {
+  Tilt seen = Tilt::None;
+  for (uint32_t t = 0; t < ms; t += 40) {
+    const Tilt r = d->update(az, *at + t, tiltProfile(s), may_fire);
+    if (seen == Tilt::None) seen = r;
+  }
+  *at += ms;
+  return seen;
+}
+
+// A forehead leans back: the device rests a quarter of a g off upright. The
+// tip that counts is measured from there, the same size both ways.
+void test_tilt_is_measured_from_where_it_rests() {
+  TiltDetector d;
+  uint32_t at = 1000;
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, -0.25f, &at, 400));
+  TEST_ASSERT_TRUE(d.hasRest());
+  TEST_ASSERT_TRUE(d.armed());
+  TEST_ASSERT_FLOAT_WITHIN(0.02f, -0.25f, d.rest());
+  // Forward to just past upright: 0.30 g from rest, 0.05 g from vertical. The
+  // old rule, 0.45 g from vertical, would have wanted three times the swing.
+  TEST_ASSERT_EQUAL((int)Tilt::Down, (int)feed(&d, 0.05f, &at, 400));
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, -0.25f, &at, 400));
+  TEST_ASSERT_EQUAL((int)Tilt::Up, (int)feed(&d, -0.55f, &at, 400));
+}
+
+void test_tilt_one_gesture_until_it_comes_back() {
+  TiltDetector d;
+  uint32_t at = 0;
+  feed(&d, 0.0f, &at, 400);
+  TEST_ASSERT_EQUAL((int)Tilt::Down, (int)feed(&d, 0.40f, &at, 300));
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, 0.40f, &at, 1000));   // still tipped: nothing more
+  TEST_ASSERT_FALSE(d.armed());
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, 0.02f, &at, 200));    // back
+  TEST_ASSERT_TRUE(d.armed());
+  TEST_ASSERT_EQUAL((int)Tilt::Down, (int)feed(&d, 0.40f, &at, 300));
+}
+
+void test_tilt_wants_the_tip_held() {
+  TiltDetector d;
+  uint32_t at = 0;
+  feed(&d, 0.0f, &at, 400);
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, 0.60f, &at, 80));     // two samples
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, 0.0f, &at, 200));
+  // A tip that changes its mind part-way starts again.
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, 0.60f, &at, 120));
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, -0.60f, &at, 120));
+  TEST_ASSERT_EQUAL((int)Tilt::Up, (int)feed(&d, -0.60f, &at, 120));
+}
+
+void test_tilt_levels_are_different() {
+  const float tips[] = {0.28f, 0.40f, 0.55f};
+  const bool fires[3][3] = {   // [tip][Light, Normal, Firm]
+      {true, false, false}, {true, true, false}, {true, true, true}};
+  for (int tip = 0; tip < 3; tip++) {
+    for (int level = 0; level < 3; level++) {
+      TiltDetector d;
+      uint32_t at = 0;
+      feed(&d, 0.0f, &at, 400, (TiltSensitivity)level);
+      const Tilt r = feed(&d, tips[tip], &at, 400, (TiltSensitivity)level);
+      TEST_ASSERT_EQUAL((int)(fires[tip][level] ? Tilt::Down : Tilt::None), (int)r);
+    }
+  }
+}
+
+// Lying on a table is not a forehead: nothing is taken for rest, so nothing
+// can score, however it is knocked.
+void test_tilt_flat_on_a_table_never_scores() {
+  TiltDetector d;
+  uint32_t at = 0;
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, -1.0f, &at, 5000));
+  TEST_ASSERT_FALSE(d.hasRest());
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, -0.70f, &at, 400));
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, -1.0f, &at, 400));
+}
+
+// While a verdict is on screen no gesture starts, but coming back to rest
+// during it still counts as coming back.
+void test_tilt_through_the_flash() {
+  TiltDetector d;
+  uint32_t at = 0;
+  feed(&d, 0.0f, &at, 400);
+  TEST_ASSERT_EQUAL((int)Tilt::Down, (int)feed(&d, 0.40f, &at, 300));
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, 0.40f, &at, 200, TiltSensitivity::Light, false));
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, 0.0f, &at, 200, TiltSensitivity::Light, false));
+  TEST_ASSERT_TRUE(d.armed());
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, -0.40f, &at, 400, TiltSensitivity::Light, false));
+  TEST_ASSERT_EQUAL((int)Tilt::Up, (int)feed(&d, -0.40f, &at, 400));
+}
+
+// The holder shifts: after a tip the device settles somewhere new and stays.
+// That becomes rest, and tips are measured from it.
+void test_tilt_finds_rest_again_after_a_move() {
+  TiltDetector d;
+  uint32_t at = 0;
+  feed(&d, 0.0f, &at, 400);
+  TEST_ASSERT_EQUAL((int)Tilt::Down, (int)feed(&d, 0.35f, &at, 300));
+  TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, 0.35f, &at, 2400));
+  TEST_ASSERT_TRUE(d.armed());
+  TEST_ASSERT_FLOAT_WITHIN(0.02f, 0.35f, d.rest());
+  TEST_ASSERT_EQUAL((int)Tilt::Up, (int)feed(&d, 0.05f, &at, 400));
+}
+
+// Never quite still (a restless holder): after a second and a half it takes
+// what there is rather than staying deaf for the whole round.
+void test_tilt_does_not_wait_for_ever_for_stillness() {
+  TiltDetector d;
+  for (uint32_t t = 0; t < 1600; t += 40) d.update((t / 40) % 2 ? 0.10f : -0.10f, t, tiltProfile(TiltSensitivity::Normal));
+  TEST_ASSERT_TRUE(d.hasRest());
+}
+
+// Rest drifts with a slow change of posture and does not score on the way.
+void test_tilt_rest_follows_a_slow_lean() {
+  TiltDetector d;
+  uint32_t at = 0;
+  feed(&d, 0.0f, &at, 400);
+  for (int i = 1; i <= 30; i++) TEST_ASSERT_EQUAL((int)Tilt::None, (int)feed(&d, -0.01f * i, &at, 400));
+  TEST_ASSERT_FLOAT_WITHIN(0.06f, -0.30f, d.rest());
+  TEST_ASSERT_EQUAL((int)Tilt::Down, (int)feed(&d, -0.02f, &at, 400));
+}
+
 int main(int, char **) {
   UNITY_BEGIN();
   RUN_TEST(test_ready_precedes_play);
@@ -167,5 +293,14 @@ int main(int, char **) {
   RUN_TEST(test_turns_alternate_and_match_ends_evenly);
   RUN_TEST(test_match_not_over_when_only_one_team_has_finished);
   RUN_TEST(test_no_repeats_within_a_round);
+  RUN_TEST(test_tilt_is_measured_from_where_it_rests);
+  RUN_TEST(test_tilt_one_gesture_until_it_comes_back);
+  RUN_TEST(test_tilt_wants_the_tip_held);
+  RUN_TEST(test_tilt_levels_are_different);
+  RUN_TEST(test_tilt_flat_on_a_table_never_scores);
+  RUN_TEST(test_tilt_through_the_flash);
+  RUN_TEST(test_tilt_finds_rest_again_after_a_move);
+  RUN_TEST(test_tilt_does_not_wait_for_ever_for_stillness);
+  RUN_TEST(test_tilt_rest_follows_a_slow_lean);
   return UNITY_END();
 }

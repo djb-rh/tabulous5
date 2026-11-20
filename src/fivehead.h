@@ -32,9 +32,18 @@ enum class Team : uint8_t { A = 0, B = 1 };
 inline Team other(Team t) { return t == Team::A ? Team::B : Team::A; }
 inline size_t teamIndex(Team t) { return (size_t)t; }
 
-// How far the device must be tipped before a gesture counts. Firmer is safer
-// against accidental scoring; lighter is quicker to play. Trigger and neutral
-// are kept well apart so the reading can't dither across the boundary.
+// How far the device must be tipped before a gesture counts, in g on the
+// screen's normal axis, and how near it must come back before the next one
+// can. Both are measured from where the device RESTS, not from upright: a
+// tablet held against a forehead leans back with the forehead, a tenth or a
+// quarter of a g off vertical, and measured from vertical one direction then
+// needs twice the swing of the other and the "light" setting, whose neutral
+// zone was the narrowest, was the hardest to re-arm.
+//
+// Near upright a g is 57 degrees, so these are about 14, 20 and 29 degrees of
+// tip. Firmer is safer against accidental scoring; lighter is quicker to
+// play. Trigger and neutral are kept well apart so the reading can't dither
+// across the boundary.
 enum class TiltSensitivity : uint8_t { Light = 0, Normal = 1, Firm = 2 };
 
 struct TiltProfile {
@@ -44,11 +53,54 @@ struct TiltProfile {
 
 inline TiltProfile tiltProfile(TiltSensitivity s) {
   switch (s) {
-    case TiltSensitivity::Light: return {0.45f, 0.26f};
-    case TiltSensitivity::Firm: return {0.70f, 0.38f};
-    default: return {0.55f, 0.32f};
+    case TiltSensitivity::Light: return {0.24f, 0.12f};
+    case TiltSensitivity::Firm: return {0.48f, 0.24f};
+    default: return {0.34f, 0.17f};
   }
 }
+
+// The tilt gesture, from readings of the screen-normal axis.
+//
+// It starts with no idea where rest is, and disarmed: the device is mid-air
+// on its way to a forehead when a round begins. Rest is wherever the reading
+// first holds still. From then a gesture is a tip of trigger_g or more away
+// from rest, held for kHoldMs (a single noisy sample is not a decision), and
+// the next one is only allowed once the device has come back to within
+// neutral_g of rest. Rest follows a slow change of posture, and is found
+// again if the device settles somewhere new for a couple of seconds.
+enum class Tilt : int8_t { Up = -1, None = 0, Down = 1 };
+
+class TiltDetector {
+ public:
+  static constexpr uint32_t kHoldMs = 150;
+  // "Still" is the reading staying within this of where it was.
+  static constexpr float kStillBandG = 0.08f;
+  static constexpr uint32_t kStillMs = 250;       // to find rest the first time
+  static constexpr uint32_t kGiveUpMs = 1500;     // never still: take what there is
+  static constexpr uint32_t kMovedMs = 2000;      // settled somewhere new: that is rest now
+  // Flat on a table reads a whole g. That is not a forehead, and nothing
+  // further from upright than this is taken for a resting position.
+  static constexpr float kMaxRestG = 0.65f;
+
+  void reset();
+  // Feed every sample. `may_fire` false (a verdict is on screen) keeps rest
+  // and arming up to date without starting a gesture.
+  Tilt update(float az, uint32_t now_ms, const TiltProfile &profile, bool may_fire = true);
+
+  bool hasRest() const { return has_rest_; }
+  bool armed() const { return armed_; }
+  float rest() const { return rest_; }
+
+ private:
+  bool started_ = false, has_rest_ = false, armed_ = false;
+  uint32_t started_ms_ = 0;
+  float rest_ = 0;
+  bool still_valid_ = false;
+  float still_ref_ = 0;
+  uint32_t still_since_ = 0;
+  bool holding_ = false, hold_down_ = false;
+  uint32_t hold_since_ = 0;
+};
 
 struct Settings {
   uint32_t round_ms = 60000;
