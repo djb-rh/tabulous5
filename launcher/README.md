@@ -112,6 +112,11 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    current, and gives apps a PWR interface: read the battery, and stop charging for a while (the T48 app does
    during jobs: the programmer gets 4.4 V instead of 5 V while the pack charges). Charging comes back on when the
    app ends, however it ends. `apps/pwr_test` exercises it. Applies on top of patch 7.
+9. `9-random-bytes.patch`: apps had no source of real randomness (only the clock). The system interface's
+   version 4 hands out bytes from the chip's hardware random number generator, which ESP-IDF keeps fed from
+   the SAR ADC's noise on the P4; the SDK has `papp_random()` and the C library's `getentropy()` on it. For the
+   Terminal's SSH keys; m5compat's `esp_random()` uses it too where it is there. `apps/rand_test` exercises it.
+   Applies on top of patch 8.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 

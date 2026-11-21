@@ -24,6 +24,8 @@ uint32_t micros() { return (uint32_t)papp_time_us(); }
 void delay(uint32_t ms) { papp_delay_ms(ms); }
 uint32_t esp_random()
 {
+  uint32_t r;
+  if (papp_random(&r, sizeof(r))) return r;           // the hardware's, on a launcher with SYS v4 (patch 9)
   static uint32_t s;                                   // xorshift, seeded from the clock: good enough to deal cards
   if (!s) s = (uint32_t)papp_time_us() | 1u;
   s ^= s << 13; s ^= s >> 17; s ^= s << 5;
