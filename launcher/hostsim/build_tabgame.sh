@@ -28,11 +28,13 @@ case $which in
   JOSHUA) game="joshua_ui"; name=Joshua;;
 esac
 python3 $P/tabgame/gen_about.py $name $out/about_gen.h
+emb=""; [ "$which" = PHRASE ] && emb=packs; [ "$which" = FIVEHEAD ] && emb=packs
+python3 $P/tabgame/gen_embedded.py $out/embedded_gen.c $emb && clang -O1 -c $out/embedded_gen.c -o $out/embedded_gen.o
 clang -O1 -w $INC -DPAPP_SDK_HEADER="\"$L/papp-sdk/include/papp/papp.h\"" -c $here/papp_host.c -o $out/host.o
 $CXX -I$out -include host_main.h -c $P/tabgame/main.cpp -o $out/main.o
 $CXX -include host_main.h -c $P/m5compat/m5compat.cpp -o $out/m5compat.o
 $CXX -include host_main.h -c $P/m5compat/m5sound.cpp -o $out/m5sound.o
-objs="$out/host.o $out/main.o $out/m5compat.o $out/m5sound.o"
+objs="$out/host.o $out/main.o $out/m5compat.o $out/m5sound.o $out/embedded_gen.o"
 for f in uikit theme textentry scoreboard highscores glyphs audio wav settings_store content pack orientation $game; do $CXX -c $T5/src/$f.cpp -o $out/$f.o; objs="$objs $out/$f.o"; done
 clang++ $objs $B/lgfx.a -o $out/app
 echo "built $out/app"

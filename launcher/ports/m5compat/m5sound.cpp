@@ -3,6 +3,7 @@
 #include <M5Unified.h>
 #include <LittleFS.h>
 #include <cmath>
+#include <cstring>
 #include <string>
 #include <vector>
 #include "papp/papp.h"
@@ -172,28 +173,37 @@ bool IMU_Class::getAccel(float *x, float *y, float *z)
 }
 }  // namespace m5
 
-// --- LittleFS: /sd/tabulous ---------------------------------------------------------------------------------
+// --- LittleFS: /sd/tabulous, then what the app carries inside itself ------------------------------------------
 LittleFSClass LittleFS;
 struct File::State {
   FILE *f = nullptr;
+  const unsigned char *mem = nullptr;   // a file inside the app
+  size_t pos = 0;
   size_t size = 0;
   bool dir = false;
   std::vector<std::string> names;
   size_t next = 0;
-  std::string path, name;
+  std::string path, name;               // path as the console had it ("/packs"), name alone
 };
+// An app that carries no files: the build of one that does supplies the real thing.
+extern "C" __attribute__((weak)) const m5compat_embedded_t *m5compat_embedded(int *count) { *count = 0; return nullptr; }
 namespace {
-const char *const kRoot = "/sd/tabulous";
+#ifndef M5COMPAT_FS_DIR
+#define M5COMPAT_FS_DIR "/sd/tabulous"
+#endif
+const char *const kRoot = M5COMPAT_FS_DIR;
 std::string baseName(const std::string &p) { const size_t s = p.find_last_of('/'); return s == std::string::npos ? p : p.substr(s + 1); }
 }  // namespace
 
 File LittleFSClass::open(const char *path, const char *)
 {
   File out;
-  const std::string full = std::string(kRoot) + (path && path[0] == '/' ? "" : "/") + (path ? path : "");
+  const std::string rel = std::string(path && path[0] == '/' ? "" : "/") + (path ? path : "");
+  const std::string full = std::string(kRoot) + rel;
+  // A folder on the card, by its index.
   if (FILE *ix = fopen((full + "/index.txt").c_str(), "rb")) {
     auto *st = new File::State();
-    st->dir = true; st->path = full; st->name = baseName(full);
+    st->dir = true; st->path = rel; st->name = baseName(rel);
     char line[160];
     while (fgets(line, sizeof line, ix)) {
       std::string n(line);
@@ -204,18 +214,58 @@ File LittleFSClass::open(const char *path, const char *)
     out.st_ = st;
     return out;
   }
-  FILE *f = fopen(full.c_str(), "rb");
-  if (!f) return out;
-  auto *st = new File::State();
-  st->f = f; st->path = full; st->name = baseName(full);
-  fseek(f, 0, SEEK_END); st->size = (size_t)ftell(f); fseek(f, 0, SEEK_SET);
-  out.st_ = st;
+  // A file on the card.
+  if (FILE *f = fopen(full.c_str(), "rb")) {
+    auto *st = new File::State();
+    st->f = f; st->path = rel; st->name = baseName(rel);
+    fseek(f, 0, SEEK_END); st->size = (size_t)ftell(f); fseek(f, 0, SEEK_SET);
+    out.st_ = st;
+    return out;
+  }
+  // The same inside the app: the file itself, or a folder made of every file below that path.
+  int count = 0;
+  const m5compat_embedded_t *e = m5compat_embedded(&count);
+  File::State *dir = nullptr;
+  for (int i = 0; i < count; i++) {
+    const std::string p = e[i].path;
+    if (p == rel) {
+      delete dir;
+      auto *st = new File::State();
+      st->mem = e[i].data; st->size = e[i].size; st->path = rel; st->name = baseName(rel);
+      out.st_ = st;
+      return out;
+    }
+    if (p.size() > rel.size() + 1 && p.compare(0, rel.size(), rel) == 0 && p[rel.size()] == '/' && p.find('/', rel.size() + 1) == std::string::npos) {
+      if (!dir) { dir = new File::State(); dir->dir = true; dir->path = rel; dir->name = baseName(rel); }
+      dir->names.push_back(p.substr(rel.size() + 1));
+    }
+  }
+  out.st_ = dir;
   return out;
 }
 size_t File::size() const { return st_ ? st_->size : 0; }
-size_t File::read(uint8_t *buf, size_t len) { return st_ && st_->f ? fread(buf, 1, len, st_->f) : 0; }
-int File::read() { if (!st_ || !st_->f) return -1; const int c = fgetc(st_->f); return c == EOF ? -1 : c; }
-int File::available() { if (!st_ || !st_->f) return 0; const long at = ftell(st_->f); return at < 0 ? 0 : (int)(st_->size - (size_t)at); }
+size_t File::read(uint8_t *buf, size_t len)
+{
+  if (!st_) return 0;
+  if (st_->f) return fread(buf, 1, len, st_->f);
+  if (!st_->mem) return 0;
+  if (len > st_->size - st_->pos) len = st_->size - st_->pos;
+  memcpy(buf, st_->mem + st_->pos, len);
+  st_->pos += len;
+  return len;
+}
+int File::read()
+{
+  if (!st_) return -1;
+  if (st_->f) { const int c = fgetc(st_->f); return c == EOF ? -1 : c; }
+  return st_->mem && st_->pos < st_->size ? st_->mem[st_->pos++] : -1;
+}
+int File::available()
+{
+  if (!st_) return 0;
+  if (st_->f) { const long at = ftell(st_->f); return at < 0 ? 0 : (int)(st_->size - (size_t)at); }
+  return st_->mem ? (int)(st_->size - st_->pos) : 0;
+}
 void File::close() { if (!st_) return; if (st_->f) fclose(st_->f); delete st_; st_ = nullptr; }
 bool File::isDirectory() const { return st_ && st_->dir; }
 const char *File::name() const { return st_ ? st_->name.c_str() : ""; }
@@ -223,7 +273,7 @@ File File::openNextFile()
 {
   File none;
   while (st_ && st_->dir && st_->next < st_->names.size()) {
-    const std::string rel = st_->path.substr(strlen(kRoot)) + "/" + st_->names[st_->next++];
+    const std::string rel = st_->path + "/" + st_->names[st_->next++];
     File f = LittleFS.open(rel.c_str());
     if (f) return f;                                   // a name in the index with no file behind it is skipped
   }

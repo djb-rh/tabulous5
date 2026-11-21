@@ -13,6 +13,7 @@
  *   PAPP_PRESENT_MS=43         what showing a frame costs (default: 43 for a 1280x720 surface, 3 for a smaller one)
  */
 #include <stdarg.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,7 +92,15 @@ size_t papp_mem_free_size(uint32_t caps) { (void)caps; return 16u << 20; }
 void *papp_code_alloc(size_t size) { (void)size; return NULL; }
 void papp_code_free(void *c) { (void)c; }
 int papp_code_sync(void *c, size_t n) { (void)c; (void)n; return -1; }
-const papp_if_fs_t *papp_fs(void) { return NULL; }
+/* Of the FS interface only mkdir, which is all an app here uses of it (stdio does the rest). */
+static int host_mkdir(const char *path)
+{
+    const char *sd = getenv("PAPP_SD");
+    char p[1024];
+    if (sd && !strncmp(path, "/sd", 3)) snprintf(p, sizeof p, "%s%s", sd, path + 3); else snprintf(p, sizeof p, "%s", path);
+    return mkdir(p, 0755);
+}
+const papp_if_fs_t *papp_fs(void) { static papp_if_fs_t fs; fs.mkdir = host_mkdir; return &fs; }
 /* display */
 bool papp_disp_info(papp_disp_info_t *o) { o->width = 1280; o->height = 720; o->refresh_hz = 60; return true; }
 papp_surface_t *papp_disp_surface_create(const papp_surface_cfg_t *cfg)
@@ -191,6 +200,7 @@ bool papp_input_key_down(uint16_t u) { (void)u; return false; }
 uint16_t papp_input_modifiers(void) { return 0; }
 bool papp_input_poll_event(papp_input_event_t *ev) { (void)ev; return false; }
 void papp_input_flush(void) {}
+bool papp_random(void *buf, size_t len) { (void)buf; (void)len; return false; }   /* SYS v4: none here, so runs repeat */
 bool papp_input_keyboard(void) { return getenv("PAPP_KEYBOARD") != NULL; }   /* input v3: a keyboard is attached */
 /* The accelerometer, if PAPP_ACCEL scripts one: channels 16..18, 32768 = 0 g, 4096 to the g (launcher patch 4). */
 int papp_input_analog(int ch)

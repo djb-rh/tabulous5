@@ -24,8 +24,10 @@ uint32_t micros() { return (uint32_t)papp_time_us(); }
 void delay(uint32_t ms) { papp_delay_ms(ms); }
 uint32_t esp_random()
 {
+#if PAPP_IF_SYS_VER >= 4                               // built against an SDK that has it (ours, with patch 9)...
   uint32_t r;
-  if (papp_random(&r, sizeof(r))) return r;           // the hardware's, on a launcher with SYS v4 (patch 9)
+  if (papp_random(&r, sizeof(r))) return r;           // ...the hardware's, on a launcher with SYS v4
+#endif                                                 // An app for the Store is built against the stock SDK, and gets the rest:
   static uint32_t s;                                   // xorshift, seeded from the clock: good enough to deal cards
   if (!s) s = (uint32_t)papp_time_us() | 1u;
   s ^= s << 13; s ^= s >> 17; s ^= s << 5;
@@ -143,7 +145,14 @@ void loadNs(const char *ns)
 void saveNs()
 {
   char p[64]; pathFor(g_loaded, p, sizeof p);
-  FILE *f = fopen(p, "wb"); if (!f) return;
+  FILE *f = fopen(p, "wb");
+  if (!f && papp_fs()) {                               // a card that has never held our folder: make it
+    char dir[64]; snprintf(dir, sizeof dir, "%s", M5COMPAT_PREFS_DIR);
+    for (char *s = dir + 4; (s = strchr(s, '/')) != nullptr; s++) { *s = 0; papp_fs()->mkdir(dir); *s = '/'; }
+    papp_fs()->mkdir(dir);
+    f = fopen(p, "wb");
+  }
+  if (!f) return;
   for (int i = 0; i < g_nrec; i++) { uint8_t kl = (uint8_t)strlen(g_recs[i].key); fwrite(&kl, 1, 1, f); fwrite(g_recs[i].key, 1, kl, f); fwrite(&g_recs[i].len, 4, 1, f); fwrite(g_recs[i].data, 1, g_recs[i].len, f); }
   fclose(f);
 }

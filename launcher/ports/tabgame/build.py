@@ -32,7 +32,10 @@ def build(which):
     define, name, title, files = GAMES[which]
     gen = os.path.join(ROOT, "build", name, "gen"); os.makedirs(gen, exist_ok=True)
     subprocess.check_call([sys.executable, os.path.join(HERE, "gen_about.py"), title, os.path.join(gen, "about_gen.h")])
+    # The game's sounds (and word packs, for the two that have them) go inside the app: see gen_embedded.py.
+    subprocess.check_call([sys.executable, os.path.join(HERE, "gen_embedded.py"), os.path.join(gen, "embedded_gen.c")] + (["packs"] if "packpicker" in files else []))
     srcs = [os.path.join(HERE, "main.cpp"), os.path.join(HERE, "..", "m5compat", "m5compat.cpp"), os.path.join(HERE, "..", "m5compat", "m5sound.cpp")]
+    srcs.append(os.path.join(gen, "embedded_gen.c"))
     srcs.append(os.path.join(ROOT, "ESP32_P4_Launcher", "apps", "common", "odroid", "cxx_papp.c"))   # the launcher's own: the pthread subset libstdc++ wants
     srcs += [os.path.join(T5, "src", f + ".cpp") for f in SHARED + files]
     srcs += [os.path.join(GFX, "lgfx", "v1", f + ".cpp") for f in LGFX]
@@ -40,9 +43,16 @@ def build(which):
     stubs = os.path.join(HERE, "font_stubs.c")
     if os.path.isfile(stubs):
         srcs.append(stubs)
+    # TABGAME_DATA_DIR=/sd/somewhere builds a test copy (in build/<name>-test) that keeps its things there
+    # instead of /sd/tabulous: on a folder that does not exist it is the app as a stranger's card would see it.
+    extra = []
+    out_name = name
+    if os.environ.get("TABGAME_DATA_DIR"):
+        extra = ['-DM5COMPAT_PREFS_DIR="%s"' % os.environ["TABGAME_DATA_DIR"], '-DM5COMPAT_FS_DIR="%s"' % os.environ["TABGAME_DATA_DIR"]]
+        out_name = name + "-test"
     papp_build.build(name, srcs, includes=[os.path.join(HERE, "..", "m5compat", "include"), GFX, os.path.join(T5, "src"), gen],
-                     libc=True, out_dir=os.path.join(ROOT, "build", name), version_dir=HERE,
-                     extra_cflags=["-O2", "-D__linux__", "-DLGFX_LINUX_FB", "-DTABGAME_" + define, "-w"],
+                     libc=True, out_dir=os.path.join(ROOT, "build", out_name), version_dir=HERE,
+                     extra_cflags=["-O2", "-D__linux__", "-DLGFX_LINUX_FB", "-DTABGAME_" + define, "-w"] + extra,
                      per_file_cflags={s: CXX for s in srcs if s.endswith(".cpp")},
                      extra_libs=["-lstdc++", "-lsupc++"])
 

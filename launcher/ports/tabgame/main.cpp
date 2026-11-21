@@ -252,17 +252,36 @@ static void soundCheck()
   papp_log(ABOUT_NAME ": sound check played\n");
 }
 
+// `prefscheck` writes a setting, forgets it, and reads it back from the card: whether settings and score tables
+// will keep, on a card that may never have held our folder.
+#include <Preferences.h>
+static void prefsCheck()
+{
+  const uint32_t want = 0x5AFE0000u | (millis() & 0xFFFF);
+  { Preferences p; p.begin("selftest"); p.putUInt("probe", want); p.end(); }
+  { Preferences other; other.begin("selftest2"); other.end(); }            // loading another namespace drops the first from memory
+  Preferences p; p.begin("selftest");
+  const uint32_t got = p.getUInt("probe", 0);
+  p.end();
+  papp_log(ABOUT_NAME ": settings check: wrote %08x, read back %08x: %s\n", (unsigned)want, (unsigned)got, got == want ? "kept" : "NOT KEPT");
+}
+
 int main(int argc, char **argv)
 {
   if (!m5compat::begin()) { papp_log(ABOUT_NAME ": no display\n"); return 1; }
   setLight(settings_store::loadLightTheme());          // the palette is set at run time; nothing draws right before this
   audio::begin(255);                                   // loudness is the launcher's to set (VOLUME on the About page)
   audio::loadSamples();
-  papp_log(ABOUT_NAME ": %d of 7 sounds from /sd/tabulous/sfx\n", audio::sampleCount());
-  if (argc > 1 && !strcmp(argv[1], "soundcheck")) soundCheck();
+  papp_log(ABOUT_NAME ": %d of 7 sounds loaded\n", audio::sampleCount());
+  for (int i = 1; i < argc; i++) {
+    if (!strcmp(argv[i], "soundcheck")) soundCheck();
+    if (!strcmp(argv[i], "prefscheck")) prefsCheck();
+  }
   startGame();
-  if (argc > 1 && !strcmp(argv[1], "flipped")) M5.Display.setRotation(1);   // for a look at the picture the other way up
-  if (argc > 1 && !strncmp(argv[1], "taps=", 5)) loadTaps(argv[1] + 5);
+  for (int i = 1; i < argc; i++) {
+    if (!strcmp(argv[i], "flipped")) M5.Display.setRotation(1);   // for a look at the picture the other way up
+    if (!strncmp(argv[i], "taps=", 5)) loadTaps(argv[i] + 5);
+  }
   game::invalidate();
   uint32_t ticks = 0;
   int64_t worst = 0, stat_at = papp_time_us();
