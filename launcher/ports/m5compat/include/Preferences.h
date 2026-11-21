@@ -9,6 +9,7 @@ class String {
   String(const char *s = "") : s_(s ? s : "") {}
   const char *c_str() const { return s_.c_str(); }
   size_t length() const { return s_.size(); }
+  bool isEmpty() const { return s_.empty(); }
  private:
   std::string s_;
 };
