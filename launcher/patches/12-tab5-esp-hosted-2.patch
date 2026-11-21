@@ -1,0 +1,42 @@
+diff --git a/boards/m5stack_tab5/board/idf_component.yml b/boards/m5stack_tab5/board/idf_component.yml
+index 2d65b72..4c2c38e 100644
+--- a/boards/m5stack_tab5/board/idf_component.yml
++++ b/boards/m5stack_tab5/board/idf_component.yml
+@@ -2,10 +2,13 @@ dependencies:
+   idf: ">=5.5"
+   espressif/esp_codec_dev: "1.5.11"
+   espressif/esp_lcd_ili9881c: "1.1.0"
+-  # Wi-Fi companion: ESP32-C6 on SDIO (pins in sdkconfig.board). The versions M5Stack's
+-  # Tab5 demo uses, to match the C6 firmware the board ships with
+-  espressif/esp_wifi_remote: "0.8.5"
+-  espressif/esp_hosted: "1.4.0"
++  # Wi-Fi companion: ESP32-C6 on SDIO (pins in sdkconfig.board). esp_hosted 2.12, for a C6
++  # updated to it (the Arduino core's updater and P4 Launcher's own do that): 1.4, which a
++  # Tab5 ships with, runs Wi-Fi against such a C6 but never switches its Bluetooth on
++  espressif/esp_wifi_remote: "1.6.5"
++  espressif/esp_hosted: "2.12.13"
+   # Pulled in by the packages above, pinned too so every build is the same
+   espressif/eppp_link: "1.1.6"
+   espressif/esp_serial_slave_link: "1.1.2"
++  espressif/cmake_utilities: "0.5.3"
++  espressif/wifi_remote_over_eppp: "0.3.3"
+diff --git a/boards/m5stack_tab5/sdkconfig.board b/boards/m5stack_tab5/sdkconfig.board
+index b953769..adaf3c6 100644
+--- a/boards/m5stack_tab5/sdkconfig.board
++++ b/boards/m5stack_tab5/sdkconfig.board
+@@ -20,7 +20,6 @@ CONFIG_ESP_HOSTED_SDIO_PRIV_PIN_D1_4BIT_BUS=10
+ CONFIG_ESP_HOSTED_SDIO_PIN_D2=9
+ CONFIG_ESP_HOSTED_SDIO_PIN_D3=8
+ CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=15
+-CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_LOW=y
+ CONFIG_ESP_HOSTED_SDIO_TX_Q_SIZE=12
+ CONFIG_ESP_HOSTED_SDIO_RX_Q_SIZE=12
+ 
+@@ -37,3 +36,7 @@ CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=256
+ CONFIG_BT_NIMBLE_NVS_PERSIST=y
+ CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=6144
+ CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
++# esp_hosted 2.12 (patch 12): its own Tab5 preset, the same SDIO pins as above, and the C6's reset driven as
++# the Arduino core drives it on the Tab5 with 2.x: active high (active low holds the C6 in reset)
++CONFIG_ESP32P4_TAB5_C6_BOARD=y
++CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=y

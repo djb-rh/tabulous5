@@ -125,6 +125,19 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    first build). On the P4 the full-speed OTG controller and the serial/JTAG unit keep their state through a
    software reset, so a boot that finds the port still the app's resets both before DevLink starts. For the
    Multitool's Keyboard & Mouse; tested as a USB keyboard and trackpad on a Mac. Applies on top of patch 9.
+11. `11-ble-pairing-for-apps.patch`: the Bluetooth interface's version 2. v1 could not pair, and a Bluetooth keyboard
+   must: apps can now ask for pairing ("Just Works" bonding, legacy or Secure Connections, and starting it as soon
+   as a host connects, which macOS waits for), have bonds kept in the launcher's flash so a host reconnects on later
+   runs, mark characteristics as needing an encrypted link, give characteristics descriptors (HID's Report
+   Reference), set the GAP appearance and a static random address, and forget every host. The key store is read
+   and written on an internal-RAM stack (an app thread's PSRAM stack must not write flash). For the Multitool's
+   Keyboard & Mouse, which pairs with a Mac and reconnects by itself. Applies on top of patch 10.
+12. `12-tab5-esp-hosted-2.patch` (not built by default: `build_launcher.sh hosted2`): the Tab5 build on esp_hosted
+   2.12.13 instead of 1.4, with esp_hosted's own Tab5 preset and the C6's reset active high, as the Arduino core drives
+   it. For a Tab5 whose C6 has been updated to 2.x firmware (T48 for Tab5's and the Multitool's Wi-Fi screens offer
+   that update): esp_hosted 1.4 still runs Wi-Fi with such a C6 but never switches its Bluetooth controller on, so
+   every Bluetooth app fails. Tested on a Tab5 whose C6 reports 2.12.13: Wi-Fi and Bluetooth both work. Not tried on
+   a Tab5 with the C6 firmware it shipped with. Applies on top of patch 11.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 
