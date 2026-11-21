@@ -105,7 +105,10 @@ void end() { m5compat_sound_end(); if (g_surf) papp_disp_surface_destroy(g_surf)
 namespace {
 struct Rec { char key[32]; uint32_t len; uint8_t *data; };
 Rec g_recs[256]; int g_nrec; char g_loaded[24];
-void pathFor(const char *ns, char *out, size_t n) { snprintf(out, n, "/sd/tabulous/%s.prefs", ns); }
+#ifndef M5COMPAT_PREFS_DIR
+#define M5COMPAT_PREFS_DIR "/sd/tabulous"   // the games'; another app's port can keep its own folder
+#endif
+void pathFor(const char *ns, char *out, size_t n) { snprintf(out, n, M5COMPAT_PREFS_DIR "/%s.prefs", ns); }
 void loadNs(const char *ns)
 {
   if (!strcmp(ns, g_loaded)) return;
@@ -126,7 +129,14 @@ void loadNs(const char *ns)
 void saveNs()
 {
   char p[64]; pathFor(g_loaded, p, sizeof p);
-  FILE *f = fopen(p, "wb"); if (!f) return;
+  FILE *f = fopen(p, "wb");
+  if (!f && papp_fs()) {                               // a card that has never held our folder: make it
+    char dir[64]; snprintf(dir, sizeof dir, "%s", M5COMPAT_PREFS_DIR);
+    for (char *s = dir + 4; (s = strchr(s, '/')) != nullptr; s++) { *s = 0; papp_fs()->mkdir(dir); *s = '/'; }
+    papp_fs()->mkdir(dir);
+    f = fopen(p, "wb");
+  }
+  if (!f) return;
   for (int i = 0; i < g_nrec; i++) { uint8_t kl = (uint8_t)strlen(g_recs[i].key); fwrite(&kl, 1, 1, f); fwrite(g_recs[i].key, 1, kl, f); fwrite(&g_recs[i].len, 4, 1, f); fwrite(g_recs[i].data, 1, g_recs[i].len, f); }
   fclose(f);
 }

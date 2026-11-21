@@ -115,6 +115,10 @@ The card: games under `/sd/roms/<system>/` (`nes`, `gb`, `snes`, `arcade`, `doom
 under `/sd/apps/`, ours keeping their things under `/sd/tabulous/` (`packs/` with an `index.txt` naming its
 files, because a launcher app cannot list a folder; `sfx/`; `*.prefs`).
 
+The touch games carry their sounds (and the two party games their word packs) inside the app as well, so one
+installed from the launcher's Store, which is a single file, is whole. A file on the card is used in preference,
+so a sound or a pack can still be replaced by dropping one into `/sd/tabulous/sfx` or `packs`.
+
 A console moving over from the classic firmware keeps its settings and score tables:
 `tools/nvs2prefs.py flash-backup-nvs.bin outdir` turns them into the `.prefs` files.
 
