@@ -146,10 +146,10 @@ index 29dd913..8c03da4 100644
  void lx_svc_net_init(void);
 diff --git a/components/lx_loader/lx_svc_usbh.c b/components/lx_loader/lx_svc_usbh.c
 new file mode 100644
-index 0000000..dfe8ba4
+index 0000000..ed8db99
 --- /dev/null
 +++ b/components/lx_loader/lx_svc_usbh.c
-@@ -0,0 +1,483 @@
+@@ -0,0 +1,519 @@
 +/*
 + * USBH: raw USB host access for apps (papp_abi.h). A third client of the USB host library, beside
 + * the HID driver and the XInput client (lx_input), registered on an app's first call and kept for
@@ -157,7 +157,8 @@ index 0000000..dfe8ba4
 + * driver holds cannot be claimed again, so the launcher's pads and keyboards are never disturbed.
 + *
 + * Threads: lx_usbh pumps the client's events (completions arrive there); app calls submit and
-+ * block on a semaphore per device, in 50 ms slices so an exit request or an unplug ends the wait.
++ * block on a semaphore per endpoint, in 50 ms slices so an exit request, an unplug or close() ends
++ * the wait. Each endpoint takes one transfer at a time; different endpoints run side by side.
 + */
 +#include "lx_services.h"
 +
@@ -173,20 +174,33 @@ index 0000000..dfe8ba4
 +
 +#define SLICE_MS 50
 +
++/* A pipe per endpoint: index 0 is EP0 (control), 1..15 the OUT endpoints, 17..31 the IN ones. Each has its own
++ * transfer buffer, completion and lock, so a read can wait on an IN endpoint while writes and control requests
++ * go on beside it (a serial adapter's reader, say). */
++#define PIPES 32
++typedef struct {
++    usb_transfer_t *t;                   /* grown as needed, freed on close */
++    size_t cap;
++    SemaphoreHandle_t done;              /* given by the completion callback */
++    SemaphoreHandle_t busy;              /* one transfer at a time on it */
++    volatile bool fin;                   /* the submitted transfer completed */
++    volatile bool inflight;              /* one is submitted */
++    uint8_t ep;
++} pipe_t;
++
 +struct papp_usb_dev {
 +    bool used;
 +    volatile bool gone;
++    volatile bool closing;               /* close() is waiting: transfers give up */
 +    uint8_t addr;
 +    usb_device_handle_t h;
 +    uint16_t claimed;                    /* bit per interface 0..15 */
 +    uint16_t mps[16][2];                 /* [endpoint number][0 out, 1 in] of claimed interfaces */
-+    usb_transfer_t *xfer, *ctl;          /* grown as needed, freed on close */
-+    size_t xfer_cap, ctl_cap;
-+    SemaphoreHandle_t done;              /* given by the completion callback */
-+    SemaphoreHandle_t busy;              /* one transfer at a time */
-+    volatile bool fin;                   /* the submitted transfer completed */
-+    volatile int inflight;               /* its endpoint while one is submitted, else -1 */
++    SemaphoreHandle_t lock;              /* makes pipes, claims and releases */
++    pipe_t pipe[PIPES];
 +};
++
++static int pipe_index(uint8_t ep) { return (ep & 0x0F) ? (ep & 0x0F) | (ep & 0x80 ? 16 : 0) : 0; }
 +
 +static usb_host_client_handle_t s_client;
 +static SemaphoreHandle_t s_lock;         /* the device table */
@@ -204,7 +218,8 @@ index 0000000..dfe8ba4
 +        for (int i = 0; i < PAPP_USBH_MAX_DEVS; i++)
 +            if (s_devs[i].used && s_devs[i].h == msg->dev_gone.dev_hdl) {
 +                s_devs[i].gone = true;
-+                xSemaphoreGive(s_devs[i].done);   /* a waiting transfer looks again */
++                for (int p = 0; p < PIPES; p++)
++                    if (s_devs[i].pipe[p].done) xSemaphoreGive(s_devs[i].pipe[p].done);   /* waiters look again */
 +            }
 +    }
 +}
@@ -313,29 +328,34 @@ index 0000000..dfe8ba4
 +    return s_gen;
 +}
 +
++/* Gets a submitted transfer back without its completion: flushed (EP0's cannot be: waited out). */
++static void abandon(papp_usb_dev_t *d, pipe_t *p)
++{
++    if (p->ep & 0x0F) {
++        usb_host_endpoint_halt(d->h, p->ep);
++        usb_host_endpoint_flush(d->h, p->ep);
++    }
++    for (int i = 0; i < 40 && !p->fin; i++) xSemaphoreTake(p->done, pdMS_TO_TICKS(SLICE_MS));
++    if (p->ep & 0x0F) usb_host_endpoint_clear(d->h, p->ep);
++    p->inflight = false;
++}
++
 +static void free_dev(papp_usb_dev_t *d)
 +{
++    for (int i = 0; i < PIPES; i++) {
++        pipe_t *p = &d->pipe[i];
++        if (p->inflight && d->h) abandon(d, p);       /* its thread was killed mid-transfer */
++        if (p->t) usb_host_transfer_free(p->t);
++        if (p->done) vSemaphoreDelete(p->done);
++        if (p->busy) vSemaphoreDelete(p->busy);
++    }
 +    if (d->h) {
 +        for (int i = 0; i < 16; i++)
 +            if (d->claimed & (1u << i)) usb_host_interface_release(s_client, d->h, (uint8_t)i);
 +        usb_host_device_close(s_client, d->h);
 +    }
-+    if (d->xfer) usb_host_transfer_free(d->xfer);
-+    if (d->ctl) usb_host_transfer_free(d->ctl);
-+    if (d->done) vSemaphoreDelete(d->done);
-+    if (d->busy) vSemaphoreDelete(d->busy);
++    if (d->lock) vSemaphoreDelete(d->lock);
 +    memset(d, 0, sizeof(*d));
-+}
-+
-+/* Every submit goes through here: the completion flag down, the endpoint noted for end_run. */
-+static esp_err_t submit(papp_usb_dev_t *d, usb_transfer_t *t, uint8_t ep)
-+{
-+    xSemaphoreTake(d->done, 0);                        /* a stale give */
-+    d->fin = false;
-+    d->inflight = ep;
-+    esp_err_t e = ep ? usb_host_transfer_submit(t) : usb_host_transfer_submit_control(s_client, t);
-+    if (e != ESP_OK) d->inflight = -1;
-+    return e;
 +}
 +
 +static papp_usb_dev_t *usbh_open(uint8_t addr, int *err)
@@ -346,18 +366,16 @@ index 0000000..dfe8ba4
 +    if (ready()) {
 +        xSemaphoreTake(s_lock, portMAX_DELAY);
 +        papp_usb_dev_t *d = NULL;
-+        for (int i = 0; i < PAPP_USBH_MAX_DEVS && !d; i++)
++        for (int i = 0; i < PAPP_USBH_MAX_DEVS; i++)
 +            if (s_devs[i].used && s_devs[i].addr == addr && !s_devs[i].gone) { e = PAPP_E_ARG; goto out; }  /* open already */
 +        for (int i = 0; i < PAPP_USBH_MAX_DEVS && !d; i++)
 +            if (!s_devs[i].used) d = &s_devs[i];
 +        if (!d) { e = PAPP_E_LIMIT; goto out; }
-+        d->done = xSemaphoreCreateBinary();
-+        d->busy = xSemaphoreCreateMutex();
-+        if (!d->done || !d->busy) { free_dev(d); e = PAPP_E_NOMEM; goto out; }
++        d->lock = xSemaphoreCreateMutex();
++        if (!d->lock) { free_dev(d); e = PAPP_E_NOMEM; goto out; }
 +        if (usb_host_device_open(s_client, addr, &d->h) != ESP_OK) { d->h = NULL; free_dev(d); e = PAPP_E_ARG; goto out; }
 +        d->used = true;
 +        d->addr = addr;
-+        d->inflight = -1;
 +        r = d;
 +        e = PAPP_E_OK;
 +out:
@@ -368,15 +386,32 @@ index 0000000..dfe8ba4
 +    return r;
 +}
 +
++/* The pipe for ep, made on first use. NULL: no memory. */
++static pipe_t *pipe_for(papp_usb_dev_t *d, uint8_t ep)
++{
++    pipe_t *p = &d->pipe[pipe_index(ep)];
++    if (p->busy) return p;
++    xSemaphoreTake(d->lock, portMAX_DELAY);
++    if (!p->busy) {
++        p->done = xSemaphoreCreateBinary();
++        SemaphoreHandle_t b = xSemaphoreCreateMutex();
++        p->ep = ep & 0x0F ? ep : 0;
++        if (p->done && b) p->busy = b;
++        else if (b) vSemaphoreDelete(b);
++    }
++    xSemaphoreGive(d->lock);
++    return p->busy ? p : NULL;
++}
++
 +static void usbh_close(papp_usb_dev_t *d)
 +{
 +    SVC_ENTER();
-+    if (s_lock) {
++    if (s_lock && valid(d)) {
++        d->closing = true;                            /* a waiting transfer gives up within SLICE_MS */
++        for (int i = 0; i < PIPES; i++)
++            if (d->pipe[i].busy) xSemaphoreTake(d->pipe[i].busy, portMAX_DELAY);
 +        xSemaphoreTake(s_lock, portMAX_DELAY);
-+        if (valid(d)) {
-+            xSemaphoreTake(d->busy, portMAX_DELAY);    /* not under a transfer */
-+            free_dev(d);
-+        }
++        free_dev(d);
 +        xSemaphoreGive(s_lock);
 +    }
 +    SVC_LEAVE();
@@ -422,6 +457,7 @@ index 0000000..dfe8ba4
 +    if (!valid(d) || intf > 15) return PAPP_E_ARG;
 +    if (d->gone) return PAPP_E_RESET;
 +    SVC_ENTER();
++    xSemaphoreTake(d->lock, portMAX_DELAY);
 +    int r = PAPP_E_OK;
 +    if (d->claimed & (1u << intf)) usb_host_interface_release(s_client, d->h, intf);    /* a new alternate */
 +    d->claimed &= ~(1u << intf);
@@ -433,6 +469,7 @@ index 0000000..dfe8ba4
 +        ESP_LOGW(TAG, "claiming interface %u of address %u failed: %s", intf, d->addr, esp_err_to_name(e));
 +        r = e == ESP_ERR_NOT_FOUND ? PAPP_E_ARG : PAPP_E_IO;
 +    }
++    xSemaphoreGive(d->lock);
 +    SVC_LEAVE();
 +    return r;
 +}
@@ -441,65 +478,67 @@ index 0000000..dfe8ba4
 +{
 +    if (!valid(d) || intf > 15 || !(d->claimed & (1u << intf))) return PAPP_E_ARG;
 +    SVC_ENTER();
-+    xSemaphoreTake(d->busy, portMAX_DELAY);
-+    esp_err_t e = usb_host_interface_release(s_client, d->h, intf);
-+    d->claimed &= ~(1u << intf);
-+    xSemaphoreGive(d->busy);
++    xSemaphoreTake(d->lock, portMAX_DELAY);
++    esp_err_t e = usb_host_interface_release(s_client, d->h, intf);   /* refused while one of its endpoints is busy */
++    if (e == ESP_OK || d->gone) d->claimed &= ~(1u << intf);
++    xSemaphoreGive(d->lock);
 +    SVC_LEAVE();
 +    return e == ESP_OK || d->gone ? PAPP_E_OK : PAPP_E_IO;
 +}
 +
 +static void on_done(usb_transfer_t *t)
 +{
-+    papp_usb_dev_t *d = (papp_usb_dev_t *)t->context;
-+    d->fin = true;
-+    xSemaphoreGive(d->done);
++    pipe_t *p = (pipe_t *)t->context;
++    p->fin = true;
++    xSemaphoreGive(p->done);
 +}
 +
-+/* A transfer of at least n bytes of buffer in *slot (grown as needed). */
-+static usb_transfer_t *buffer(usb_transfer_t **slot, size_t *cap, size_t n)
++/* The pipe's transfer with at least n bytes of buffer (grown as needed). */
++static usb_transfer_t *buffer(pipe_t *p, size_t n)
 +{
-+    if (n <= *cap && *slot) return *slot;
-+    if (*slot) usb_host_transfer_free(*slot);
-+    *slot = NULL;
-+    *cap = 0;
++    if (n <= p->cap && p->t) return p->t;
++    if (p->t) usb_host_transfer_free(p->t);
++    p->t = NULL;
++    p->cap = 0;
 +    size_t want = n < 64 ? 64 : n;
-+    if (usb_host_transfer_alloc(want, 0, slot) != ESP_OK) { *slot = NULL; return NULL; }
-+    *cap = want;
-+    return *slot;
++    if (usb_host_transfer_alloc(want, 0, &p->t) != ESP_OK) { p->t = NULL; return NULL; }
++    p->cap = want;
++    return p->t;
 +}
 +
-+/* Gets a submitted transfer back without its completion: flushed (EP0's cannot be: waited out). */
-+static void abandon(papp_usb_dev_t *d, uint8_t ep)
++static esp_err_t submit(papp_usb_dev_t *d, pipe_t *p)
 +{
-+    if (ep & 0x0F) {
-+        usb_host_endpoint_halt(d->h, ep);
-+        usb_host_endpoint_flush(d->h, ep);
-+    }
-+    for (int i = 0; i < 40 && !d->fin; i++) xSemaphoreTake(d->done, pdMS_TO_TICKS(SLICE_MS));
-+    if (ep & 0x0F) usb_host_endpoint_clear(d->h, ep);
-+    d->inflight = -1;
++    xSemaphoreTake(p->done, 0);                       /* a stale give */
++    p->fin = false;
++    p->inflight = true;
++    p->t->callback = on_done;
++    p->t->context = p;
++    p->t->device_handle = d->h;
++    p->t->timeout_ms = 0;
++    esp_err_t e = p->ep ? usb_host_transfer_submit(p->t) : usb_host_transfer_submit_control(s_client, p->t);
++    if (e != ESP_OK) p->inflight = false;
++    return e;
 +}
 +
 +/* Submitted: waits for the completion, in slices. -> PAPP_E_* or the bytes moved. */
-+static int wait(papp_usb_dev_t *d, usb_transfer_t *t, uint8_t ep, uint32_t timeout_ms)
++static int wait(papp_usb_dev_t *d, pipe_t *p, uint32_t timeout_ms)
 +{
 +    int64_t end = timeout_ms ? esp_timer_get_time() + (int64_t)timeout_ms * 1000 : INT64_MAX;
 +    for (;;) {
-+        xSemaphoreTake(d->done, pdMS_TO_TICKS(SLICE_MS));
-+        if (d->fin) {                                  /* (an unplug gives too, without finishing it) */
-+            d->inflight = -1;
-+            switch (t->status) {
-+            case USB_TRANSFER_STATUS_COMPLETED: return (int)t->actual_num_bytes;
++        xSemaphoreTake(p->done, pdMS_TO_TICKS(SLICE_MS));
++        if (p->fin) {                                 /* (an unplug gives too, without finishing it) */
++            p->inflight = false;
++            switch (p->t->status) {
++            case USB_TRANSFER_STATUS_COMPLETED: return (int)p->t->actual_num_bytes;
 +            case USB_TRANSFER_STATUS_NO_DEVICE: return PAPP_E_RESET;
 +            case USB_TRANSFER_STATUS_TIMED_OUT: return PAPP_E_TIMEOUT;
-+            default:                            return PAPP_E_IO;   /* stall, error, overflow, cancelled */
++            default:                            return d->closing ? PAPP_E_RESET : PAPP_E_IO;  /* stall, error, cancelled */
 +            }
 +        }
 +        bool exiting = lx_svc_exit_flag;
-+        if (exiting || d->gone || esp_timer_get_time() >= end) {
-+            abandon(d, ep);
-+            return exiting ? PAPP_E_EXIT : d->gone ? PAPP_E_RESET : PAPP_E_TIMEOUT;
++        if (exiting || d->gone || d->closing || esp_timer_get_time() >= end) {
++            abandon(d, p);
++            return exiting ? PAPP_E_EXIT : (d->gone || d->closing) ? PAPP_E_RESET : PAPP_E_TIMEOUT;
 +        }
 +    }
 +}
@@ -508,11 +547,13 @@ index 0000000..dfe8ba4
 +                        void *data, uint16_t len, uint32_t timeout_ms)
 +{
 +    if (!valid(d) || (len && !data)) return PAPP_E_ARG;
-+    if (d->gone) return PAPP_E_RESET;
++    if (d->gone || d->closing) return PAPP_E_RESET;
++    pipe_t *p = pipe_for(d, 0);
++    if (!p) return PAPP_E_NOMEM;
 +    SVC_ENTER();
-+    xSemaphoreTake(d->busy, portMAX_DELAY);
++    xSemaphoreTake(p->busy, portMAX_DELAY);
 +    int r;
-+    usb_transfer_t *t = buffer(&d->ctl, &d->ctl_cap, sizeof(usb_setup_packet_t) + len);
++    usb_transfer_t *t = buffer(p, sizeof(usb_setup_packet_t) + len);
 +    if (!t) {
 +        r = PAPP_E_NOMEM;
 +    } else {
@@ -524,15 +565,11 @@ index 0000000..dfe8ba4
 +        sp->wLength = len;
 +        if (!(type & 0x80) && len) memcpy(t->data_buffer + sizeof(usb_setup_packet_t), data, len);
 +        t->num_bytes = sizeof(usb_setup_packet_t) + len;
-+        t->device_handle = d->h;
 +        t->bEndpointAddress = 0;
-+        t->callback = on_done;
-+        t->context = d;
-+        t->timeout_ms = 0;
-+        if (submit(d, t, 0) != ESP_OK) {
++        if (submit(d, p) != ESP_OK) {
 +            r = PAPP_E_IO;
 +        } else {
-+            r = wait(d, t, 0, timeout_ms);
++            r = wait(d, p, timeout_ms);
 +            if (r >= 0) {
 +                r -= sizeof(usb_setup_packet_t);
 +                if (r < 0) r = 0;
@@ -540,7 +577,7 @@ index 0000000..dfe8ba4
 +            }
 +        }
 +    }
-+    xSemaphoreGive(d->busy);
++    xSemaphoreGive(p->busy);
 +    SVC_LEAVE();
 +    return r;
 +}
@@ -548,37 +585,35 @@ index 0000000..dfe8ba4
 +static int usbh_transfer(papp_usb_dev_t *d, uint8_t ep, void *data, size_t len, uint32_t timeout_ms)
 +{
 +    if (!valid(d) || !(ep & 0x0F) || (len && !data)) return PAPP_E_ARG;
-+    if (d->gone) return PAPP_E_RESET;
++    if (d->gone || d->closing) return PAPP_E_RESET;
 +    const bool in = ep & 0x80;
 +    const uint16_t mps = d->mps[ep & 0x0F][in ? 1 : 0];
 +    if (!mps) return PAPP_E_ARG;                       /* not an endpoint of a claimed interface */
++    pipe_t *p = pipe_for(d, ep);
++    if (!p) return PAPP_E_NOMEM;
 +    SVC_ENTER();
-+    xSemaphoreTake(d->busy, portMAX_DELAY);
++    xSemaphoreTake(p->busy, portMAX_DELAY);
 +    int r;
 +    const size_t n = in ? usb_round_up_to_mps(len ? len : 1, mps) : len;   /* INs in whole packets */
-+    usb_transfer_t *t = buffer(&d->xfer, &d->xfer_cap, n);
++    usb_transfer_t *t = buffer(p, n);
 +    if (!t) {
 +        r = PAPP_E_NOMEM;
 +    } else {
 +        if (!in && len) memcpy(t->data_buffer, data, len);
 +        t->num_bytes = n;
-+        t->device_handle = d->h;
 +        t->bEndpointAddress = ep;
-+        t->callback = on_done;
-+        t->context = d;
-+        t->timeout_ms = 0;
-+        esp_err_t e = submit(d, t, ep);
++        esp_err_t e = submit(d, p);
 +        if (e != ESP_OK) {
 +            r = e == ESP_ERR_INVALID_STATE ? PAPP_E_IO : PAPP_E_ARG;   /* a halted endpoint: clear_halt it */
 +        } else {
-+            r = wait(d, t, ep, timeout_ms);
++            r = wait(d, p, timeout_ms);
 +            if (r > 0 && in) {
 +                if ((size_t)r > len) r = (int)len;
 +                memcpy(data, t->data_buffer, (size_t)r);
 +            }
 +        }
 +    }
-+    xSemaphoreGive(d->busy);
++    xSemaphoreGive(p->busy);
 +    SVC_LEAVE();
 +    return r;
 +}
@@ -587,12 +622,14 @@ index 0000000..dfe8ba4
 +{
 +    if (!valid(d) || !(ep & 0x0F)) return PAPP_E_ARG;
 +    if (d->gone) return PAPP_E_RESET;
++    pipe_t *p = pipe_for(d, ep);
++    if (!p) return PAPP_E_NOMEM;
 +    SVC_ENTER();
-+    xSemaphoreTake(d->busy, portMAX_DELAY);
++    xSemaphoreTake(p->busy, portMAX_DELAY);           /* not under a transfer on it */
 +    usb_host_endpoint_halt(d->h, ep);                  /* may be halted already: fine */
 +    usb_host_endpoint_flush(d->h, ep);
 +    esp_err_t e = usb_host_endpoint_clear(d->h, ep);
-+    xSemaphoreGive(d->busy);
++    xSemaphoreGive(p->busy);
 +    SVC_LEAVE();
 +    return e == ESP_OK ? PAPP_E_OK : PAPP_E_IO;
 +}
@@ -625,8 +662,7 @@ index 0000000..dfe8ba4
 +    xSemaphoreTake(s_lock, portMAX_DELAY);
 +    for (int i = 0; i < PAPP_USBH_MAX_DEVS; i++)
 +        if (s_devs[i].used) {
-+            if (s_devs[i].inflight >= 0) abandon(&s_devs[i], (uint8_t)s_devs[i].inflight);   /* killed mid-transfer */
-+            free_dev(&s_devs[i]);                      /* app threads are gone: nobody is mid-transfer */
++            free_dev(&s_devs[i]);                      /* app threads are gone; free_dev abandons what they left */
 +            n++;
 +        }
 +    xSemaphoreGive(s_lock);
@@ -634,10 +670,10 @@ index 0000000..dfe8ba4
 +    return n;
 +}
 diff --git a/components/papp_abi/include/papp_abi.h b/components/papp_abi/include/papp_abi.h
-index f20312e..d1ac0be 100644
+index f20312e..d37dd70 100644
 --- a/components/papp_abi/include/papp_abi.h
 +++ b/components/papp_abi/include/papp_abi.h
-@@ -831,6 +831,57 @@ typedef struct {
+@@ -831,6 +831,59 @@ typedef struct {
      int   (*set_name)(const char *name);                             /* GAP device name   */
  } papp_if_ble_t;
  
@@ -648,8 +684,10 @@ index f20312e..d1ac0be 100644
 + * and XInput drivers keep their interfaces; an app claims only interfaces nobody else has.
 + * Everything blocks; transfers return the bytes moved or a PAPP_E_* code of NET (PAPP_E_IO: the
 + * device stalled or the transfer failed; PAPP_E_RESET: the device was unplugged; PAPP_E_EXIT
-+ * as soon as the app is asked to exit). One transfer at a time per device: a second caller waits.
-+ * Devices the app leaves open are closed when it exits. The port runs at full speed (12 Mbit/s). */
++ * as soon as the app is asked to exit). One transfer at a time per endpoint (a second caller on it
++ * waits); different endpoints run side by side, so a thread can wait on an IN endpoint while others
++ * write and send control requests. close() ends transfers still waiting (PAPP_E_RESET). Devices
++ * the app leaves open are closed when it exits. The port runs at full speed (12 Mbit/s). */
 +
 +#define PAPP_IF_USBH      PAPP_FOURCC('U', 'S', 'B', 'H')
 +#define PAPP_IF_USBH_VER  1

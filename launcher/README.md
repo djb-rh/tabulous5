@@ -97,7 +97,8 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    (`papp_input_keyboard()`, input interface version 3; older launchers answer no). Applies on top of patch 4.
 6. `6-usb-host-for-apps.patch`: a new interface, USBH, giving apps raw access to devices on the USB host port
    that the launcher's own drivers do not take: list them, open one, claim an interface, then control, bulk and
-   interrupt transfers (blocking, ended early by an exit request or an unplug). The HID and XInput drivers keep
+   interrupt transfers (blocking, ended early by an exit request, an unplug or closing the device; one at a
+   time per endpoint, different endpoints side by side, so a reader can wait on IN while others write). The HID and XInput drivers keep
    their interfaces. For the Multitool's T48 + One ROM app; `apps/usbh_test` exercises it. The port stays at
    full speed (the launcher limits it so hubs work). Applies on top of patch 5.
 7. `7-fs-directories.patch`: the file interface's version 2: `stat` that tells folders from files, `rename`,
