@@ -118,6 +118,13 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    the SAR ADC's noise on the P4; the SDK has `papp_random()` and the C library's `getentropy()` on it. For the
    Terminal's SSH keys; m5compat's `esp_random()` uses it too where it is there. `apps/rand_test` exercises it.
    Applies on top of patch 8.
+10. `10-usb-hid-device-for-apps.patch`: a new interface, HIDD: an app turns the Tab5's USB-C into a USB HID device
+   of its own (its report descriptor: keyboard, mouse, media keys), sends reports, and reads the host's keyboard
+   LEDs. The launcher's own USB link (DevLink) pauses meanwhile and comes back when the app stops or ends,
+   however it ends. TinyUSB runs in the launcher (ESP-IDF's component manager fetches `espressif/tinyusb` on the
+   first build). On the P4 the full-speed OTG controller and the serial/JTAG unit keep their state through a
+   software reset, so a boot that finds the port still the app's resets both before DevLink starts. For the
+   Multitool's Keyboard & Mouse; tested as a USB keyboard and trackpad on a Mac. Applies on top of patch 9.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 
