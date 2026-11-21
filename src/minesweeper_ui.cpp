@@ -253,7 +253,7 @@ void drawFooter() {
   x += fresh.w + kGap;
 
   const Rect menu{x, y, 250, 64};
-  drawButton(menu, "MENU", kSurfaceLift, kMuted, &fonts::FreeSansBold12pt7b);
+  drawButton(menu, APP_LEAVE_LABEL, kSurfaceLift, kMuted, &fonts::FreeSansBold12pt7b);
   uikit::addTarget(menu, (int)Action::Menu);
 }
 

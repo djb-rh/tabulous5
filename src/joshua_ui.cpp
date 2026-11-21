@@ -247,7 +247,7 @@ void placeCursorAfter(int x, int chars) {
 void drawShellControls() {
   const Rect menu{kMargin, kH - 84, 150, 60};
   const Rect help{kW - kMargin - 64, kH - 84, 64, 64};
-  uikit::drawLabel("MENU", menu.x + menu.w / 2, menu.y + menu.h / 2, kDim,
+  uikit::drawLabel(APP_LEAVE_LABEL, menu.x + menu.w / 2, menu.y + menu.h / 2, kDim,
                    &fonts::FreeMonoBold18pt7b, middle_center);
   uikit::drawLabel("?", help.x + 32, help.y + 32, kDim,
                    &fonts::FreeMonoBold18pt7b, middle_center);

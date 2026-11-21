@@ -5,7 +5,7 @@ which=$1; here=$(cd "$(dirname "$0")" && pwd); T5=$(cd "$here/../.." && pwd); G=
 work=${TAB5_LAUNCHER_WORK:-$HOME/Developer/p4-launcher-test}; L=$work/ESP32_P4_Launcher; B=$work/build/hostsim   # the launcher's clone and our build output live outside the repository
 out=$B/tab_$which; mkdir -p $out/out
 INC="-I$here/include -I$here/include/macstub -I$P/m5compat/include -I$G -I$T5/src -I$L/components/papp_abi/include"
-DEF="-D__linux__ -DLGFX_LINUX_FB -DTABGAME_$which -DPAPP_SDK_HEADER=\"$L/papp-sdk/include/papp/papp.h\""
+DEF="-D__linux__ -DLGFX_LINUX_FB -DTABGAME_$which -DAPP_LEAVE_LABEL=\"EXIT\" -DPAPP_SDK_HEADER=\"$L/papp-sdk/include/papp/papp.h\""
 CXX="clang++ -std=gnu++17 -O1 -w $DEF $INC"
 # LovyanGFX's core, once
 if [ ! -f $B/lgfx.a ]; then

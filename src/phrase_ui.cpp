@@ -149,7 +149,7 @@ void drawHome() {
   addAction(help, Action::About);
 
   const Rect menu{kW / 2 - 150, 610, 300, 74};
-  drawButton(menu, "MENU", kSurfaceLift, kMuted, &fonts::FreeSansBold12pt7b);
+  drawButton(menu, APP_LEAVE_LABEL, kSurfaceLift, kMuted, &fonts::FreeSansBold12pt7b);
   addAction(menu, Action::Menu);
 
 }

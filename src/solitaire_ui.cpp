@@ -35,7 +35,10 @@ settings_store::SolitaireSettings g_opt;
 bool g_settings_open = false;
 bool g_confirm_new = false;
 int g_sel_pile = -1, g_sel_index = -1;
-uint32_t g_started_ms = 0, g_elapsed_s = 0;
+// The clock counts only while the cards are on the screen. g_played_ms is the
+// time so far and g_clock_ms the last tick that counted, 0 when the one before
+// was spent somewhere else (options, a question, the score table, About).
+uint32_t g_played_ms = 0, g_clock_ms = 0, g_elapsed_s = 0;
 bool g_was_won = false;
 uint32_t g_pending_time = 0;
 
@@ -468,7 +471,7 @@ void drawFooter() {
   x += w + kGap;
 
   const Rect menu{x, y, w, 62};
-  drawButton(menu, "MENU", kSurfaceLift, kMuted, &fonts::FreeSansBold12pt7b);
+  drawButton(menu, APP_LEAVE_LABEL, kSurfaceLift, kMuted, &fonts::FreeSansBold12pt7b);
   uikit::addTarget(menu, (int)Action::Menu);
 }
 
@@ -571,12 +574,17 @@ void drawConfirm() {
 
 void repaintAll() {
   uikit::clearTargets();
+  // Each of these paints over the cards, and so does anything else that takes
+  // the screen (see tick): the board that follows has to be drawn whole, not
+  // just the piles that changed.
   if (g_settings_open) {
+    g_full_dirty = true;
     drawSettings();
     uikit::present();
     return;
   }
   if (g_confirm_new) {
+    g_full_dirty = true;
     drawConfirm();
     uikit::present();
     return;
@@ -628,7 +636,8 @@ void newDeal() {
   g_game->deal((uint32_t)esp_random(), g_opt.draw_three);
   g_game->setMaxPasses(g_opt.max_passes);
   g_sel_pile = g_sel_index = -1;
-  g_started_ms = 0;
+  g_played_ms = 0;
+  g_clock_ms = 0;
   g_elapsed_s = 0;
   g_was_won = false;
 }
@@ -664,7 +673,12 @@ void begin(solitaire::Game *game) {
   g_dirty = true;
 }
 
-void invalidate() { markAllDirty(); }
+// The shell had the screen (About, the leave question, the picture turned
+// over): none of that is time at the cards.
+void invalidate() {
+  g_clock_ms = 0;
+  markAllDirty();
+}
 
 namespace {
 // The text entry closed - by a tap on DONE or CANCEL, or by the keyboard.
@@ -685,17 +699,32 @@ void tick(uint32_t now_ms) {
   if (!g_game) return;
 
   if (textentry::active()) {
+    g_clock_ms = 0;
+    g_full_dirty = true;
     if (textentry::tick(now_ms) == textentry::Result::Closed) onEntryClosed();
     return;
   }
   if (scoreboard::active()) {
+    g_clock_ms = 0;
+    g_full_dirty = true;
     scoreboard::tick(now_ms);
     return;
   }
 
-  if (!g_game->won() && !g_confirm_new) {
-    if (g_started_ms == 0) g_started_ms = now_ms;
-    const uint32_t secs = (now_ms - g_started_ms) / 1000;
+  // The options and the new-deal question have the screen to themselves: the
+  // clock stops, and nothing of the board is painted over them. (It used to
+  // run on and paint itself over the BACK button.)
+  const bool at_cards = !g_settings_open && !g_confirm_new;
+  if (!at_cards || g_game->won()) {
+    g_clock_ms = 0;
+  } else {
+    // A gap of a second or more was not play either: the launcher's own pause
+    // menu stops everything without telling us.
+    if (g_clock_ms != 0 && now_ms - g_clock_ms < 1000) {
+      g_played_ms += now_ms - g_clock_ms;
+    }
+    g_clock_ms = now_ms ? now_ms : 1;
+    const uint32_t secs = g_played_ms / 1000;
     if (secs != g_elapsed_s) {
       g_elapsed_s = secs;
       // Only the footer clock changes; redrawing 52 cards once a second would
