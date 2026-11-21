@@ -94,7 +94,8 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    shares), handed to apps as an ordinary keyboard: the same key events and HID usages a USB keyboard gives. Sym,
    Aa, Ctrl and Alt work as the keys' legends say (Sym gives the second legends, Aa is Shift, two quick Aa taps lock
    capitals). It can be clipped on and off while the launcher runs. Apps can also ask whether a keyboard is attached
-   (`papp_input_keyboard()`, input interface version 3; older launchers answer no). Applies on top of patch 4.
+   (`papp_input_keyboard()`, input interface version 3; older launchers answer no). The launcher's own password and
+   app-search screens hide their on-screen keyboard while one is attached. Applies on top of patch 4.
 6. `6-usb-host-for-apps.patch`: a new interface, USBH, giving apps raw access to devices on the USB host port
    that the launcher's own drivers do not take: list them, open one, claim an interface, then control, bulk and
    interrupt transfers (blocking, ended early by an exit request, an unplug or closing the device; one at a
