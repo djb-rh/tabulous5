@@ -1,0 +1,277 @@
+diff --git a/components/lx_loader/lx_services.c b/components/lx_loader/lx_services.c
+index 50cd431..b7bec6b 100644
+--- a/components/lx_loader/lx_services.c
++++ b/components/lx_loader/lx_services.c
+@@ -14,6 +14,7 @@
+ #include <string.h>
+ #include <sys/stat.h>
+ #include <dirent.h>
++#include <unistd.h>
+ #include <strings.h>
+ 
+ #include "esp_heap_caps.h"
+@@ -641,6 +642,88 @@ static int fs_mkdir(const char *path)
+     return r;
+ }
+ 
++/* FS v2: stat, rename, rmdir and directories (patch 7). Directories are tracked like files and
++ * closed at the end of the run. */
++static DIR *s_dirs[PAPP_FS_MAX_DIRS];
++
++static int fs_stat(const char *path, papp_stat_t *out)
++{
++    struct stat st;
++    SVC_ENTER();
++    int r = stat(path, &st);
++    if (r == 0 && out) {
++        memset(out, 0, sizeof(*out));
++        out->is_dir = S_ISDIR(st.st_mode);
++        out->size = out->is_dir ? 0 : (int64_t)st.st_size;
++        out->mtime = (int64_t)st.st_mtime;
++    }
++    SVC_LEAVE();
++    return r == 0 ? 0 : -1;
++}
++
++static int fs_rename(const char *from, const char *to)
++{
++    SVC_ENTER();
++    int r = rename(from, to);
++    SVC_LEAVE();
++    return r == 0 ? 0 : -1;
++}
++
++static int fs_rmdir(const char *path)
++{
++    SVC_ENTER();
++    int r = rmdir(path);
++    SVC_LEAVE();
++    return r == 0 ? 0 : -1;
++}
++
++static papp_dir_t *fs_opendir(const char *path)
++{
++    SVC_ENTER();
++    DIR *d = NULL;
++    int slot = -1;
++    for (int i = 0; i < PAPP_FS_MAX_DIRS && slot < 0; i++)
++        if (!s_dirs[i]) slot = i;
++    if (slot >= 0 && (d = opendir(path)) != NULL) s_dirs[slot] = d;
++    SVC_LEAVE();
++    return (papp_dir_t *)d;
++}
++
++static int dir_slot(papp_dir_t *d)
++{
++    for (int i = 0; d && i < PAPP_FS_MAX_DIRS; i++)
++        if (s_dirs[i] == (DIR *)d) return i;
++    return -1;
++}
++
++static int fs_readdir(papp_dir_t *d, papp_dirent_t *out)
++{
++    if (dir_slot(d) < 0 || !out) return -1;
++    SVC_ENTER();
++    int r = 0;
++    struct dirent *e;
++    while ((e = readdir((DIR *)d)) != NULL) {
++        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
++        memset(out, 0, sizeof(*out));
++        strlcpy(out->name, e->d_name, sizeof(out->name));
++        out->is_dir = e->d_type == DT_DIR;
++        r = 1;
++        break;
++    }
++    SVC_LEAVE();
++    return r;
++}
++
++static void fs_closedir(papp_dir_t *d)
++{
++    int i = dir_slot(d);
++    if (i < 0) return;
++    SVC_ENTER();
++    closedir(s_dirs[i]);
++    s_dirs[i] = NULL;
++    SVC_LEAVE();
++}
++
+ static const papp_if_fs_t s_if_fs = {
+     .hdr = { PAPP_IF_FS, PAPP_IF_FS_VER, sizeof(papp_if_fs_t) },
+     .open   = fs_open,
+@@ -652,6 +735,12 @@ static const papp_if_fs_t s_if_fs = {
+     .size   = fs_size,
+     .remove = fs_remove,
+     .mkdir  = fs_mkdir,
++    .stat     = fs_stat,
++    .rename   = fs_rename,
++    .rmdir    = fs_rmdir,
++    .opendir  = fs_opendir,
++    .readdir  = fs_readdir,
++    .closedir = fs_closedir,
+ };
+ 
+ /* â”€â”€ Registry & run bookkeeping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+@@ -719,6 +808,8 @@ void lx_svc_end_run(uint32_t *leaked_allocs, uint32_t *leaked_bytes, uint32_t *l
+             na++;
+         }
+ 
++    for (int i = 0; i < PAPP_FS_MAX_DIRS; i++)
++        if (s_dirs[i]) { closedir(s_dirs[i]); s_dirs[i] = NULL; nf++; }
+     for (int i = 0; i < MAX_FILES; i++) {
+         if (s_files[i]) {
+             fclose(s_files[i]);
+diff --git a/components/papp_abi/include/papp_abi.h b/components/papp_abi/include/papp_abi.h
+index d1ac0be..d3fc816 100644
+--- a/components/papp_abi/include/papp_abi.h
++++ b/components/papp_abi/include/papp_abi.h
+@@ -194,9 +194,25 @@ typedef struct {
+ /* ── FS interface ───────────────────────────────────────────────────────── */
+ 
+ #define PAPP_IF_FS        PAPP_FOURCC('F', 'S', ' ', ' ')
+-#define PAPP_IF_FS_VER    1
++#define PAPP_IF_FS_VER    2      /* v2: stat, rename, rmdir, directories */
+ 
+ typedef struct papp_file papp_file_t;
++typedef struct papp_dir  papp_dir_t;
++
++typedef struct {
++    int64_t  size;                       /* bytes (0 for a directory)                */
++    int64_t  mtime;                      /* seconds since 1970, 0 if unknown        */
++    uint8_t  is_dir;
++    uint8_t  reserved[7];
++} papp_stat_t;
++
++typedef struct {
++    char     name[256];                  /* the entry's name, not its path          */
++    uint8_t  is_dir;
++    uint8_t  reserved[3];
++} papp_dirent_t;
++
++#define PAPP_FS_MAX_DIRS 8               /* open at once; closed with the app       */
+ 
+ typedef struct {
+     papp_iface_hdr_t hdr;
+@@ -209,6 +225,13 @@ typedef struct {
+     long    (*size)(const char *path);            /* -1 if missing */
+     int     (*remove)(const char *path);
+     int     (*mkdir)(const char *path);
++    /* v2. 0 on success, -1 on failure. */
++    int     (*stat)(const char *path, papp_stat_t *out);
++    int     (*rename)(const char *from, const char *to);
++    int     (*rmdir)(const char *path);                  /* empty directories only  */
++    papp_dir_t *(*opendir)(const char *path);            /* NULL: missing / no slot */
++    int     (*readdir)(papp_dir_t *d, papp_dirent_t *out);   /* 1 an entry, 0 the end ("." and ".." left out) */
++    void    (*closedir)(papp_dir_t *d);
+ } papp_if_fs_t;
+ 
+ /* ── DISP interface ─────────────────────────────────────────────────────── */
+diff --git a/papp-sdk/runtime/libc_glue.c b/papp-sdk/runtime/libc_glue.c
+index c7c5eff..1522cca 100644
+--- a/papp-sdk/runtime/libc_glue.c
++++ b/papp-sdk/runtime/libc_glue.c
+@@ -8,7 +8,9 @@
+  */
+ #include "papp/papp.h"
+ 
++#include <dirent.h>
+ #include <errno.h>
++#include <stdlib.h>
+ #include <fcntl.h>
+ #include <reent.h>
+ #include <string.h>
+@@ -207,9 +209,25 @@ int _fstat(int fd, struct stat *st)
+     return 0;
+ }
+ 
++/* FS v2 (launcher patch 7): stat with directories, rename, rmdir, directory listing. */
++static const papp_if_fs_t *fs2(void)
++{
++    const papp_if_fs_t *fs = papp_fs();
++    return fs && fs->hdr.version >= 2 ? fs : NULL;
++}
++
+ int _stat(const char *path, struct stat *st)
+ {
+     memset(st, 0, sizeof(*st));
++    if (fs2()) {
++        papp_stat_t s;
++        if (fs2()->stat(path, &s) != 0) { errno = ENOENT; return -1; }
++        st->st_size = (off_t)s.size;
++        st->st_mode = s.is_dir ? S_IFDIR | 0775 : S_IFREG | 0664;
++        st->st_mtime = (time_t)s.mtime;
++        st->st_blksize = 512;
++        return 0;
++    }
+     long sz = papp_fs() ? papp_fs()->size(path) : -1;
+     if (sz < 0) { errno = ENOENT; return -1; }
+     st->st_size = sz;
+@@ -220,7 +238,54 @@ int _stat(const char *path, struct stat *st)
+ int _isatty(int fd)                   { return fd >= 0 && fd < FD_BASE; }
+ int _unlink(const char *path)         { return papp_fs() && papp_fs()->remove(path) == 0 ? 0 : (errno = ENOENT, -1); }
+ int _link(const char *a, const char *b) { errno = ENOSYS; return -1; }
+-int _rename(const char *a, const char *b) { errno = ENOSYS; return -1; }   /* FS has no rename yet */
++int _rename(const char *a, const char *b)
++{
++    if (!fs2()) { errno = ENOSYS; return -1; }                             /* a launcher before FS v2 */
++    return fs2()->rename(a, b) == 0 ? 0 : (errno = EIO, -1);
++}
++int rmdir(const char *path)
++{
++    if (!fs2()) { errno = ENOSYS; return -1; }
++    return fs2()->rmdir(path) == 0 ? 0 : (errno = ENOTEMPTY, -1);
++}
++
++/* newlib's DIR is the VFS's header; ours carries the launcher's handle and the entry readdir returns. */
++typedef struct {
++    DIR hdr;
++    papp_dir_t *d;
++    struct dirent e;
++} papp_DIR;
++
++DIR *opendir(const char *path)
++{
++    if (!fs2()) { errno = ENOSYS; return NULL; }
++    papp_dir_t *d = fs2()->opendir(path);
++    if (!d) { errno = ENOENT; return NULL; }
++    papp_DIR *pd = calloc(1, sizeof(*pd));
++    if (!pd) { fs2()->closedir(d); errno = ENOMEM; return NULL; }
++    pd->d = d;
++    return &pd->hdr;
++}
++
++struct dirent *readdir(DIR *dir)
++{
++    papp_DIR *pd = (papp_DIR *)dir;
++    papp_dirent_t e;
++    if (!pd || !fs2() || fs2()->readdir(pd->d, &e) != 1) return NULL;
++    memset(&pd->e, 0, sizeof(pd->e));
++    strncpy(pd->e.d_name, e.name, sizeof(pd->e.d_name) - 1);
++    pd->e.d_type = e.is_dir ? DT_DIR : DT_REG;
++    return &pd->e;
++}
++
++int closedir(DIR *dir)
++{
++    papp_DIR *pd = (papp_DIR *)dir;
++    if (!pd) return -1;
++    if (fs2()) fs2()->closedir(pd->d);
++    free(pd);
++    return 0;
++}
+ int _fcntl(int fd, int cmd, int arg)  { return 0; }
+ int fsync(int fd)                     { return 0; }                         /* writes go straight to the FS */
+ int _kill(int pid, int sig)           { errno = EINVAL; return -1; }
+diff --git a/papp-sdk/runtime/papp_api.c b/papp-sdk/runtime/papp_api.c
+index 3661d6a..5836d2c 100644
+--- a/papp-sdk/runtime/papp_api.c
++++ b/papp-sdk/runtime/papp_api.c
+@@ -8,7 +8,7 @@ __attribute__((section(".papp_imports"), used))
+ papp_import_t __papp_imports[] = {
+     { PAPP_IF_SYS, 1, PAPP_IMPORT_REQUIRED, 0 },     /* v2 for papp_local_time, v3 for papp_utc_time */
+     { PAPP_IF_MEM, 1, PAPP_IMPORT_REQUIRED, 0 },          /* v2 code memory checked at call */
+-    { PAPP_IF_FS,  PAPP_IF_FS_VER,  PAPP_IMPORT_OPTIONAL, 0 },
++    { PAPP_IF_FS,  1,  PAPP_IMPORT_OPTIONAL, 0 },             /* v2 (stat, rename, directories) checked at call */
+     { PAPP_IF_DISP, 3, PAPP_IMPORT_OPTIONAL, 0 },             /* v3 present_ext; v4 blit checked at call */
+     { PAPP_IF_AUDI, PAPP_IF_AUDI_VER, PAPP_IMPORT_OPTIONAL, 0 },
+     { PAPP_IF_INPT, 1, PAPP_IMPORT_OPTIONAL, 0 },          /* v2 functions checked at call */

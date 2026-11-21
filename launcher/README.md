@@ -100,6 +100,11 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    interrupt transfers (blocking, ended early by an exit request or an unplug). The HID and XInput drivers keep
    their interfaces. For the Multitool's T48 + One ROM app; `apps/usbh_test` exercises it. The port stays at
    full speed (the launcher limits it so hubs work). Applies on top of patch 5.
+7. `7-fs-directories.patch`: the file interface's version 2: `stat` that tells folders from files, `rename`,
+   `rmdir`, and listing a folder, with the SDK's C library's `stat()`, `rename()`, `rmdir()` and
+   `opendir()`/`readdir()`/`closedir()` on top (they were missing or always said "a file"). Apps built with it still
+   run on older launchers, where those calls fail as before. For the T48 + One ROM app's image picker. Applies on
+   top of patch 6.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 

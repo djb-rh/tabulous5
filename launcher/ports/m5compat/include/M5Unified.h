@@ -83,6 +83,7 @@ struct SerialShim {
   void printf(const char *fmt, ...) __attribute__((format(printf, 2, 3)));
   void println(const char *s = "");
   void print(const char *s);
+  void flush() {}
 };
 extern SerialShim Serial;
 
