@@ -3,12 +3,13 @@
 # the PATH) and the upstream launcher cloned as ESP32_P4_Launcher in the work folder, at the release the patches
 # were cut against (v0.32.0):
 #   git clone --branch v0.32.0 https://github.com/giltal/ESP32_P4_Launcher "$TAB5_LAUNCHER_WORK/ESP32_P4_Launcher"
-# build_launcher.sh          patches 2 to 5 (the screen fix, the gamepad, the accelerometer, the clip-on keyboard)
+# build_launcher.sh          patches 2 to 6 (the screen fix, the gamepad, the accelerometer, the clip-on keyboard,
+#                            USB host for apps)
 # build_launcher.sh trial    patch 1 as well (a RAM disk when no card mounts: for bench testing only)
 set -e
 here=$(cd "$(dirname "$0")" && pwd); work=${TAB5_LAUNCHER_WORK:-$HOME/Developer/p4-launcher-test}
 cd "$work/ESP32_P4_Launcher"
-patches="2-st7121-panel-detection 3-tab5-gamepad 4-tab5-accelerometer 5-tab5-keyboard"; [ "$1" = trial ] && patches="1-trial-ramdisk-when-no-card $patches"
+patches="2-st7121-panel-detection 3-tab5-gamepad 4-tab5-accelerometer 5-tab5-keyboard 6-usb-host-for-apps"; [ "$1" = trial ] && patches="1-trial-ramdisk-when-no-card $patches"
 # The patches build on one another (3 and 4 change the same files), so whether one is in is told by something
 # only it adds, not by trying to take it out again.
 b=boards/m5stack_tab5/board
@@ -19,6 +20,7 @@ applied() {
     3-*) [ -f $b/tab5pad.h ];;
     4-*) [ -f $b/board_imu.c ];;
     5-*) [ -f $b/board_keyboard.c ];;
+    6-*) [ -f components/lx_loader/lx_svc_usbh.c ];;
   esac
 }
 for p in $patches; do

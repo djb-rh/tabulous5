@@ -1,0 +1,737 @@
+diff --git a/apps/usbh_test/main.c b/apps/usbh_test/main.c
+new file mode 100644
+index 0000000..53a6c23
+--- /dev/null
++++ b/apps/usbh_test/main.c
+@@ -0,0 +1,82 @@
++/*
++ * usbh_test: the USBH interface (raw USB host). Lists the devices on the port, and for each one
++ * reads its device descriptor again through a control transfer, walks its configuration
++ * descriptor and tries to claim every interface (one a launcher driver holds must refuse).
++ *   no args   : that, once
++ *   "watch"   : then reports devices coming and going until stopped
++ *   "picoboot": also asks an RP2040/RP2350 bootloader (2e8a:0003/000f) or a One ROM (1209:f540..f542)
++ *               for its picoboot status (control IN 0x42 on the picoboot interface)
++ */
++#include "papp/papp.h"
++#include <stdio.h>
++#include <string.h>
++
++PAPP_MANIFEST(.id = "test.usbh", .name = "USBH test", .version = PAPP_APP_VERSION, .main_stack = 16384,
++              .flags = PAPP_MF_HIDDEN);
++
++static const char *speed(int s) { return s == 2 ? "high" : s == 1 ? "full" : "low"; }
++
++static void probe(const papp_if_usbh_t *u, const papp_usb_info_t *i, bool picoboot)
++{
++    papp_log("dev %u: %04x:%04x %s speed, class %02x, %u interfaces, \"%s\" \"%s\" serial \"%s\"\n", i->addr, i->vid,
++             i->pid, speed(i->speed), i->dev_class, i->num_interfaces, i->manufacturer, i->product, i->serial);
++    int err = 0;
++    papp_usb_dev_t *d = u->open(i->addr, &err);
++    if (!d) { papp_log("  open failed: %d\n", err); return; }
++    uint8_t dd[18] = { 0 };
++    int n = u->control(d, 0x80, 6, 0x0100, 0, dd, sizeof(dd), 1000);      /* GET_DESCRIPTOR(device) */
++    papp_log("  GET_DESCRIPTOR(device): %d bytes, idVendor %04x idProduct %04x %s\n", n, dd[8] | dd[9] << 8,
++             dd[10] | dd[11] << 8, n == 18 && (dd[8] | dd[9] << 8) == i->vid ? "(matches)" : "(MISMATCH)");
++    uint8_t cfg[512];
++    int total = u->config_descriptor(d, cfg, sizeof(cfg));
++    papp_log("  configuration: %d bytes\n", total);
++    int pb_intf = -1;
++    for (int off = 0; off + 2 <= total && off < (int)sizeof(cfg) && cfg[off];) {
++        const uint8_t *p = cfg + off;
++        if (p[1] == 4 && p[3] == 0) {                                     /* interface, alternate 0 */
++            int r = u->claim(d, p[2], 0);
++            papp_log("  intf %u class %02x/%02x/%02x, %u eps: claim %s\n", p[2], p[5], p[6], p[7], p[4],
++                     r == 0 ? "ok" : r == PAPP_E_IO ? "refused (held)" : "failed");
++            if (r == 0 && p[5] == 0xFF && p[6] == 0 && p[7] == 0 && p[4] == 2) pb_intf = p[2];   /* picoboot-shaped */
++            if (r == 0 && !(picoboot && pb_intf == p[2])) u->release(d, p[2]);
++        } else if (p[1] == 5) {
++            papp_log("    ep %02x attr %02x mps %u\n", p[2], p[3], p[4] | p[5] << 8);
++        }
++        off += p[0];
++    }
++    if (picoboot && pb_intf >= 0) {
++        uint8_t st[16] = { 0 };
++        int r = u->control(d, 0xC1, 0x42, 0, (uint16_t)pb_intf, st, 16, 1000);
++        papp_log("  picoboot status on intf %d: %d bytes, token %lu status %u cmd %02x busy %u\n", pb_intf, r,
++                 (unsigned long)(st[0] | st[1] << 8 | st[2] << 16 | (uint32_t)st[3] << 24), st[4] | st[5] << 8, st[8], st[9]);
++    }
++    u->close(d);
++}
++
++static bool streq(const char *a, const char *b) { return strcmp(a, b) == 0; }
++
++int main(int argc, char **argv)
++{
++    const papp_if_usbh_t *u = papp_usbh();
++    if (!u) { papp_log("no USBH interface in this launcher\n"); return 2; }
++    bool watch = false, picoboot = false;
++    for (int a = 1; a < argc; a++) {
++        if (streq(argv[a], "watch")) watch = true;
++        if (streq(argv[a], "picoboot")) picoboot = true;
++    }
++    papp_usb_info_t devs[8];
++    int n = u->list(devs, 8);
++    papp_log("USBH v%u: %d device%s\n", (unsigned)u->hdr.version, n, n == 1 ? "" : "s");
++    for (int i = 0; i < n; i++) probe(u, &devs[i], picoboot);
++    uint32_t gen = u->generation();
++    while (watch && !papp_exit_requested()) {
++        papp_delay_ms(100);
++        if (u->generation() == gen) continue;
++        gen = u->generation();
++        papp_delay_ms(300);                                               /* let it finish enumerating */
++        n = u->list(devs, 8);
++        papp_log("-- the bus changed: %d device%s\n", n, n == 1 ? "" : "s");
++        for (int i = 0; i < n; i++) probe(u, &devs[i], picoboot);
++    }
++    return 0;
++}
+diff --git a/apps/usbh_test/version.txt b/apps/usbh_test/version.txt
+new file mode 100644
+index 0000000..6e8bf73
+--- /dev/null
++++ b/apps/usbh_test/version.txt
+@@ -0,0 +1 @@
++0.1.0
+diff --git a/components/lx_loader/CMakeLists.txt b/components/lx_loader/CMakeLists.txt
+index fa8a7bd..0a98aae 100644
+--- a/components/lx_loader/CMakeLists.txt
++++ b/components/lx_loader/CMakeLists.txt
+@@ -1,9 +1,9 @@
+ idf_component_register(
+-    SRCS "lx_app.c" "lx_services.c" "lx_svc_disp.c" "lx_svc_audio.c" "lx_svc_input.c" "lx_svc_thrd.c" "lx_svc_ui.c" "lx_svc_net.c" "lx_svc_ble.c"
++    SRCS "lx_app.c" "lx_services.c" "lx_svc_disp.c" "lx_svc_audio.c" "lx_svc_input.c" "lx_svc_thrd.c" "lx_svc_ui.c" "lx_svc_net.c" "lx_svc_ble.c" "lx_svc_usbh.c"
+     INCLUDE_DIRS "include"
+     PRIV_INCLUDE_DIRS "."
+     REQUIRES papp_abi esp_mm
+-    PRIV_REQUIRES lx_common bsp lx_comp lx_audio lx_input esp_timer heap esp_system lx_ui lx_net lwip mbedtls esp_hw_support bt espressif__esp_hosted
++    PRIV_REQUIRES lx_common bsp lx_comp lx_audio lx_input esp_timer heap esp_system lx_ui lx_net lwip mbedtls esp_hw_support bt espressif__esp_hosted usb
+ )
+ 
+ # BLE: esp_hosted 2.x starts the C6's controller on request; 1.4 (Tab5) runs it from the C6's boot
+diff --git a/components/lx_loader/lx_services.c b/components/lx_loader/lx_services.c
+index 223da5d..50cd431 100644
+--- a/components/lx_loader/lx_services.c
++++ b/components/lx_loader/lx_services.c
+@@ -669,6 +669,7 @@ static const papp_iface_hdr_t *const s_registry[] = {
+ #if CONFIG_BT_NIMBLE_ENABLED && CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE
+     &lx_if_ble.hdr,
+ #endif
++    &lx_if_usbh.hdr,
+ };
+ 
+ void lx_svc_init(lx_app_log_sink_t log_sink)
+@@ -732,6 +733,7 @@ void lx_svc_end_run(uint32_t *leaked_allocs, uint32_t *leaked_bytes, uint32_t *l
+     lx_thrd_end_run();
+     lx_svc_net_end_run();       /* after the threads: none of them is in a call */
+     lx_svc_ble_end_run();       /* advertising, connections, GATT table, host */
++    lx_svc_usbh_end_run();      /* USB devices the app left open */
+     lx_ui_reset();              /* a browser the app was killed in */
+     *leaked_allocs = na; *leaked_bytes = nb; *leaked_files = nf;
+ }
+diff --git a/components/lx_loader/lx_services.h b/components/lx_loader/lx_services.h
+index 29dd913..8c03da4 100644
+--- a/components/lx_loader/lx_services.h
++++ b/components/lx_loader/lx_services.h
+@@ -34,6 +34,10 @@ extern const papp_if_thrd_t lx_if_thrd;
+ extern const papp_if_ui_t lx_if_ui;
+ extern const papp_if_net_t lx_if_net;
+ extern const papp_if_ble_t lx_if_ble;     /* only on boards with BLE (lx_svc_ble_present) */
++extern const papp_if_usbh_t lx_if_usbh;
++
++/* USBH bookkeeping (lx_svc_usbh.c) */
++int  lx_svc_usbh_end_run(void);             /* -> devices the app left open */
+ 
+ /* NET bookkeeping (lx_svc_net.c) */
+ void lx_svc_net_init(void);
+diff --git a/components/lx_loader/lx_svc_usbh.c b/components/lx_loader/lx_svc_usbh.c
+new file mode 100644
+index 0000000..dfe8ba4
+--- /dev/null
++++ b/components/lx_loader/lx_svc_usbh.c
+@@ -0,0 +1,483 @@
++/*
++ * USBH: raw USB host access for apps (papp_abi.h). A third client of the USB host library, beside
++ * the HID driver and the XInput client (lx_input), registered on an app's first call and kept for
++ * the launcher's life. It opens only what an app asks for, and an interface the HID or XInput
++ * driver holds cannot be claimed again, so the launcher's pads and keyboards are never disturbed.
++ *
++ * Threads: lx_usbh pumps the client's events (completions arrive there); app calls submit and
++ * block on a semaphore per device, in 50 ms slices so an exit request or an unplug ends the wait.
++ */
++#include "lx_services.h"
++
++#include <string.h>
++#include "esp_log.h"
++#include "esp_timer.h"
++#include "usb/usb_host.h"
++#include "freertos/FreeRTOS.h"
++#include "freertos/semphr.h"
++#include "freertos/task.h"
++
++static const char *TAG = "lx_usbh";
++
++#define SLICE_MS 50
++
++struct papp_usb_dev {
++    bool used;
++    volatile bool gone;
++    uint8_t addr;
++    usb_device_handle_t h;
++    uint16_t claimed;                    /* bit per interface 0..15 */
++    uint16_t mps[16][2];                 /* [endpoint number][0 out, 1 in] of claimed interfaces */
++    usb_transfer_t *xfer, *ctl;          /* grown as needed, freed on close */
++    size_t xfer_cap, ctl_cap;
++    SemaphoreHandle_t done;              /* given by the completion callback */
++    SemaphoreHandle_t busy;              /* one transfer at a time */
++    volatile bool fin;                   /* the submitted transfer completed */
++    volatile int inflight;               /* its endpoint while one is submitted, else -1 */
++};
++
++static usb_host_client_handle_t s_client;
++static SemaphoreHandle_t s_lock;         /* the device table */
++static struct papp_usb_dev s_devs[PAPP_USBH_MAX_DEVS];
++static volatile uint32_t s_gen;
++static bool s_failed;
++
++static void client_cb(const usb_host_client_event_msg_t *msg, void *arg)
++{
++    (void)arg;
++    if (msg->event == USB_HOST_CLIENT_EVENT_NEW_DEV) {
++        s_gen++;
++    } else if (msg->event == USB_HOST_CLIENT_EVENT_DEV_GONE) {
++        s_gen++;
++        for (int i = 0; i < PAPP_USBH_MAX_DEVS; i++)
++            if (s_devs[i].used && s_devs[i].h == msg->dev_gone.dev_hdl) {
++                s_devs[i].gone = true;
++                xSemaphoreGive(s_devs[i].done);   /* a waiting transfer looks again */
++            }
++    }
++}
++
++static void client_task(void *arg)
++{
++    (void)arg;
++    for (;;) usb_host_client_handle_events(s_client, pdMS_TO_TICKS(SLICE_MS));
++}
++
++/* Registers the client on first use: false when the board has no USB host running. */
++static bool ready(void)
++{
++    if (s_client) return true;
++    if (s_failed) return false;
++    if (!s_lock) s_lock = xSemaphoreCreateMutex();
++    const usb_host_client_config_t cfg = {
++        .is_synchronous = false,
++        .max_num_event_msg = 8,
++        .async = { .client_event_callback = client_cb, .callback_arg = NULL },
++    };
++    esp_err_t e = usb_host_client_register(&cfg, &s_client);
++    if (e != ESP_OK) {
++        ESP_LOGW(TAG, "no USB host for apps (%s)", esp_err_to_name(e));
++        s_client = NULL;
++        s_failed = true;
++        return false;
++    }
++    if (xTaskCreatePinnedToCore(client_task, "lx_usbh", 4096, NULL, 5, NULL, 0) != pdPASS) {
++        usb_host_client_deregister(s_client);
++        s_client = NULL;
++        s_failed = true;
++        return false;
++    }
++    return true;
++}
++
++static bool valid(papp_usb_dev_t *d)
++{
++    return d && d >= s_devs && d < s_devs + PAPP_USBH_MAX_DEVS && d->used;
++}
++
++static void ascii(char *out, size_t n, const usb_str_desc_t *sd)
++{
++    size_t k = 0;
++    for (int i = 0; sd && i < (sd->bLength - 2) / 2 && k + 1 < n; i++) {
++        uint16_t c = sd->wData[i];
++        out[k++] = c >= 0x20 && c < 0x7F ? (char)c : '?';
++    }
++    out[k] = 0;
++}
++
++static void describe(usb_device_handle_t h, uint8_t addr, papp_usb_info_t *o)
++{
++    memset(o, 0, sizeof(*o));
++    o->addr = addr;
++    const usb_device_desc_t *dd = NULL;
++    if (usb_host_get_device_descriptor(h, &dd) == ESP_OK && dd) {
++        o->vid = dd->idVendor;
++        o->pid = dd->idProduct;
++        o->bcd_device = dd->bcdDevice;
++        o->dev_class = dd->bDeviceClass;
++        o->dev_subclass = dd->bDeviceSubClass;
++        o->dev_protocol = dd->bDeviceProtocol;
++    }
++    usb_device_info_t info = { 0 };
++    if (usb_host_device_info(h, &info) == ESP_OK) {
++        o->speed = info.speed == USB_SPEED_HIGH ? 2 : info.speed == USB_SPEED_FULL ? 1 : 0;
++        ascii(o->manufacturer, sizeof(o->manufacturer), info.str_desc_manufacturer);
++        ascii(o->product, sizeof(o->product), info.str_desc_product);
++        ascii(o->serial, sizeof(o->serial), info.str_desc_serial_num);
++    }
++    const usb_config_desc_t *cd = NULL;
++    if (usb_host_get_active_config_descriptor(h, &cd) == ESP_OK && cd) o->num_interfaces = cd->bNumInterfaces;
++}
++
++static int usbh_list(papp_usb_info_t *out, int max)
++{
++    SVC_ENTER();
++    int r = PAPP_E_UNSUPPORTED;
++    if (ready()) {
++        uint8_t addrs[16];
++        int n = 0;
++        if (usb_host_device_addr_list_fill(sizeof(addrs), addrs, &n) != ESP_OK) n = 0;
++        int k = 0;
++        xSemaphoreTake(s_lock, portMAX_DELAY);
++        for (int i = 0; i < n && k < max; i++) {
++            usb_device_handle_t h = NULL;
++            bool ours = false;
++            for (int j = 0; j < PAPP_USBH_MAX_DEVS; j++)
++                if (s_devs[j].used && !s_devs[j].gone && s_devs[j].addr == addrs[i]) { h = s_devs[j].h; ours = true; }
++            if (!h && usb_host_device_open(s_client, addrs[i], &h) != ESP_OK) continue;
++            describe(h, addrs[i], &out[k++]);
++            if (!ours) usb_host_device_close(s_client, h);
++        }
++        xSemaphoreGive(s_lock);
++        r = k;
++    }
++    SVC_LEAVE();
++    return r;
++}
++
++static uint32_t usbh_generation(void)
++{
++    ready();
++    return s_gen;
++}
++
++static void free_dev(papp_usb_dev_t *d)
++{
++    if (d->h) {
++        for (int i = 0; i < 16; i++)
++            if (d->claimed & (1u << i)) usb_host_interface_release(s_client, d->h, (uint8_t)i);
++        usb_host_device_close(s_client, d->h);
++    }
++    if (d->xfer) usb_host_transfer_free(d->xfer);
++    if (d->ctl) usb_host_transfer_free(d->ctl);
++    if (d->done) vSemaphoreDelete(d->done);
++    if (d->busy) vSemaphoreDelete(d->busy);
++    memset(d, 0, sizeof(*d));
++}
++
++/* Every submit goes through here: the completion flag down, the endpoint noted for end_run. */
++static esp_err_t submit(papp_usb_dev_t *d, usb_transfer_t *t, uint8_t ep)
++{
++    xSemaphoreTake(d->done, 0);                        /* a stale give */
++    d->fin = false;
++    d->inflight = ep;
++    esp_err_t e = ep ? usb_host_transfer_submit(t) : usb_host_transfer_submit_control(s_client, t);
++    if (e != ESP_OK) d->inflight = -1;
++    return e;
++}
++
++static papp_usb_dev_t *usbh_open(uint8_t addr, int *err)
++{
++    SVC_ENTER();
++    int e = PAPP_E_UNSUPPORTED;
++    papp_usb_dev_t *r = NULL;
++    if (ready()) {
++        xSemaphoreTake(s_lock, portMAX_DELAY);
++        papp_usb_dev_t *d = NULL;
++        for (int i = 0; i < PAPP_USBH_MAX_DEVS && !d; i++)
++            if (s_devs[i].used && s_devs[i].addr == addr && !s_devs[i].gone) { e = PAPP_E_ARG; goto out; }  /* open already */
++        for (int i = 0; i < PAPP_USBH_MAX_DEVS && !d; i++)
++            if (!s_devs[i].used) d = &s_devs[i];
++        if (!d) { e = PAPP_E_LIMIT; goto out; }
++        d->done = xSemaphoreCreateBinary();
++        d->busy = xSemaphoreCreateMutex();
++        if (!d->done || !d->busy) { free_dev(d); e = PAPP_E_NOMEM; goto out; }
++        if (usb_host_device_open(s_client, addr, &d->h) != ESP_OK) { d->h = NULL; free_dev(d); e = PAPP_E_ARG; goto out; }
++        d->used = true;
++        d->addr = addr;
++        d->inflight = -1;
++        r = d;
++        e = PAPP_E_OK;
++out:
++        xSemaphoreGive(s_lock);
++    }
++    if (err) *err = e;
++    SVC_LEAVE();
++    return r;
++}
++
++static void usbh_close(papp_usb_dev_t *d)
++{
++    SVC_ENTER();
++    if (s_lock) {
++        xSemaphoreTake(s_lock, portMAX_DELAY);
++        if (valid(d)) {
++            xSemaphoreTake(d->busy, portMAX_DELAY);    /* not under a transfer */
++            free_dev(d);
++        }
++        xSemaphoreGive(s_lock);
++    }
++    SVC_LEAVE();
++}
++
++static int usbh_info(papp_usb_dev_t *d, papp_usb_info_t *out)
++{
++    if (!valid(d) || !out) return PAPP_E_ARG;
++    if (d->gone) return PAPP_E_RESET;
++    SVC_ENTER();
++    describe(d->h, d->addr, out);
++    SVC_LEAVE();
++    return PAPP_E_OK;
++}
++
++static int usbh_config_descriptor(papp_usb_dev_t *d, void *buf, size_t len)
++{
++    if (!valid(d)) return PAPP_E_ARG;
++    if (d->gone) return PAPP_E_RESET;
++    const usb_config_desc_t *cd = NULL;
++    if (usb_host_get_active_config_descriptor(d->h, &cd) != ESP_OK || !cd) return PAPP_E_IO;
++    if (buf && len) memcpy(buf, cd, len < cd->wTotalLength ? len : cd->wTotalLength);
++    return cd->wTotalLength;
++}
++
++/* The endpoints of interface `intf` (alternate `alt`) go in the device's packet-size table. */
++static void note_endpoints(papp_usb_dev_t *d, uint8_t intf, uint8_t alt)
++{
++    const usb_config_desc_t *cd = NULL;
++    if (usb_host_get_active_config_descriptor(d->h, &cd) != ESP_OK || !cd) return;
++    int off = 0;
++    const usb_intf_desc_t *id = usb_parse_interface_descriptor(cd, intf, alt, &off);
++    if (!id) return;
++    for (int e = 0; e < id->bNumEndpoints; e++) {
++        int eoff = off;
++        const usb_ep_desc_t *ep = usb_parse_endpoint_descriptor_by_index(id, e, cd->wTotalLength, &eoff);
++        if (ep) d->mps[ep->bEndpointAddress & 0x0F][ep->bEndpointAddress & 0x80 ? 1 : 0] = ep->wMaxPacketSize & 0x7FF;
++    }
++}
++
++static int usbh_claim(papp_usb_dev_t *d, uint8_t intf, uint8_t alt)
++{
++    if (!valid(d) || intf > 15) return PAPP_E_ARG;
++    if (d->gone) return PAPP_E_RESET;
++    SVC_ENTER();
++    int r = PAPP_E_OK;
++    if (d->claimed & (1u << intf)) usb_host_interface_release(s_client, d->h, intf);    /* a new alternate */
++    d->claimed &= ~(1u << intf);
++    esp_err_t e = usb_host_interface_claim(s_client, d->h, intf, alt);
++    if (e == ESP_OK) {
++        d->claimed |= 1u << intf;
++        note_endpoints(d, intf, alt);
++    } else {
++        ESP_LOGW(TAG, "claiming interface %u of address %u failed: %s", intf, d->addr, esp_err_to_name(e));
++        r = e == ESP_ERR_NOT_FOUND ? PAPP_E_ARG : PAPP_E_IO;
++    }
++    SVC_LEAVE();
++    return r;
++}
++
++static int usbh_release(papp_usb_dev_t *d, uint8_t intf)
++{
++    if (!valid(d) || intf > 15 || !(d->claimed & (1u << intf))) return PAPP_E_ARG;
++    SVC_ENTER();
++    xSemaphoreTake(d->busy, portMAX_DELAY);
++    esp_err_t e = usb_host_interface_release(s_client, d->h, intf);
++    d->claimed &= ~(1u << intf);
++    xSemaphoreGive(d->busy);
++    SVC_LEAVE();
++    return e == ESP_OK || d->gone ? PAPP_E_OK : PAPP_E_IO;
++}
++
++static void on_done(usb_transfer_t *t)
++{
++    papp_usb_dev_t *d = (papp_usb_dev_t *)t->context;
++    d->fin = true;
++    xSemaphoreGive(d->done);
++}
++
++/* A transfer of at least n bytes of buffer in *slot (grown as needed). */
++static usb_transfer_t *buffer(usb_transfer_t **slot, size_t *cap, size_t n)
++{
++    if (n <= *cap && *slot) return *slot;
++    if (*slot) usb_host_transfer_free(*slot);
++    *slot = NULL;
++    *cap = 0;
++    size_t want = n < 64 ? 64 : n;
++    if (usb_host_transfer_alloc(want, 0, slot) != ESP_OK) { *slot = NULL; return NULL; }
++    *cap = want;
++    return *slot;
++}
++
++/* Gets a submitted transfer back without its completion: flushed (EP0's cannot be: waited out). */
++static void abandon(papp_usb_dev_t *d, uint8_t ep)
++{
++    if (ep & 0x0F) {
++        usb_host_endpoint_halt(d->h, ep);
++        usb_host_endpoint_flush(d->h, ep);
++    }
++    for (int i = 0; i < 40 && !d->fin; i++) xSemaphoreTake(d->done, pdMS_TO_TICKS(SLICE_MS));
++    if (ep & 0x0F) usb_host_endpoint_clear(d->h, ep);
++    d->inflight = -1;
++}
++
++/* Submitted: waits for the completion, in slices. -> PAPP_E_* or the bytes moved. */
++static int wait(papp_usb_dev_t *d, usb_transfer_t *t, uint8_t ep, uint32_t timeout_ms)
++{
++    int64_t end = timeout_ms ? esp_timer_get_time() + (int64_t)timeout_ms * 1000 : INT64_MAX;
++    for (;;) {
++        xSemaphoreTake(d->done, pdMS_TO_TICKS(SLICE_MS));
++        if (d->fin) {                                  /* (an unplug gives too, without finishing it) */
++            d->inflight = -1;
++            switch (t->status) {
++            case USB_TRANSFER_STATUS_COMPLETED: return (int)t->actual_num_bytes;
++            case USB_TRANSFER_STATUS_NO_DEVICE: return PAPP_E_RESET;
++            case USB_TRANSFER_STATUS_TIMED_OUT: return PAPP_E_TIMEOUT;
++            default:                            return PAPP_E_IO;   /* stall, error, overflow, cancelled */
++            }
++        }
++        bool exiting = lx_svc_exit_flag;
++        if (exiting || d->gone || esp_timer_get_time() >= end) {
++            abandon(d, ep);
++            return exiting ? PAPP_E_EXIT : d->gone ? PAPP_E_RESET : PAPP_E_TIMEOUT;
++        }
++    }
++}
++
++static int usbh_control(papp_usb_dev_t *d, uint8_t type, uint8_t req, uint16_t value, uint16_t index,
++                        void *data, uint16_t len, uint32_t timeout_ms)
++{
++    if (!valid(d) || (len && !data)) return PAPP_E_ARG;
++    if (d->gone) return PAPP_E_RESET;
++    SVC_ENTER();
++    xSemaphoreTake(d->busy, portMAX_DELAY);
++    int r;
++    usb_transfer_t *t = buffer(&d->ctl, &d->ctl_cap, sizeof(usb_setup_packet_t) + len);
++    if (!t) {
++        r = PAPP_E_NOMEM;
++    } else {
++        usb_setup_packet_t *sp = (usb_setup_packet_t *)t->data_buffer;
++        sp->bmRequestType = type;
++        sp->bRequest = req;
++        sp->wValue = value;
++        sp->wIndex = index;
++        sp->wLength = len;
++        if (!(type & 0x80) && len) memcpy(t->data_buffer + sizeof(usb_setup_packet_t), data, len);
++        t->num_bytes = sizeof(usb_setup_packet_t) + len;
++        t->device_handle = d->h;
++        t->bEndpointAddress = 0;
++        t->callback = on_done;
++        t->context = d;
++        t->timeout_ms = 0;
++        if (submit(d, t, 0) != ESP_OK) {
++            r = PAPP_E_IO;
++        } else {
++            r = wait(d, t, 0, timeout_ms);
++            if (r >= 0) {
++                r -= sizeof(usb_setup_packet_t);
++                if (r < 0) r = 0;
++                if ((type & 0x80) && r) memcpy(data, t->data_buffer + sizeof(usb_setup_packet_t), (size_t)r);
++            }
++        }
++    }
++    xSemaphoreGive(d->busy);
++    SVC_LEAVE();
++    return r;
++}
++
++static int usbh_transfer(papp_usb_dev_t *d, uint8_t ep, void *data, size_t len, uint32_t timeout_ms)
++{
++    if (!valid(d) || !(ep & 0x0F) || (len && !data)) return PAPP_E_ARG;
++    if (d->gone) return PAPP_E_RESET;
++    const bool in = ep & 0x80;
++    const uint16_t mps = d->mps[ep & 0x0F][in ? 1 : 0];
++    if (!mps) return PAPP_E_ARG;                       /* not an endpoint of a claimed interface */
++    SVC_ENTER();
++    xSemaphoreTake(d->busy, portMAX_DELAY);
++    int r;
++    const size_t n = in ? usb_round_up_to_mps(len ? len : 1, mps) : len;   /* INs in whole packets */
++    usb_transfer_t *t = buffer(&d->xfer, &d->xfer_cap, n);
++    if (!t) {
++        r = PAPP_E_NOMEM;
++    } else {
++        if (!in && len) memcpy(t->data_buffer, data, len);
++        t->num_bytes = n;
++        t->device_handle = d->h;
++        t->bEndpointAddress = ep;
++        t->callback = on_done;
++        t->context = d;
++        t->timeout_ms = 0;
++        esp_err_t e = submit(d, t, ep);
++        if (e != ESP_OK) {
++            r = e == ESP_ERR_INVALID_STATE ? PAPP_E_IO : PAPP_E_ARG;   /* a halted endpoint: clear_halt it */
++        } else {
++            r = wait(d, t, ep, timeout_ms);
++            if (r > 0 && in) {
++                if ((size_t)r > len) r = (int)len;
++                memcpy(data, t->data_buffer, (size_t)r);
++            }
++        }
++    }
++    xSemaphoreGive(d->busy);
++    SVC_LEAVE();
++    return r;
++}
++
++static int usbh_clear_halt(papp_usb_dev_t *d, uint8_t ep)
++{
++    if (!valid(d) || !(ep & 0x0F)) return PAPP_E_ARG;
++    if (d->gone) return PAPP_E_RESET;
++    SVC_ENTER();
++    xSemaphoreTake(d->busy, portMAX_DELAY);
++    usb_host_endpoint_halt(d->h, ep);                  /* may be halted already: fine */
++    usb_host_endpoint_flush(d->h, ep);
++    esp_err_t e = usb_host_endpoint_clear(d->h, ep);
++    xSemaphoreGive(d->busy);
++    SVC_LEAVE();
++    return e == ESP_OK ? PAPP_E_OK : PAPP_E_IO;
++}
++
++static bool usbh_gone(papp_usb_dev_t *d)
++{
++    return !valid(d) || d->gone;
++}
++
++const papp_if_usbh_t lx_if_usbh = {
++    .hdr = { PAPP_IF_USBH, PAPP_IF_USBH_VER, sizeof(papp_if_usbh_t) },
++    .list = usbh_list,
++    .generation = usbh_generation,
++    .open = usbh_open,
++    .close = usbh_close,
++    .info = usbh_info,
++    .config_descriptor = usbh_config_descriptor,
++    .claim = usbh_claim,
++    .release = usbh_release,
++    .control = usbh_control,
++    .transfer = usbh_transfer,
++    .clear_halt = usbh_clear_halt,
++    .gone = usbh_gone,
++};
++
++int lx_svc_usbh_end_run(void)
++{
++    int n = 0;
++    if (!s_lock) return 0;
++    xSemaphoreTake(s_lock, portMAX_DELAY);
++    for (int i = 0; i < PAPP_USBH_MAX_DEVS; i++)
++        if (s_devs[i].used) {
++            if (s_devs[i].inflight >= 0) abandon(&s_devs[i], (uint8_t)s_devs[i].inflight);   /* killed mid-transfer */
++            free_dev(&s_devs[i]);                      /* app threads are gone: nobody is mid-transfer */
++            n++;
++        }
++    xSemaphoreGive(s_lock);
++    if (n) ESP_LOGI(TAG, "closed %d USB device%s the app left open", n, n == 1 ? "" : "s");
++    return n;
++}
+diff --git a/components/papp_abi/include/papp_abi.h b/components/papp_abi/include/papp_abi.h
+index f20312e..d1ac0be 100644
+--- a/components/papp_abi/include/papp_abi.h
++++ b/components/papp_abi/include/papp_abi.h
+@@ -831,6 +831,57 @@ typedef struct {
+     int   (*set_name)(const char *name);                             /* GAP device name   */
+ } papp_if_ble_t;
+ 
++/* ── USB host interface ─────────────────────────────────────────────────── */
++/* Raw access to devices on the board's USB host port, for devices the launcher's own input
++ * drivers do not take (programmers, microcontrollers in their bootloaders, serial adapters):
++ * open one, claim an interface, then control, bulk and interrupt transfers. The launcher's HID
++ * and XInput drivers keep their interfaces; an app claims only interfaces nobody else has.
++ * Everything blocks; transfers return the bytes moved or a PAPP_E_* code of NET (PAPP_E_IO: the
++ * device stalled or the transfer failed; PAPP_E_RESET: the device was unplugged; PAPP_E_EXIT
++ * as soon as the app is asked to exit). One transfer at a time per device: a second caller waits.
++ * Devices the app leaves open are closed when it exits. The port runs at full speed (12 Mbit/s). */
++
++#define PAPP_IF_USBH      PAPP_FOURCC('U', 'S', 'B', 'H')
++#define PAPP_IF_USBH_VER  1
++
++#define PAPP_USBH_MAX_DEVS 4             /* open at once                                */
++
++typedef struct papp_usb_dev papp_usb_dev_t;
++
++typedef struct {
++    uint8_t  addr;                       /* bus address: what open() takes              */
++    uint8_t  speed;                      /* 0 low, 1 full, 2 high                       */
++    uint16_t vid, pid, bcd_device;
++    uint8_t  dev_class, dev_subclass, dev_protocol;
++    uint8_t  num_interfaces;             /* in the active configuration                 */
++    char     manufacturer[32], product[48], serial[48];    /* ASCII, "" if none   */
++} papp_usb_info_t;
++
++typedef struct {
++    papp_iface_hdr_t hdr;
++    /* The devices on the bus now (up to max): the count, or PAPP_E_UNSUPPORTED (no USB host). */
++    int   (*list)(papp_usb_info_t *out, int max);
++    /* Bumps whenever a device arrives or leaves: poll it to notice either without listing. */
++    uint32_t (*generation)(void);
++    papp_usb_dev_t *(*open)(uint8_t addr, int *err);
++    void  (*close)(papp_usb_dev_t *d);                     /* releases what it claimed       */
++    int   (*info)(papp_usb_dev_t *d, papp_usb_info_t *out);
++    /* The active configuration descriptor, whole (copied up to len): its total length. */
++    int   (*config_descriptor)(papp_usb_dev_t *d, void *buf, size_t len);
++    int   (*claim)(papp_usb_dev_t *d, uint8_t interface, uint8_t alt);
++    int   (*release)(papp_usb_dev_t *d, uint8_t interface);
++    /* A control transfer on endpoint 0: data is read when bit 7 of type is set, else written. */
++    int   (*control)(papp_usb_dev_t *d, uint8_t type, uint8_t request, uint16_t value, uint16_t index,
++                     void *data, uint16_t len, uint32_t timeout_ms);
++    /* A bulk or interrupt transfer on a claimed interface's endpoint (bit 7: IN). An IN reads up
++     * to len bytes (a short packet ends it); timeout 0 waits for ever. */
++    int   (*transfer)(papp_usb_dev_t *d, uint8_t ep, void *data, size_t len, uint32_t timeout_ms);
++    /* After a stall or a timeout: the host's side of the endpoint flushed and its halt cleared.
++     * The device's halt is the app's to clear (CLEAR_FEATURE through control). */
++    int   (*clear_halt)(papp_usb_dev_t *d, uint8_t ep);
++    bool  (*gone)(papp_usb_dev_t *d);                      /* unplugged since it was opened  */
++} papp_if_usbh_t;
++
+ /* ── Entry point ────────────────────────────────────────────────────────── */
+ 
+ /* Provided by the SDK runtime (crt0), located at entry_off. */
+diff --git a/papp-sdk/include/papp/papp.h b/papp-sdk/include/papp/papp.h
+index 80365be..5bbe950 100644
+--- a/papp-sdk/include/papp/papp.h
++++ b/papp-sdk/include/papp/papp.h
+@@ -215,6 +215,10 @@ const papp_if_net_t *papp_net(void);
+  *   ble->adv_start(&a);    then wait_event() for CONNECTED / WRITE / SUBSCRIBE, notify() values */
+ const papp_if_ble_t *papp_ble(void);
+ 
++/* The USB host interface (papp_abi.h has the calls): NULL on launchers without it; on boards
++ * without a USB host port its list() answers PAPP_E_UNSUPPORTED. */
++const papp_if_usbh_t *papp_usbh(void);
++
+ #define PAPP_BLE_UUID16(v) { 2, { (uint8_t)((v) & 0xFF), (uint8_t)((v) >> 8) } }
+ 
+ /* Advertising data: appends one AD structure to buf (31 bytes at most); false if it doesn't fit */
+diff --git a/papp-sdk/runtime/papp_api.c b/papp-sdk/runtime/papp_api.c
+index d34fd2f..3661d6a 100644
+--- a/papp-sdk/runtime/papp_api.c
++++ b/papp-sdk/runtime/papp_api.c
+@@ -16,6 +16,7 @@ papp_import_t __papp_imports[] = {
+     { PAPP_IF_UI, 1, PAPP_IMPORT_OPTIONAL, 0 },              /* v2 functions checked at call */
+     { PAPP_IF_NET, 1, PAPP_IMPORT_OPTIONAL, 0 },             /* launcher 0.29+ */
+     { PAPP_IF_BLE, 1, PAPP_IMPORT_OPTIONAL, 0 },             /* launcher 0.29+, boards with BLE */
++    { PAPP_IF_USBH, 1, PAPP_IMPORT_OPTIONAL, 0 },            /* boards with a USB host port */
+ };
+ 
+ #define SYS ((const papp_if_sys_t *)__papp_imports[0].iface)
+@@ -28,6 +29,7 @@ papp_import_t __papp_imports[] = {
+ #define UI   ((const papp_if_ui_t *)__papp_imports[7].iface)
+ #define NET  ((const papp_if_net_t *)__papp_imports[8].iface)
+ #define BLE  ((const papp_if_ble_t *)__papp_imports[9].iface)
++#define USBH ((const papp_if_usbh_t *)__papp_imports[10].iface)
+ 
+ const papp_if_sys_t *papp_if_sys(void) { return SYS; }
+ const papp_if_mem_t *papp_if_mem(void) { return MEM; }
+@@ -249,3 +251,4 @@ const papp_if_net_t *papp_net(void) { return NET; }
+ /* ── BLE ────────────────────────────────────────────────────────────────── */
+ 
+ const papp_if_ble_t *papp_ble(void) { return BLE; }
++const papp_if_usbh_t *papp_usbh(void) { return USBH; }

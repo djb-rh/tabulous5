@@ -95,6 +95,11 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    Aa, Ctrl and Alt work as the keys' legends say (Sym gives the second legends, Aa is Shift, two quick Aa taps lock
    capitals). It can be clipped on and off while the launcher runs. Apps can also ask whether a keyboard is attached
    (`papp_input_keyboard()`, input interface version 3; older launchers answer no). Applies on top of patch 4.
+6. `6-usb-host-for-apps.patch`: a new interface, USBH, giving apps raw access to devices on the USB host port
+   that the launcher's own drivers do not take: list them, open one, claim an interface, then control, bulk and
+   interrupt transfers (blocking, ended early by an exit request or an unplug). The HID and XInput drivers keep
+   their interfaces. For the Multitool's T48 + One ROM app; `apps/usbh_test` exercises it. The port stays at
+   full speed (the launcher limits it so hubs work). Applies on top of patch 5.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 
