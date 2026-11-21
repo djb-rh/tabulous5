@@ -1,0 +1,488 @@
+diff --git a/apps/pwr_test/main.c b/apps/pwr_test/main.c
+new file mode 100644
+index 0000000..984b9e7
+--- /dev/null
++++ b/apps/pwr_test/main.c
+@@ -0,0 +1,45 @@
++/*
++ * pwr_test: the PWR interface (battery and charging). Reads the battery, turns charging off and reads again
++ * (what stock P4 Launcher left the Tab5 in), turns it back on and reads again, over a few seconds each; then
++ * leaves it off so the launcher's end-of-run restore can be seen in its log ("charging back on after the app").
++ *   no args : that
++ *   "watch" : just reads it every 2 s until stopped
++ */
++#include "papp/papp.h"
++#include <string.h>
++
++PAPP_MANIFEST(.id = "test.pwr", .name = "PWR test", .version = PAPP_APP_VERSION, .main_stack = 8192,
++              .flags = PAPP_MF_HIDDEN);
++
++static void show(const papp_if_pwr_t *p, const char *when)
++{
++    papp_power_t s;
++    if (p->read(&s) != PAPP_E_OK) { papp_log("%s: no battery reading\n", when); return; }
++    papp_log("%s: pack %ld mV (cell %ld), %+ld mA, %d%%, charger says %s, charging %s%s\n", when, (long)s.pack_mv,
++             (long)s.cell_mv, (long)s.ma, s.percent, s.charging ? "CHARGING" : "not charging",
++             s.charge_enabled ? "allowed" : "off", s.can_switch ? "" : " (cannot switch)");
++}
++
++/* A few readings a second apart: the charger takes a moment to start and stop. */
++static void settle(const papp_if_pwr_t *p, const char *when)
++{
++    for (int i = 0; i < 4 && !papp_exit_requested(); i++) { papp_delay_ms(1000); show(p, when); }
++}
++
++int main(int argc, char **argv)
++{
++    const papp_if_pwr_t *p = papp_pwr();
++    if (!p) { papp_log("no PWR interface in this launcher\n"); return 2; }
++    if (argc > 1 && !strcmp(argv[1], "watch")) {
++        while (!papp_exit_requested()) { show(p, "now"); papp_delay_ms(2000); }
++        return 0;
++    }
++    show(p, "as found");
++    papp_log("set_charge(off): %d\n", p->set_charge(false));
++    settle(p, "charging off");
++    papp_log("set_charge(on): %d\n", p->set_charge(true));
++    settle(p, "charging on");
++    papp_log("set_charge(off) and leaving: the launcher should turn it back on\n");
++    p->set_charge(false);
++    return 0;
++}
+diff --git a/apps/pwr_test/version.txt b/apps/pwr_test/version.txt
+new file mode 100644
+index 0000000..6e8bf73
+--- /dev/null
++++ b/apps/pwr_test/version.txt
+@@ -0,0 +1 @@
++0.1.0
+diff --git a/boards/m5stack_tab5/board/CMakeLists.txt b/boards/m5stack_tab5/board/CMakeLists.txt
+index 986fcf5..278e192 100644
+--- a/boards/m5stack_tab5/board/CMakeLists.txt
++++ b/boards/m5stack_tab5/board/CMakeLists.txt
+@@ -1,5 +1,5 @@
+ idf_component_register(
+-    SRCS "board.c" "board_display.c" "board_touch.c" "board_audio.c" "board_buttons.c" "board_rtc.c" "board_imu.c" "board_keyboard.c"
++    SRCS "board.c" "board_display.c" "board_touch.c" "board_audio.c" "board_buttons.c" "board_rtc.c" "board_imu.c" "board_keyboard.c" "board_power.c"
+     INCLUDE_DIRS "."
+     REQUIRES bsp fatfs vfs sdmmc esp_driver_sdmmc esp_driver_gpio esp_driver_ledc esp_lcd esp_hw_support esp_mm esp_driver_i2c esp_driver_i2s esp_timer
+     WHOLE_ARCHIVE       # implements the bsp.h contract: link every file, callers sit in any component
+diff --git a/boards/m5stack_tab5/board/board.c b/boards/m5stack_tab5/board/board.c
+index 1a66c47..c068a90 100644
+--- a/boards/m5stack_tab5/board/board.c
++++ b/boards/m5stack_tab5/board/board.c
+@@ -101,7 +101,10 @@ esp_err_t bsp_init(void)
+     };
+     esp_err_t err = i2c_new_master_bus(&cfg, &s_i2c);
+     if (err != ESP_OK) ESP_LOGE(TAG, "I2C bus init failed: %s", esp_err_to_name(err));
+-    else expanders_init();
++    else {
++        expanders_init();
++        bsp_power_init();
++    }
+     return ESP_OK;      /* devices report their own absence */
+ }
+ 
+diff --git a/boards/m5stack_tab5/board/board_buttons.c b/boards/m5stack_tab5/board/board_buttons.c
+index 26395d2..8ea13f9 100644
+--- a/boards/m5stack_tab5/board/board_buttons.c
++++ b/boards/m5stack_tab5/board/board_buttons.c
+@@ -1,6 +1,6 @@
+ /*
+  * Board buttons: the Tab5 gamepad add-on, found at start. No paddle. The
+- * battery is a 2-cell pack read by an INA226 (0x41); not reported yet, as the launcher expects one Li-ion cell.
++ * battery (a 2-cell pack read by an INA226 at 0x41) is board_power.c's.
+  *
+  * Rev B is looked for first: a PCA9555 at 0x20 on the EXT socket's own I2C lines (G0 SDA, G1 SCL), which
+  * nothing else on the board uses. It is only ever read, never written, and it is taken for the pad only if
+@@ -136,7 +136,4 @@ int bsp_analog_read(int ch)
+     return -1;
+ }
+ 
+-int bsp_battery_mv(void)
+-{
+-    return -1;
+-}
++/* bsp_battery_mv: board_power.c */
+diff --git a/boards/m5stack_tab5/board/board_internal.h b/boards/m5stack_tab5/board/board_internal.h
+index 2f1dbb1..e12237c 100644
+--- a/boards/m5stack_tab5/board/board_internal.h
++++ b/boards/m5stack_tab5/board/board_internal.h
+@@ -8,6 +8,7 @@ i2c_master_bus_handle_t board_i2c_bus(void);
+ void board_set_cap(uint32_t cap);
+ #include "driver/i2c_master.h"
+ i2c_master_bus_handle_t board_ext_bus(void);   /* board_buttons.c: the EXT socket's I2C (G0/G1), made once */
++esp_err_t bsp_power_init(void);                /* board_power.c: the battery, and charging on */
+ int board_imu_read(int axis);      /* board_imu.c: 0..2 -> 0..65535, -1 if no accelerometer */
+ void board_touch_reset(void);      /* GT911: reset through the I/O expander, address 0x14 */
+ 
+diff --git a/boards/m5stack_tab5/board/board_power.c b/boards/m5stack_tab5/board/board_power.c
+new file mode 100644
+index 0000000..0978098
+--- /dev/null
++++ b/boards/m5stack_tab5/board/board_power.c
+@@ -0,0 +1,113 @@
++/*
++ * The Tab5's battery: a 2-cell Li-ion pack measured by an INA226 (0x41, 5 mOhm shunt) on the board's I2C bus, and
++ * a charger switched by I/O expander 2 P7 (high = charging allowed) that reports on P6 (high = charging). As
++ * M5Unified does it (Power_Class, board_M5Tab5): the shunt reads negative while the pack charges, so the current
++ * is turned round here, positive = charging. Voltages are given per cell as well, the shape bsp_battery_mv's
++ * callers expect of a single Li-ion cell.
++ *
++ * Stock P4 Launcher leaves P7 low, so the Tab5 never charged under it: bsp_power_init turns charging on at start.
++ */
++#include "board_internal.h"
++#include "board_pins.h"
++
++#include "esp_log.h"
++#include "freertos/FreeRTOS.h"
++#include "freertos/semphr.h"
++
++static const char *TAG = "bsp_power";
++
++#define INA_ADDR      0x41
++#define INA_CONFIG    0x00
++#define INA_SHUNT     0x01      /* 2.5 uV a count, signed */
++#define INA_BUS       0x02      /* 1.25 mV a count */
++#define INA_SHUNT_MOHM 5
++#define IOX_IN        0x0F
++#define IOX_OUT       0x05
++#define IOX_CHG_EN    (1 << 7)
++#define IOX_CHG_STAT  (1 << 6)
++
++static i2c_master_dev_handle_t s_ina, s_iox;
++static SemaphoreHandle_t s_lock;
++static bool s_charge_on;
++
++static bool rd16(uint8_t reg, int16_t *v)
++{
++    uint8_t b[2];
++    if (i2c_master_transmit_receive(s_ina, &reg, 1, b, 2, 50) != ESP_OK) return false;
++    *v = (int16_t)(b[0] << 8 | b[1]);
++    return true;
++}
++
++static bool iox_rd(uint8_t reg, uint8_t *v)
++{
++    return i2c_master_transmit_receive(s_iox, &reg, 1, v, 1, 50) == ESP_OK;
++}
++
++esp_err_t bsp_set_charge(bool on)
++{
++    if (!s_iox) return ESP_ERR_NOT_SUPPORTED;
++    xSemaphoreTake(s_lock, portMAX_DELAY);
++    uint8_t out = 0;
++    esp_err_t e = ESP_FAIL;
++    if (iox_rd(IOX_OUT, &out)) {
++        uint8_t b[2] = { IOX_OUT, (uint8_t)(on ? out | IOX_CHG_EN : out & ~IOX_CHG_EN) };
++        e = i2c_master_transmit(s_iox, b, 2, 50);
++        if (e == ESP_OK) s_charge_on = on;
++    }
++    xSemaphoreGive(s_lock);
++    return e;
++}
++
++esp_err_t bsp_power_read(bsp_power_t *out)
++{
++    if (!s_ina) return ESP_ERR_NOT_SUPPORTED;
++    xSemaphoreTake(s_lock, portMAX_DELAY);
++    int16_t sh = 0, bus = 0;
++    uint8_t in = 0;
++    bool ok = rd16(INA_SHUNT, &sh) && rd16(INA_BUS, &bus);
++    bool st = s_iox && iox_rd(IOX_IN, &in);
++    xSemaphoreGive(s_lock);
++    if (!ok) return ESP_FAIL;
++    out->pack_mv = (int)((int32_t)(uint16_t)bus * 125 / 100);
++    out->cell_mv = out->pack_mv / 2;
++    out->ma = -(int)((int32_t)sh * 25 / 10 / INA_SHUNT_MOHM);     /* uV / mOhm = mA; positive = charging */
++    out->charging = st && (in & IOX_CHG_STAT);
++    out->charge_enabled = s_charge_on;
++    return ESP_OK;
++}
++
++int bsp_battery_mv(void)
++{
++    bsp_power_t p;
++    return bsp_power_read(&p) == ESP_OK ? p.cell_mv : -1;
++}
++
++esp_err_t bsp_power_init(void)
++{
++    i2c_master_bus_handle_t bus = board_i2c_bus();
++    if (!bus || s_ina) return bus ? ESP_OK : ESP_ERR_INVALID_STATE;
++    s_lock = xSemaphoreCreateMutex();
++    i2c_device_config_t cfg = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = INA_ADDR, .scl_speed_hz = 400000 };
++    if (i2c_master_probe(bus, INA_ADDR, 50) != ESP_OK || i2c_master_bus_add_device(bus, &cfg, &s_ina) != ESP_OK) {
++        s_ina = NULL;
++        ESP_LOGW(TAG, "no INA226 at 0x%02X: no battery reading", INA_ADDR);
++    } else {
++        /* averages of 16, 1.1 ms conversions, shunt and bus continuous (M5Unified's settings) */
++        uint8_t b[3] = { INA_CONFIG, 0x45, 0x27 };
++        i2c_master_transmit(s_ina, b, 3, 50);
++        board_set_cap(BSP_CAP_BATTERY);
++    }
++    cfg.device_address = BOARD_IOX2_ADDR;
++    if (i2c_master_bus_add_device(bus, &cfg, &s_iox) != ESP_OK) s_iox = NULL;
++    if (s_iox) {
++        bsp_power_t before = { 0 }, after = { 0 };
++        bsp_power_read(&before);
++        bsp_set_charge(true);
++        board_set_cap(BSP_CAP_CHARGE);
++        vTaskDelay(pdMS_TO_TICKS(300));
++        bsp_power_read(&after);
++        ESP_LOGI(TAG, "battery %d mV (%d a cell): %d mA with charging off as booted, %d mA with it on%s", after.pack_mv,
++                 after.cell_mv, before.ma, after.ma, after.charging ? " (the charger says charging)" : "");
++    }
++    return ESP_OK;
++}
+diff --git a/components/bsp/include/bsp.h b/components/bsp/include/bsp.h
+index e1ff2f4..e0a2566 100644
+--- a/components/bsp/include/bsp.h
++++ b/components/bsp/include/bsp.h
+@@ -28,6 +28,7 @@ extern "C" {
+ #define BSP_CAP_RTC       (1u << 8)
+ #define BSP_CAP_PAD_OWN_PLAYER (1u << 9)  /* with BSP_CAP_GPIO_PAD: the board's pad is player 1's own, USB pads start at player 2 */
+ #define BSP_CAP_KEYBOARD  (1u << 10)  /* a keyboard of the board's own may come and go: poll bsp_keyboard_read */
++#define BSP_CAP_CHARGE    (1u << 11)  /* the board can turn its battery's charging on and off: bsp_set_charge */
+ 
+ typedef struct {
+     const char *id;            /* "guition_p4_43"                       */
+@@ -143,6 +144,18 @@ esp_err_t bsp_rtc_set(int64_t utc);
+  * cell fitted the value is meaningless: callers check it is in the range of a Li-ion. */
+ int       bsp_battery_mv(void);
+ 
++/* ── Battery and charging (boards with BSP_CAP_BATTERY / BSP_CAP_CHARGE) ──────
++ * A reading of the battery: the whole pack, a cell, the current (positive = charging), and what the charger
++ * says. bsp_set_charge allows or stops charging. Boards without them need not define either (the launcher
++ * has weak versions that answer ESP_ERR_NOT_SUPPORTED). */
++typedef struct {
++    int  pack_mv, cell_mv, ma;
++    bool charging;            /* the charger says it is charging                 */
++    bool charge_enabled;      /* charging is allowed (bsp_set_charge)            */
++} bsp_power_t;
++esp_err_t bsp_power_read(bsp_power_t *out);
++esp_err_t bsp_set_charge(bool on);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/components/lx_loader/CMakeLists.txt b/components/lx_loader/CMakeLists.txt
+index 0a98aae..7f6f98f 100644
+--- a/components/lx_loader/CMakeLists.txt
++++ b/components/lx_loader/CMakeLists.txt
+@@ -1,5 +1,5 @@
+ idf_component_register(
+-    SRCS "lx_app.c" "lx_services.c" "lx_svc_disp.c" "lx_svc_audio.c" "lx_svc_input.c" "lx_svc_thrd.c" "lx_svc_ui.c" "lx_svc_net.c" "lx_svc_ble.c" "lx_svc_usbh.c"
++    SRCS "lx_app.c" "lx_services.c" "lx_svc_disp.c" "lx_svc_audio.c" "lx_svc_input.c" "lx_svc_thrd.c" "lx_svc_ui.c" "lx_svc_net.c" "lx_svc_ble.c" "lx_svc_usbh.c" "lx_svc_pwr.c"
+     INCLUDE_DIRS "include"
+     PRIV_INCLUDE_DIRS "."
+     REQUIRES papp_abi esp_mm
+diff --git a/components/lx_loader/lx_services.c b/components/lx_loader/lx_services.c
+index b7bec6b..b0dfef7 100644
+--- a/components/lx_loader/lx_services.c
++++ b/components/lx_loader/lx_services.c
+@@ -759,6 +759,7 @@ static const papp_iface_hdr_t *const s_registry[] = {
+     &lx_if_ble.hdr,
+ #endif
+     &lx_if_usbh.hdr,
++    &lx_if_pwr.hdr,
+ };
+ 
+ void lx_svc_init(lx_app_log_sink_t log_sink)
+@@ -825,6 +826,7 @@ void lx_svc_end_run(uint32_t *leaked_allocs, uint32_t *leaked_bytes, uint32_t *l
+     lx_svc_net_end_run();       /* after the threads: none of them is in a call */
+     lx_svc_ble_end_run();       /* advertising, connections, GATT table, host */
+     lx_svc_usbh_end_run();      /* USB devices the app left open */
++    lx_svc_pwr_end_run();       /* charging back on if the app stopped it */
+     lx_ui_reset();              /* a browser the app was killed in */
+     *leaked_allocs = na; *leaked_bytes = nb; *leaked_files = nf;
+ }
+diff --git a/components/lx_loader/lx_services.h b/components/lx_loader/lx_services.h
+index 8c03da4..f088530 100644
+--- a/components/lx_loader/lx_services.h
++++ b/components/lx_loader/lx_services.h
+@@ -35,6 +35,8 @@ extern const papp_if_ui_t lx_if_ui;
+ extern const papp_if_net_t lx_if_net;
+ extern const papp_if_ble_t lx_if_ble;     /* only on boards with BLE (lx_svc_ble_present) */
+ extern const papp_if_usbh_t lx_if_usbh;
++extern const papp_if_pwr_t lx_if_pwr;
++void lx_svc_pwr_end_run(void);              /* lx_svc_pwr.c: charging back on */
+ 
+ /* USBH bookkeeping (lx_svc_usbh.c) */
+ int  lx_svc_usbh_end_run(void);             /* -> devices the app left open */
+diff --git a/components/lx_loader/lx_svc_pwr.c b/components/lx_loader/lx_svc_pwr.c
+new file mode 100644
+index 0000000..824dce0
+--- /dev/null
++++ b/components/lx_loader/lx_svc_pwr.c
+@@ -0,0 +1,60 @@
++/*
++ * PWR: the battery and its charging for apps (papp_abi.h). The board does the work (bsp_power_read,
++ * bsp_set_charge); boards without them get the weak versions here. Charging an app stops is turned back on
++ * at the end of its run.
++ */
++#include "lx_services.h"
++#include "bsp.h"
++
++#include "esp_log.h"
++
++static const char *TAG = "lx_pwr";
++
++static bool s_stopped;           /* the running app stopped charging */
++
++__attribute__((weak)) esp_err_t bsp_power_read(bsp_power_t *out) { (void)out; return ESP_ERR_NOT_SUPPORTED; }
++__attribute__((weak)) esp_err_t bsp_set_charge(bool on) { (void)on; return ESP_ERR_NOT_SUPPORTED; }
++
++static int pwr_read(papp_power_t *out)
++{
++    if (!out) return PAPP_E_ARG;
++    SVC_ENTER();
++    bsp_power_t p;
++    esp_err_t e = bsp_power_read(&p);
++    SVC_LEAVE();
++    if (e != ESP_OK) return PAPP_E_UNSUPPORTED;
++    out->pack_mv = p.pack_mv;
++    out->cell_mv = p.cell_mv;
++    out->ma = p.ma;
++    int pct = (p.cell_mv - 3300) * 100 / (4150 - 3300);   /* M5Unified's Li-ion curve, by voltage only */
++    out->percent = (int8_t)(p.cell_mv < 2800 ? -1 : pct < 0 ? 0 : pct > 100 ? 100 : pct);
++    out->charging = p.charging;
++    out->charge_enabled = p.charge_enabled;
++    out->can_switch = (bsp_info()->caps & BSP_CAP_CHARGE) != 0;
++    return PAPP_E_OK;
++}
++
++static int pwr_set_charge(bool on)
++{
++    SVC_ENTER();
++    esp_err_t e = bsp_set_charge(on);
++    if (e == ESP_OK) {
++        s_stopped = !on;
++        ESP_LOGI(TAG, "the app turned charging %s", on ? "on" : "off");
++    }
++    SVC_LEAVE();
++    return e == ESP_OK ? PAPP_E_OK : PAPP_E_UNSUPPORTED;
++}
++
++const papp_if_pwr_t lx_if_pwr = {
++    .hdr = { PAPP_IF_PWR, PAPP_IF_PWR_VER, sizeof(papp_if_pwr_t) },
++    .read = pwr_read,
++    .set_charge = pwr_set_charge,
++};
++
++void lx_svc_pwr_end_run(void)
++{
++    if (!s_stopped) return;
++    s_stopped = false;
++    if (bsp_set_charge(true) == ESP_OK) ESP_LOGI(TAG, "charging back on after the app");
++}
+diff --git a/components/papp_abi/include/papp_abi.h b/components/papp_abi/include/papp_abi.h
+index d3fc816..ed6b2d6 100644
+--- a/components/papp_abi/include/papp_abi.h
++++ b/components/papp_abi/include/papp_abi.h
+@@ -905,6 +905,30 @@ typedef struct {
+     bool  (*gone)(papp_usb_dev_t *d);                      /* unplugged since it was opened  */
+ } papp_if_usbh_t;
+ 
++/* ── PWR interface ──────────────────────────────────────────────────────── */
++/* The battery and its charging, on boards that measure it. Charging is on whenever the launcher runs; an app
++ * may stop it for a while (a USB device it powers that wants the full 5 V while the battery charges, as a T48
++ * programmer does), and it comes back on when the app ends, however it ends. */
++
++#define PAPP_IF_PWR       PAPP_FOURCC('P', 'W', 'R', ' ')
++#define PAPP_IF_PWR_VER   1
++
++typedef struct {
++    int32_t  pack_mv;                    /* the whole battery; 0 if not measured           */
++    int32_t  cell_mv;                    /* a cell's share                                 */
++    int32_t  ma;                         /* positive = charging, negative = running on it  */
++    int8_t   percent;                    /* 0..100 by voltage, -1 unknown                  */
++    uint8_t  charging;                   /* the charger says it is charging                */
++    uint8_t  charge_enabled;             /* charging allowed now                           */
++    uint8_t  can_switch;                 /* set_charge works on this board                 */
++} papp_power_t;
++
++typedef struct {
++    papp_iface_hdr_t hdr;
++    int   (*read)(papp_power_t *out);    /* PAPP_E_OK, or PAPP_E_UNSUPPORTED (no battery reading) */
++    int   (*set_charge)(bool on);        /* PAPP_E_OK, or PAPP_E_UNSUPPORTED                    */
++} papp_if_pwr_t;
++
+ /* ── Entry point ────────────────────────────────────────────────────────── */
+ 
+ /* Provided by the SDK runtime (crt0), located at entry_off. */
+diff --git a/launcher/main/home.c b/launcher/main/home.c
+index cb6c66d..6e19c2f 100644
+--- a/launcher/main/home.c
++++ b/launcher/main/home.c
+@@ -1456,9 +1456,12 @@ static void refresh_info(void)
+     const bsp_info_t *b = bsp_info();
+     uint64_t total = 0, free_b = 0;
+     esp_vfs_fat_info("/sd", &total, &free_b);
+-    char buf[512], batt[32] = "";
++    char buf[512], batt[48] = "";
+     int mv = bsp_battery_mv();
+-    if (mv >= 0) snprintf(batt, sizeof(batt), "   Battery pin %.2f V", mv / 1000.0);   /* -1: none */
++    bsp_power_t pw;
++    if (bsp_power_read(&pw) == ESP_OK)                     /* patch 8: the whole pack and its current */
++        snprintf(batt, sizeof(batt), "   Battery %.2f V %+d mA", pw.pack_mv / 1000.0, pw.ma);
++    else if (mv >= 0) snprintf(batt, sizeof(batt), "   Battery pin %.2f V", mv / 1000.0);   /* -1: none */
+     snprintf(buf, sizeof(buf),
+              "Board         %s\n"
+              "Launcher      v%s   (app ABI %s, ESP-IDF %s)\n"
+@@ -1923,10 +1926,14 @@ static void update_status(lv_timer_t *t)
+         pads += lx_input_gamepad(i, &g);
+     }
+     int bat = (bsp_info()->caps & BSP_CAP_BATTERY) ? bsp_battery_mv() : -1;
++    bsp_power_t pw;
++    const bool measured = bsp_power_read(&pw) == ESP_OK;   /* a board that says when it charges (Tab5, patch 8) */
+     if (bat >= BAT_MV_MIN && bat <= BAT_MV_MAX) {           /* a cell is fitted */
+-        int pct = (bat - BAT_MV_EMPTY) * 100 / (BAT_MV_FULL - BAT_MV_EMPTY);
++        int pct = measured ? (bat - 3300) * 100 / (4150 - 3300)
++                           : (bat - BAT_MV_EMPTY) * 100 / (BAT_MV_FULL - BAT_MV_EMPTY);
+         pct = pct < 0 ? 0 : pct > 100 ? 100 : pct;
+-        const char *sym = bat > BAT_MV_FULL ? LV_SYMBOL_CHARGE : pct > 75 ? LV_SYMBOL_BATTERY_FULL :
++        const bool charging = measured ? pw.charging : bat > BAT_MV_FULL;
++        const char *sym = charging ? LV_SYMBOL_CHARGE : pct > 75 ? LV_SYMBOL_BATTERY_FULL :
+                           pct > 50 ? LV_SYMBOL_BATTERY_3 : pct > 25 ? LV_SYMBOL_BATTERY_2 :
+                           pct > 8 ? LV_SYMBOL_BATTERY_1 : LV_SYMBOL_BATTERY_EMPTY;
+         snprintf(buf, sizeof(buf), LV_SYMBOL_USB " %d pad%s   %s %d%%", pads, pads == 1 ? "" : "s", sym, pct);
+diff --git a/papp-sdk/include/papp/papp.h b/papp-sdk/include/papp/papp.h
+index 5bbe950..2a40f19 100644
+--- a/papp-sdk/include/papp/papp.h
++++ b/papp-sdk/include/papp/papp.h
+@@ -219,6 +219,9 @@ const papp_if_ble_t *papp_ble(void);
+  * without a USB host port its list() answers PAPP_E_UNSUPPORTED. */
+ const papp_if_usbh_t *papp_usbh(void);
+ 
++/* The battery and charging (papp_abi.h has the calls): NULL on launchers without it. */
++const papp_if_pwr_t *papp_pwr(void);
++
+ #define PAPP_BLE_UUID16(v) { 2, { (uint8_t)((v) & 0xFF), (uint8_t)((v) >> 8) } }
+ 
+ /* Advertising data: appends one AD structure to buf (31 bytes at most); false if it doesn't fit */
+diff --git a/papp-sdk/runtime/papp_api.c b/papp-sdk/runtime/papp_api.c
+index 5836d2c..74926e3 100644
+--- a/papp-sdk/runtime/papp_api.c
++++ b/papp-sdk/runtime/papp_api.c
+@@ -17,6 +17,7 @@ papp_import_t __papp_imports[] = {
+     { PAPP_IF_NET, 1, PAPP_IMPORT_OPTIONAL, 0 },             /* launcher 0.29+ */
+     { PAPP_IF_BLE, 1, PAPP_IMPORT_OPTIONAL, 0 },             /* launcher 0.29+, boards with BLE */
+     { PAPP_IF_USBH, 1, PAPP_IMPORT_OPTIONAL, 0 },            /* boards with a USB host port */
++    { PAPP_IF_PWR, 1, PAPP_IMPORT_OPTIONAL, 0 },             /* battery and charging */
+ };
+ 
+ #define SYS ((const papp_if_sys_t *)__papp_imports[0].iface)
+@@ -30,6 +31,7 @@ papp_import_t __papp_imports[] = {
+ #define NET  ((const papp_if_net_t *)__papp_imports[8].iface)
+ #define BLE  ((const papp_if_ble_t *)__papp_imports[9].iface)
+ #define USBH ((const papp_if_usbh_t *)__papp_imports[10].iface)
++#define PWR  ((const papp_if_pwr_t *)__papp_imports[11].iface)
+ 
+ const papp_if_sys_t *papp_if_sys(void) { return SYS; }
+ const papp_if_mem_t *papp_if_mem(void) { return MEM; }
+@@ -252,3 +254,4 @@ const papp_if_net_t *papp_net(void) { return NET; }
+ 
+ const papp_if_ble_t *papp_ble(void) { return BLE; }
+ const papp_if_usbh_t *papp_usbh(void) { return USBH; }
++const papp_if_pwr_t *papp_pwr(void) { return PWR; }

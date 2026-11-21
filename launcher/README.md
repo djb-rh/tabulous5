@@ -105,6 +105,13 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    `opendir()`/`readdir()`/`closedir()` on top (they were missing or always said "a file"). Apps built with it still
    run on older launchers, where those calls fail as before. For the T48 + One ROM app's image picker. Applies on
    top of patch 6.
+8. `8-battery-charging.patch`: stock P4 Launcher leaves the Tab5's charger switched off (I/O expander 2 P7 low),
+   so a Tab5 running it never charges its battery, even plugged in: measured on the console, 0 mA into the pack
+   with it off, about +655 mA with it on. This turns charging on at start, reads the pack through the INA226
+   (0x41) so the home screen shows the battery (a charge symbol while charging) and Settings its voltage and
+   current, and gives apps a PWR interface: read the battery, and stop charging for a while (the T48 app does
+   during jobs: the programmer gets 4.4 V instead of 5 V while the pack charges). Charging comes back on when the
+   app ends, however it ends. `apps/pwr_test` exercises it. Applies on top of patch 7.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 
