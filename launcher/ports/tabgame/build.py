@@ -52,7 +52,7 @@ def build(which):
         out_name = name + "-test"
     papp_build.build(name, srcs, includes=[os.path.join(HERE, "..", "m5compat", "include"), GFX, os.path.join(T5, "src"), gen],
                      libc=True, out_dir=os.path.join(ROOT, "build", out_name), version_dir=HERE,
-                     extra_cflags=["-O2", "-D__linux__", "-DLGFX_LINUX_FB", "-DTABGAME_" + define, "-w"] + extra,
+                     extra_cflags=["-O2", "-D__linux__", "-DLGFX_LINUX_FB", "-DTABGAME_" + define, '-DAPP_LEAVE_LABEL="EXIT"', "-w"] + extra,
                      per_file_cflags={s: CXX for s in srcs if s.endswith(".cpp")},
                      extra_libs=["-lstdc++", "-lsupc++"])
 

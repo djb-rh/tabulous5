@@ -44,6 +44,13 @@ void invalidate();
 // accidental exit would throw away a turn in progress.
 void requestExit();
 
+// What the button that asks to leave says. On the console it goes back to the
+// menu of games. Built as an app for somebody else's launcher there is no menu
+// of ours behind it, so that build says EXIT.
+#ifndef APP_LEAVE_LABEL
+#define APP_LEAVE_LABEL "MENU"
+#endif
+
 // Shows the running game's own About text over the top of it. Games offer
 // this only between rounds, for the same reason they only offer MENU there.
 void showAbout();

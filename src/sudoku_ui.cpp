@@ -195,7 +195,7 @@ void drawPad() {
   drawButton(lvl, sudoku::difficultyName(g_level), kSurfaceLift, kText,
              &fonts::FreeSans9pt7b);
   drawButton(scores, "SCORES", kSurfaceLift, kText, &fonts::FreeSans9pt7b);
-  drawButton(menu, "MENU", kSurfaceLift, kMuted, &fonts::FreeSans9pt7b);
+  drawButton(menu, APP_LEAVE_LABEL, kSurfaceLift, kMuted, &fonts::FreeSans9pt7b);
   uikit::addTarget(fresh, (int)Action::NewGame);
   uikit::addTarget(lvl, (int)Action::Level);
   uikit::addTarget(scores, (int)Action::Scores);
