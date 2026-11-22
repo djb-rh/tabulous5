@@ -1,13 +1,15 @@
 diff --git a/boards/m5stack_tab5/board/board_buttons.c b/boards/m5stack_tab5/board/board_buttons.c
-index 00bd500..977408c 100644
+index faf5a50..482ea73 100644
 --- a/boards/m5stack_tab5/board/board_buttons.c
 +++ b/boards/m5stack_tab5/board/board_buttons.c
-@@ -1,17 +1,122 @@
+@@ -1,18 +1,123 @@
  /*
-- * No buttons or paddle on this board: input is USB (and touch). The battery is a 2-cell
-- * pack read by an INA226 (0x41); not reported yet, as the launcher expects one Li-ion cell.
-+ * Board buttons: the Tab5 gamepad add-on, found at start. No paddle. The
-+ * battery is a 2-cell pack read by an INA226 (0x41); not reported yet, as the launcher expects one Li-ion cell.
+- * No buttons or paddle on this board: input is USB (and touch). The battery (a 2-cell pack
+- * read by an INA226 at 0x41) is board_power.c's.
+- * The accelerometer (board_imu.c) is offered as three analog inputs.
++ * Board buttons: the Tab5 gamepad add-on, found at start. No paddle. The battery (a 2-cell pack
++ * read by an INA226 at 0x41) is board_power.c's. The accelerometer (board_imu.c) is offered as three
++ * analog inputs.
 + *
 + * Rev B is looked for first: a PCA9555 at 0x20 on the EXT socket's own I2C lines (G0 SDA, G1 SCL), which
 + * nothing else on the board uses. It is only ever read, never written, and it is taken for the pad only if
@@ -131,7 +133,7 @@ index 00bd500..977408c 100644
  int bsp_analog_read(int ch)
 diff --git a/boards/m5stack_tab5/board/tab5pad.h b/boards/m5stack_tab5/board/tab5pad.h
 new file mode 100644
-index 0000000..86f1643
+index 0000000..762be11
 --- /dev/null
 +++ b/boards/m5stack_tab5/board/tab5pad.h
 @@ -0,0 +1,101 @@
@@ -237,18 +239,18 @@ index 0000000..86f1643
 +    return b;
 +}
 diff --git a/components/bsp/include/bsp.h b/components/bsp/include/bsp.h
-index d562c9c..ff53d29 100644
+index 637e6e6..25217ac 100644
 --- a/components/bsp/include/bsp.h
 +++ b/components/bsp/include/bsp.h
-@@ -26,6 +26,7 @@ extern "C" {
- #define BSP_CAP_USB_HOST  (1u << 6)
- #define BSP_CAP_BATTERY   (1u << 7)
+@@ -28,6 +28,7 @@ extern "C" {
  #define BSP_CAP_RTC       (1u << 8)
-+#define BSP_CAP_PAD_OWN_PLAYER (1u << 9)  /* with BSP_CAP_GPIO_PAD: the board's pad is player 1's own, USB pads start at player 2 */
+ #define BSP_CAP_KEYBOARD  (1u << 9)   /* a keyboard of the board's own may come and go: poll bsp_keyboard_read */
+ #define BSP_CAP_CHARGE    (1u << 10)  /* the board can turn its battery's charging on and off: bsp_set_charge */
++#define BSP_CAP_PAD_OWN_PLAYER (1u << 11) /* with BSP_CAP_GPIO_PAD: the board's pad is player 1's own, USB pads start at player 2 */
  
  typedef struct {
      const char *id;            /* "guition_p4_43"                       */
-@@ -93,6 +94,7 @@ void      bsp_audio_volume(int percent);          /* 0 = mute
+@@ -100,6 +101,7 @@ void      bsp_audio_volume(int percent);          /* 0 = mute
   * Buttons on the board (or an add-on found at init), decoded into the
   * standard gamepad layout: the same bits as PAPP_BTN_* in papp_abi.h.
   * bsp_buttons_init sets BSP_CAP_GPIO_PAD / BSP_CAP_PADDLE for what it finds
@@ -257,7 +259,7 @@ index d562c9c..ff53d29 100644
   * to poll every few ms from a task (not from an ISR). */
  #define BSP_BTN_A        (1u << 0)
 diff --git a/components/lx_input/lx_input.c b/components/lx_input/lx_input.c
-index b0d7ed5..d6962ca 100644
+index 37d8c46..106de92 100644
 --- a/components/lx_input/lx_input.c
 +++ b/components/lx_input/lx_input.c
 @@ -45,6 +45,7 @@ static papp_input_event_t s_queue[QUEUE_LEN];
@@ -284,7 +286,7 @@ index b0d7ed5..d6962ca 100644
          if (!s_pads[i].attached) player = i;
      if (player >= 0) {
          pad_t *p = &s_pads[player];
-@@ -463,10 +465,12 @@ static void board_start(void)
+@@ -493,10 +495,12 @@ static void board_start(void)
      if (caps & BSP_CAP_GPIO_PAD) {
          LOCK();
          s_board = true;
@@ -292,9 +294,8 @@ index b0d7ed5..d6962ca 100644
          push_event(PAPP_EV_DEVICE_ADDED, 0, 0, 0);
          UNLOCK();
      }
--    ESP_LOGI(TAG, "board input:%s%s", caps & BSP_CAP_GPIO_PAD ? " GPIO pad (P1)" : "",
-+    ESP_LOGI(TAG, "board input:%s%s%s", caps & BSP_CAP_GPIO_PAD ? " GPIO pad (P1)" : "",
+     ESP_LOGI(TAG, "board input:%s%s%s", caps & BSP_CAP_GPIO_PAD ? " GPIO pad (P1)" : "",
 +             (caps & BSP_CAP_GPIO_PAD) && (caps & BSP_CAP_PAD_OWN_PLAYER) ? ", USB pads from P2" : "",
-              caps & BSP_CAP_PADDLE ? " paddle" : "");
-     xTaskCreatePinnedToCore(board_task, "lx_btn", 3072, NULL, 6, NULL, 0);
+              caps & BSP_CAP_PADDLE ? " paddle" : "", caps & BSP_CAP_KEYBOARD ? " keyboard (when attached)" : "");
+     xTaskCreatePinnedToCore(board_task, "lx_btn", 4096, NULL, 6, NULL, 0);   /* the keyboard's I2C and its log want more than 3 KB */
  }

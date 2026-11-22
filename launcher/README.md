@@ -79,73 +79,32 @@ Everything that is not ours to publish, or is only built, lives in a **work fold
 (`TAB5_LAUNCHER_WORK`, default `~/Developer/p4-launcher-test`): the launcher's clone, `build/`, and `sdcard/`.
 Game files (ROMs, WADs, paks) are your own, go on your own card, and are never committed.
 
-## Patches to the launcher (against v0.32.0)
+## Patches to the launcher (against v0.34.0)
+
+Most of what was here is now in the launcher itself, as of 0.34.0: the ST7121 panel detection (was patch 2), the
+accelerometer (4), the clip-on Tab5 Keyboard (5), USB host for apps (6), folders for apps (7), battery charging
+(8), random bytes (9), the USB HID device (10), Bluetooth pairing (11), esp_hosted 2.x on the Tab5 (12) and a home
+screen with no limit on the number of apps (13, done upstream as a table that grows). Three things changed on the
+way in, and apps built against the patched 0.32 SDK have to be rebuilt for them:
+
+- random bytes are SYS **v5** (the chip revision took v4): an app built with the old SDK calls the wrong slot on
+  0.34 and gets no random bytes without knowing it;
+- Bluetooth bonds are kept on the card (`/sd/config/ble_bonds.bin`), not in the launcher's flash;
+- the board capability bits for the keyboard and charging are 9 and 10, so the gamepad's "USB pads from player
+  two" bit is 11 here (patch 3).
+
+What is left:
 
 1. `1-trial-ramdisk-when-no-card.patch`: a RAM disk when no card mounts. Bench testing only; not built by default.
-2. `2-st7121-panel-detection.patch`: on Tab5s with the ST7121 panel the launcher asked the touch chip once who it
-   was, and on about every other restart the chip was not awake yet: black screen, no touch, sound playing. It
-   now asks for up to 800 ms.
-3. `3-tab5-gamepad.patch`: the gamepad, and a board flag that makes USB pads start at player two.
-4. `4-tab5-accelerometer.patch`: the Tab5's BMI270, offered to apps as three more analog inputs
-   (`PAPP_ANALOG_ACCEL_X/Y/Z`: 32768 is 0 g, 4096 to the g, the chip's own axes, which is what M5Unified gives on
-   this board). Nothing touches the sensor until an app first asks; that first read loads the sensor's
-   configuration file and takes a quarter of a second. Applies on top of patch 3.
-5. `5-tab5-keyboard.patch`: M5Stack's clip-on Tab5 Keyboard (I2C 0x6D on the EXT socket, the bus the rev B pad
-   shares), handed to apps as an ordinary keyboard: the same key events and HID usages a USB keyboard gives. Sym,
-   Aa, Ctrl and Alt work as the keys' legends say (Sym gives the second legends, Aa is Shift, two quick Aa taps lock
-   capitals). It can be clipped on and off while the launcher runs. Apps can also ask whether a keyboard is attached
-   (`papp_input_keyboard()`, input interface version 3; older launchers answer no). The launcher's own password and
-   app-search screens hide their on-screen keyboard while one is attached. Applies on top of patch 4.
-6. `6-usb-host-for-apps.patch`: a new interface, USBH, giving apps raw access to devices on the USB host port
-   that the launcher's own drivers do not take: list them, open one, claim an interface, then control, bulk and
-   interrupt transfers (blocking, ended early by an exit request, an unplug or closing the device; one at a
-   time per endpoint, different endpoints side by side, so a reader can wait on IN while others write). The HID and XInput drivers keep
-   their interfaces. For the Multitool's T48 + One ROM app; `apps/usbh_test` exercises it. The port stays at
-   full speed (the launcher limits it so hubs work). Applies on top of patch 5.
-7. `7-fs-directories.patch`: the file interface's version 2: `stat` that tells folders from files, `rename`,
-   `rmdir`, and listing a folder, with the SDK's C library's `stat()`, `rename()`, `rmdir()` and
-   `opendir()`/`readdir()`/`closedir()` on top (they were missing or always said "a file"). Apps built with it still
-   run on older launchers, where those calls fail as before. For the T48 + One ROM app's image picker. Applies on
-   top of patch 6.
-8. `8-battery-charging.patch`: stock P4 Launcher leaves the Tab5's charger switched off (I/O expander 2 P7 low),
-   so a Tab5 running it never charges its battery, even plugged in: measured on the console, 0 mA into the pack
-   with it off, about +655 mA with it on. This turns charging on at start, reads the pack through the INA226
-   (0x41) so the home screen shows the battery (a charge symbol while charging) and Settings its voltage and
-   current, and gives apps a PWR interface: read the battery, and stop charging for a while (the T48 app does
-   during jobs: the programmer gets 4.4 V instead of 5 V while the pack charges). Charging comes back on when the
-   app ends, however it ends. `apps/pwr_test` exercises it. Applies on top of patch 7.
-9. `9-random-bytes.patch`: apps had no source of real randomness (only the clock). The system interface's
-   version 4 hands out bytes from the chip's hardware random number generator, which ESP-IDF keeps fed from
-   the SAR ADC's noise on the P4; the SDK has `papp_random()` and the C library's `getentropy()` on it. For the
-   Terminal's SSH keys; m5compat's `esp_random()` uses it too where it is there. `apps/rand_test` exercises it.
-   Applies on top of patch 8.
-10. `10-usb-hid-device-for-apps.patch`: a new interface, HIDD: an app turns the Tab5's USB-C into a USB HID device
-   of its own (its report descriptor: keyboard, mouse, media keys), sends reports, and reads the host's keyboard
-   LEDs. The launcher's own USB link (DevLink) pauses meanwhile and comes back when the app stops or ends,
-   however it ends. TinyUSB runs in the launcher (ESP-IDF's component manager fetches `espressif/tinyusb` on the
-   first build). On the P4 the full-speed OTG controller and the serial/JTAG unit keep their state through a
-   software reset, so a boot that finds the port still the app's resets both before DevLink starts. For the
-   Multitool's Keyboard & Mouse; tested as a USB keyboard and trackpad on a Mac. Applies on top of patch 9.
-11. `11-ble-pairing-for-apps.patch`: the Bluetooth interface's version 2. v1 could not pair, and a Bluetooth keyboard
-   must: apps can now ask for pairing ("Just Works" bonding, legacy or Secure Connections, and starting it as soon
-   as a host connects, which macOS waits for), have bonds kept in the launcher's flash so a host reconnects on later
-   runs, mark characteristics as needing an encrypted link, give characteristics descriptors (HID's Report
-   Reference), set the GAP appearance and a static random address, and forget every host. The key store is read
-   and written on an internal-RAM stack (an app thread's PSRAM stack must not write flash). For the Multitool's
-   Keyboard & Mouse, which pairs with a Mac and reconnects by itself. Applies on top of patch 10.
-12. `12-tab5-esp-hosted-2.patch` (not built by default: `build_launcher.sh hosted2`): the Tab5 build on esp_hosted
-   2.12.13 instead of 1.4, with esp_hosted's own Tab5 preset and the C6's reset active high, as the Arduino core drives
-   it. For a Tab5 whose C6 has been updated to 2.x firmware (T48 for Tab5's and the Multitool's Wi-Fi screens offer
-   that update): esp_hosted 1.4 still runs Wi-Fi with such a C6 but never switches its Bluetooth controller on, so
-   every Bluetooth app fails. Tested on a Tab5 whose C6 reports 2.12.13: Wi-Fi and Bluetooth both work. Not tried on
-   a Tab5 with the C6 firmware it shipped with. Applies on top of patch 11.
-13. `13-more-apps.patch`: the home screen listed 64 apps and folders and left the rest of the card out without a
-   word (upstream issue 51); 256 now. Found when the Galagino folder lost its last tiles.
+3. `3-tab5-gamepad.patch`: the gamepad, and a board flag that makes USB pads start at player two. Not offered
+   upstream. Rev A (the M5-Bus pins named by `/sd/config/tab5pad.txt`) is what has run on 0.34; rev B's PCA9555
+   shares the EXT socket's I2C lines with the clip-on keyboard, whose driver upstream now opens that bus itself,
+   so the two need bringing together before a rev B pad and a keyboard are used at once.
 14. `14-home-quiet-after-app.patch`: back from an app, the home screen took about a second to list the card again
    with the app's last picture still up, and a press or tap made in that second started whatever tile turned up
    under it. It now draws itself at once, lists the card after, and takes no press or touch until the grid is
-   drawn and a third of a second more, nor a touch already down until it lifts. It logs how long each step took.
-   Applies on top of patch 13.
+   drawn and a third of a second more, nor a touch already down until it lifts. Offered upstream (pull request 53);
+   applies on top of patch 3 or without it.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 
@@ -155,8 +114,8 @@ Wants: ESP-IDF 5.5 (for the launcher and its RISC-V compiler), PlatformIO having
 (the ports use its copy of M5GFX in `.pio/libdeps`), Python with `pyelftools`, `pyserial` and `esptool`.
 
 ```bash
-git clone --branch v0.32.0 https://github.com/giltal/ESP32_P4_Launcher ~/Developer/p4-launcher-test/ESP32_P4_Launcher
-launcher/tools/build_launcher.sh          # the launcher, with patches 2 to 11, 13 and 14
+git clone --branch v0.34.0 https://github.com/giltal/ESP32_P4_Launcher ~/Developer/p4-launcher-test/ESP32_P4_Launcher
+launcher/tools/build_launcher.sh          # the launcher, with patches 3 and 14
 python launcher/ports/tabgame/build.py    # the six touch games
 python launcher/ports/arcade/build.py     # the arcade app
 launcher/tools/stage_sd.sh                # lays out sdcard/: apps, icons, word packs, sounds
@@ -171,10 +130,10 @@ The card: games under `/sd/roms/<system>/` (`nes`, `gb`, `snes`, `arcade`, `doom
 under `/sd/apps/`, ours keeping their things under `/sd/tabulous/` (`packs/` with an `index.txt` naming its
 files, because a launcher app cannot list a folder; `sfx/`; `*.prefs`).
 
-**For the Store, build against the stock SDK.** Our patches add interfaces (a keyboard, USB host, folders, random
-bytes), and an app built against the patched SDK may ask for versions a stock launcher does not have. Point
-`TAB5_LAUNCHER_WORK` at a folder whose `ESP32_P4_Launcher` is a clean checkout of the release, and build there;
-`ports/m5compat` only uses what the SDK it is built against offers.
+**For the Store, build against a stock SDK.** The interfaces that used to be ours alone (a keyboard, USB host,
+folders, random bytes) are in the launcher since 0.34.0, but our gamepad patch is not, and an app in the Store has
+to run on the launcher everybody has. Point `TAB5_LAUNCHER_WORK` at a folder whose `ESP32_P4_Launcher` is a clean
+checkout of the release, and build there; `ports/m5compat` only uses what the SDK it is built against offers.
 
 The touch games carry their sounds (and the two party games their word packs) inside the app as well, so one
 installed from the launcher's Store, which is a single file, is whole. A file on the card is used in preference,
