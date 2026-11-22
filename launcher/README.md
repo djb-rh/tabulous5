@@ -139,6 +139,13 @@ Game files (ROMs, WADs, paks) are your own, go on your own card, and are never c
    that update): esp_hosted 1.4 still runs Wi-Fi with such a C6 but never switches its Bluetooth controller on, so
    every Bluetooth app fails. Tested on a Tab5 whose C6 reports 2.12.13: Wi-Fi and Bluetooth both work. Not tried on
    a Tab5 with the C6 firmware it shipped with. Applies on top of patch 11.
+13. `13-more-apps.patch`: the home screen listed 64 apps and folders and left the rest of the card out without a
+   word (upstream issue 51); 256 now. Found when the Galagino folder lost its last tiles.
+14. `14-home-quiet-after-app.patch`: back from an app, the home screen took about a second to list the card again
+   with the app's last picture still up, and a press or tap made in that second started whatever tile turned up
+   under it. It now draws itself at once, lists the card after, and takes no press or touch until the grid is
+   drawn and a third of a second more, nor a touch already down until it lifts. It logs how long each step took.
+   Applies on top of patch 13.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 
@@ -149,7 +156,7 @@ Wants: ESP-IDF 5.5 (for the launcher and its RISC-V compiler), PlatformIO having
 
 ```bash
 git clone --branch v0.32.0 https://github.com/giltal/ESP32_P4_Launcher ~/Developer/p4-launcher-test/ESP32_P4_Launcher
-launcher/tools/build_launcher.sh          # the launcher, with patches 2, 3 and 4
+launcher/tools/build_launcher.sh          # the launcher, with patches 2 to 11, 13 and 14
 python launcher/ports/tabgame/build.py    # the six touch games
 python launcher/ports/arcade/build.py     # the arcade app
 launcher/tools/stage_sd.sh                # lays out sdcard/: apps, icons, word packs, sounds

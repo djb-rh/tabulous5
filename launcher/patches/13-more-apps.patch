@@ -1,0 +1,13 @@
+diff --git a/launcher/main/home.c b/launcher/main/home.c
+index 8e1056e..8c66d6b 100644
+--- a/launcher/main/home.c
++++ b/launcher/main/home.c
+@@ -62,7 +62,7 @@ static const char *TAG = "home";
+ #pragma GCC diagnostic ignored "-Wformat-truncation"
+ 
+ #define LAST_APP_FILE "/sd/launcher/last_app.txt"
+-#define MAX_APPS      64           /* apps + folders */
++#define MAX_APPS      256          /* apps + folders */
+ #define MAX_NAME      24           /* folder name */
+ #define ICON          88
+ 
