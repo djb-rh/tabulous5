@@ -19,6 +19,7 @@
 
 #include "arcrom.h"
 #include "fourway.h"
+#include "hiscore.h"
 
 using namespace tabulous;
 
@@ -203,6 +204,7 @@ static bool loadMachine(const char *path, const char **why)
     }
     namco_fast_init(g_sys, &g_cpu, &board);
     g_sys->dsw1 = g_dsw1;                         // read by the game when it starts
+    hiscore::identify(rom + info.cpu, info.file_bytes - info.cpu, path);
     papp_free(rom);                               // namco_init copied every ROM into the machine
 
     for (int i = 0; i < 32; i++) {
@@ -462,6 +464,7 @@ static int machine(void *)
         int64_t t0 = papp_time_us();
         g_pcm_n = 0;
         namco_fast_run(g_sys, &g_cpu, kFrameUs);       // touches no pixel: the frame before may still be with the painter
+        hiscore::frame([](uint16_t a) { return mem_rd(&g_sys->mem, a); }, [](uint16_t a, uint8_t v) { mem_wr(&g_sys->mem, a, v); });
         us_run += (uint32_t)(papp_time_us() - t0);
         if (g_painter_on) {
             // The panel shows 57 pictures a second and the machine makes 60: showing one waits for the panel, so
@@ -518,6 +521,7 @@ static int machine(void *)
         }
     }
     if (g_painter_on && painting) { papp_sem_take(g_paint_done, 500); papp_sem_take(g_paint_idle, 500); }
+    hiscore::leaving([](uint16_t a) { return mem_rd(&g_sys->mem, a); });   // written by the main thread, below
     g_stop = true;
     return 0;
 }
@@ -595,6 +599,7 @@ int main(int argc, char **argv)
                 papp_sem_give(g_ui_done);
             }
             if (papp_exit_requested()) g_stop = true;
+            hiscore::writeIfDue();
             papp_touch_point_t tp;
             g_touched = papp_disp_touch(g_surf, &tp, 1) > 0;
             papp_delay_ms(10);
@@ -605,6 +610,7 @@ int main(int argc, char **argv)
         machine(nullptr);
     }
     stopThreads();
+    hiscore::writeIfDue();                          // the scores as the game was left
     if (g_audio) papp_audio_close(g_audio);
     papp_disp_surface_destroy(g_surf);
     return g_rc;
