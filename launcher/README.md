@@ -12,7 +12,7 @@ builds from this branch. Nothing here changes it, apart from two small fixes to 
 | App | From | State |
 |---|---|---|
 | Arcade (Pac-Man board) | `ports/arcade` + `src/arcrom`, `src/fourway`, `third_party/chips`, `third_party/z80` | 60 fps, no audio underruns; cabinet switches, cocktail table with a second stick, face buttons as a stick |
-| PhraseCraze, FiveHead, Joshua | `ports/tabgame` + the games' own files in `src/` | run, with the console's sounds, settings and word packs; tilt and the picture turning over need patch 4 |
+| PhraseCraze, FiveHead, Joshua | `ports/tabgame` + the games' own files in `src/` | run, with the console's sounds, settings and word packs; tilt and the picture turning over need launcher 0.33 or later |
 | Minesweeper, Sudoku, Solitaire | the same | run, score tables kept |
 | NES, Game Boy, SNES, Doom, Quake | the launcher's own apps | NES 60 fps, Game Boy 55, SNES 60 emulated / 30 shown, Doom 35, Quake 20 |
 
@@ -22,10 +22,10 @@ on one launcher audio stream), `Preferences` (a file per namespace under `/sd/ta
 `/sd/tabulous`). `ports/tabgame/main.cpp` is the shell: the About page, the leave confirmation, the main loop.
 
 **Tilt.** FiveHead is scored by tilting the console and PhraseCraze turns its picture over to face whoever holds
-it, both from the accelerometer, which the stock launcher does not give apps. `patches/4-tab5-accelerometer.patch`
-adds it for the Tab5 (below); the games use the console's own `src/orientation.cpp` and tilt code unchanged. On a
-launcher without the patch FiveHead is played with its GOT IT and PASS buttons and PhraseCraze turns over only
-by its FLIP button.
+it, both from the accelerometer, which the launcher gives apps on the Tab5 since 0.33.0 (it was our patch 4). The
+games use the console's own `src/orientation.cpp` and tilt code unchanged. Where there is no
+accelerometer to read, FiveHead is played with its GOT IT and PASS buttons and PhraseCraze turns over only by its
+FLIP button.
 
 Not carried over:
 
