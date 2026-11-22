@@ -91,6 +91,7 @@ template <typename Rd, typename Wr> static void frame(Rd rd, Wr wr)
             papp_log("arcade: saved high scores put back\n");
         } else {
             readAll(rd, g_saved);
+            papp_log("arcade: score table is set up; watching it\n");
         }
         g_active = true;
         return;
