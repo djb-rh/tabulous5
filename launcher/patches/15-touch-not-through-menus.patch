@@ -1,0 +1,61 @@
+diff --git a/components/lx_loader/lx_services.h b/components/lx_loader/lx_services.h
+index 383b6d5..7b5baef 100644
+--- a/components/lx_loader/lx_services.h
++++ b/components/lx_loader/lx_services.h
+@@ -70,6 +70,7 @@ int  lx_thrd_end_run(void);                /* -> sync objects freed */
+ /* In-game overlay (lx_svc_ui.c): presents open it when HOME asked for it */
+ void lx_overlay_poll(void);
+ void lx_overlay_reset(void);
++bool lx_ui_owns_touch(void);                /* a launcher screen is over the app: touches are not the app's */
+ 
+ /* Ends the run from any app thread with `code` (lx_app.c). */
+ void lx_app_post_exit(int code);
+diff --git a/components/lx_loader/lx_svc_disp.c b/components/lx_loader/lx_svc_disp.c
+index 5717abf..2821d71 100644
+--- a/components/lx_loader/lx_svc_disp.c
++++ b/components/lx_loader/lx_svc_disp.c
+@@ -98,7 +98,8 @@ static int disp_touch_read(papp_surface_t *s, papp_touch_point_t *pts, int max)
+     bsp_touch_point_t raw[BSP_TOUCH_MAX_POINTS];
+     if (max > BSP_TOUCH_MAX_POINTS) max = BSP_TOUCH_MAX_POINTS;
+     SVC_ENTER();
+-    int n = s ? lx_comp_touch_read((lx_surface_t *)s, raw, max)
++    int n = lx_ui_owns_touch() ? 0      /* made on the pause menu or a UI call */
++          : s ? lx_comp_touch_read((lx_surface_t *)s, raw, max)
+               : bsp_touch_read(raw, BSP_TOUCH_MAX_POINTS);       /* display coordinates */
+     SVC_LEAVE();
+     if (n > max) n = max;
+diff --git a/components/lx_loader/lx_svc_ui.c b/components/lx_loader/lx_svc_ui.c
+index bbcda2c..036b36c 100644
+--- a/components/lx_loader/lx_svc_ui.c
++++ b/components/lx_loader/lx_svc_ui.c
+@@ -83,11 +83,30 @@ const papp_if_ui_t lx_if_ui = {
+ 
+ static volatile bool s_ovl_req, s_ovl_open;
+ static int s_shot_in;                   /* presents until the screenshot */
++static volatile bool s_touch_ours;      /* a touch was made on a launcher screen */
+ 
+ void lx_overlay_reset(void)
+ {
+     s_ovl_req = s_ovl_open = false;
+     s_shot_in = 0;
++    s_touch_ours = false;
++}
++
++/* A launcher screen over the app (the pause menu, a UI call) holds only the
++ * task that opened it: the app's other threads run on and may read the touch.
++ * What is touched then is that screen, not the app, and so is the rest of a
++ * touch still down as the screen closes. */
++bool lx_ui_owns_touch(void)
++{
++    if (s_ovl_open || s_ui_depth) {
++        s_touch_ours = true;
++        return true;
++    }
++    if (!s_touch_ours) return false;
++    bsp_touch_point_t p[1];
++    if (bsp_touch_read(p, 1) > 0) return true;
++    s_touch_ours = false;
++    return false;
+ }
+ 
+ bool lx_app_overlay_request(void)

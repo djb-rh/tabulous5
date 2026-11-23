@@ -105,6 +105,10 @@ What is left:
    under it. It now draws itself at once, lists the card after, and takes no press or touch until the grid is
    drawn and a third of a second more, nor a touch already down until it lifts. Offered upstream (pull request 53);
    applies on top of patch 3 or without it.
+15. `15-touch-not-through-menus.patch`: with the pause menu (or a menu an app asked the launcher for) on screen,
+   an app's other threads still got every touch made on it, so a tap on "Quit to home" was a tap in the app too.
+   `papp_disp_touch()` now gives the app nothing while such a screen is up, nor the rest of a touch still down as
+   it closes. Launcher issue 54, offered upstream (pull request 57); checked on the console with `touchprobe` (p4-launcher-test) on 2026-11-22.
 
 The patches are offered under the launcher's own MIT licence so they can go upstream.
 
