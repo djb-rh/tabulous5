@@ -37,7 +37,8 @@ Not carried over:
 `patches/3-tab5-gamepad.patch` teaches the launcher's Tab5 board about our pad. It is player one; a USB pad is
 then player two (without ours, a USB pad is player one as before).
 
-- **Rev B** (PCA9555 on the EXT socket) is found by itself. Not yet tried on a board: none exists.
+- **Rev B** (PCA9555 on the EXT socket) is found by itself. First tried on a real board 2026-11-24: it is found
+  and every button works.
 - **Rev A** (twelve M5-Bus lines) needs its wiring in `/sd/config/tab5pad.txt`, one `BUTTON=Gnn` a line, buttons
   `UP DOWN LEFT RIGHT A B X Y L R SELECT START`. The board as routed, on a straight ribbon:
 
@@ -97,9 +98,10 @@ What is left:
 
 1. `1-trial-ramdisk-when-no-card.patch`: a RAM disk when no card mounts. Bench testing only; not built by default.
 3. `3-tab5-gamepad.patch`: the gamepad, and a board flag that makes USB pads start at player two. Not offered
-   upstream. Rev A (the M5-Bus pins named by `/sd/config/tab5pad.txt`) is what has run on 0.34; rev B's PCA9555
-   shares the EXT socket's I2C lines with the clip-on keyboard, whose driver upstream now opens that bus itself,
-   so the two need bringing together before a rev B pad and a keyboard are used at once.
+   upstream. Rev A is the M5-Bus pins named by `/sd/config/tab5pad.txt`. Rev B's PCA9555 is on the EXT socket's
+   I2C bus, which the clip-on keyboard's driver uses too: the patch gives the two one bus (`board_ext_bus()`).
+   Before 2026-11-24 each made its own on the same I2C port, and with a rev B pad plugged in the launcher never
+   reached the home screen (the second bus failed, broke the first, and the input task spun on the errors).
 14. `14-home-quiet-after-app.patch`: back from an app, the home screen took about a second to list the card again
    with the app's last picture still up, and a press or tap made in that second started whatever tile turned up
    under it. It now draws itself at once, lists the card after, and takes no press or touch until the grid is
